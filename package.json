@@ -2,7 +2,7 @@
     "name": "{{PROJECT_NAME}}",
     "version": "0.1.0",
     "description": "A GMS 1.4 inspired web game engine and IDE using modern TypeScript, along with some other cool stuff :3",
-    "main": "index.js",
+    "main": "./exports/engine.js",
     "directories": {
         "doc": "docs"
     },
