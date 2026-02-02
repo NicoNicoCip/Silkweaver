@@ -1,0 +1,36 @@
+{
+    "name": "papercrane",
+    "version": "0.1.0",
+    "description": "A GMS 1.4 inspired web game engine and IDE using modern TypeScript, along with some other cool stuff :3",
+    "main": "index.js",
+    "directories": {
+        "doc": "docs"
+    },
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/NicoNicoCip/Papercrane-Game-Engine.git"
+    },
+    "keywords": [
+        "game-engine",
+        "gamemaker",
+        "gms",
+        "typescript",
+        "webgl",
+        "ide"
+    ],
+    "author": "FinnWillow cir.ciprian.nicolae@gmail.com",
+    "license": "GPL-3.0",
+    "bugs": {
+        "url": "https://github.com/NicoNicoCip/Papercrane-Game-Engine/issues"
+    },
+    "homepage": "https://github.com/NicoNicoCip/Papercrane-Game-Engine#readme",
+    "workspaces": [
+        "src/*"
+    ],
+    "devDependencies": {
+        "typescript": "^5.9.3"
+    }
+}
