@@ -7,7 +7,11 @@
         "doc": "docs"
     },
     "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1"
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "build:engine": "esbuild ./packages/engine/src/index.ts --bundle --outfile=exports/engine.js --format=esm",
+        "build:ide": "esbuild ./packages/ide/src/index.ts --bundle --outfile=exports/ide.js --format=esm",
+        "build": "npm run build:engine && npm run build:ide",
+        "watch": "npm run build -- --watch"
     },
     "repository": {
         "type": "git",
@@ -28,9 +32,10 @@
     },
     "homepage": "https://github.com/NicoNicoCip/Papercrane-Game-Engine#readme",
     "workspaces": [
-        "src/*"
+        "./packages/*"
     ],
     "devDependencies": {
+        "esbuild": "^0.27.2",
         "typescript": "^5.9.3"
     }
 }
