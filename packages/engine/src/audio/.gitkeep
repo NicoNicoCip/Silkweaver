@@ -1,0 +1,5 @@
+# Audio System
+# Web Audio API wrappers
+# - sound_play, sound_stop, sound_loop
+# - audio_play_sound, audio_stop_sound
+# - Audio groups, effects, listeners

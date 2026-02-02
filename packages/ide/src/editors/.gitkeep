@@ -1,0 +1,10 @@
+# Resource Editors
+# - Sprite editor (frames, animation, collision mask)
+# - Object editor (events, properties)
+# - Room editor (instances, tiles, backgrounds, views)
+# - Script editor (Monaco integration)
+# - Sound editor
+# - Background editor
+# - Font editor
+# - Path editor
+# - Timeline editor

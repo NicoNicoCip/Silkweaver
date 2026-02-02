@@ -1,0 +1,5 @@
+# Collision System
+# - collision_point, collision_rectangle, collision_circle
+# - collision_line, collision_ellipse
+# - place_meeting, place_free, place_empty
+# - Collision masks, precise collision

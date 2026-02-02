@@ -24,7 +24,7 @@ packages/backend/
 **No accounts required** - Anonymous collaboration via links
 
 ```
-https://papercrane.dev/session/abc123def456
+https://silkweaver.dev/session/abc123def456
 ```
 
 ### Flow:
@@ -93,7 +93,7 @@ class CollabService {
   connect(sessionUrl: string) {
     this.doc = new Y.Doc();
     this.provider = new WebsocketProvider(
-      'wss://papercrane.dev/collab',
+      'wss://silkweaver.dev/collab',
       sessionUrl,
       this.doc
     );
@@ -145,7 +145,7 @@ Response: { sessionId: "abc123", shareUrl: "https://..." }
 ### Session Join
 ```typescript
 GET /api/sessions/:id
-WebSocket: wss://papercrane.dev/collab/:id
+WebSocket: wss://silkweaver.dev/collab/:id
 ```
 
 ### Session Cleanup

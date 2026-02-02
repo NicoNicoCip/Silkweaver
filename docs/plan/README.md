@@ -1,6 +1,6 @@
-# PaperCrane Implementation Plan
+# Silkweaver Implementation Plan
 
-This folder contains the complete implementation plan for PaperCrane, a GMS 1.4.9999-inspired game engine and IDE.
+This folder contains the complete implementation plan for Silkweaver, a GMS 1.4.9999-inspired game engine and IDE.
 
 ## Folder Structure
 

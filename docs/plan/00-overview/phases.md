@@ -10,10 +10,10 @@ Development organized **by feature area**, starting with engine core.
 - [x] Initialize GitHub repository with branches
 
 ## Phase 2: Core Game Loop
-- [ ] Game loop with room_speed
-- [ ] Room management
-- [ ] Basic instance lifecycle
-- [ ] Event dispatcher
+- [x] Game loop with room_speed
+- [x] Room management
+- [x] Basic instance lifecycle
+- [x] Event dispatcher
 
 ## Phase 3: Rendering System
 - [ ] WebGL 2 renderer setup

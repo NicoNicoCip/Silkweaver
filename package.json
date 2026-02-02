@@ -1,5 +1,5 @@
 {
-    "name": "papercrane",
+    "name": "silkweaver",
     "version": "0.1.0",
     "description": "A GMS 1.4 inspired web game engine and IDE using modern TypeScript, along with some other cool stuff :3",
     "main": "./exports/engine.js",
@@ -15,7 +15,7 @@
     },
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/NicoNicoCip/Papercrane-Game-Engine.git"
+        "url": "git+https://github.com/NicoNicoCip/Silkweaver"
     },
     "keywords": [
         "game-engine",
@@ -28,9 +28,9 @@
     "author": "FinnWillow cir.ciprian.nicolae@gmail.com",
     "license": "GPL-3.0",
     "bugs": {
-        "url": "https://github.com/NicoNicoCip/Papercrane-Game-Engine/issues"
+        "url": "https://github.com/NicoNicoCip/Silkweaver/issues"
     },
-    "homepage": "https://github.com/NicoNicoCip/Papercrane-Game-Engine#readme",
+    "homepage": "https://github.com/NicoNicoCip/Silkweaver#readme",
     "workspaces": [
         "./packages/*"
     ],

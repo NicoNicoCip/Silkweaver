@@ -1,0 +1,7 @@
+# Math & Utility Functions
+# - point_distance, point_direction
+# - lengthdir_x, lengthdir_y
+# - random, random_range, irandom, choose
+# - sin, cos, tan, degtorad, radtodeg
+# - clamp, lerp, sign, min, max
+# - Vectors, matrices

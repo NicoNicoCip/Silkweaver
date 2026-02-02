@@ -1,0 +1,6 @@
+# Input System
+# - keyboard_check, keyboard_check_pressed, keyboard_check_released
+# - mouse_check_button, mouse_x, mouse_y
+# - Gamepad support
+# - Virtual keys (touch)
+# - Key constants (vk_left, vk_right, vk_space, etc.)

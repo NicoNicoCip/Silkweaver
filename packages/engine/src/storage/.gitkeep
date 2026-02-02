@@ -1,0 +1,5 @@
+# Storage System
+# - ini_open, ini_read_string, ini_write_string, ini_close
+# - file_text_open_read, file_text_read_string, file_text_close
+# - LocalStorage/IndexedDB wrappers
+# - Save/load game state

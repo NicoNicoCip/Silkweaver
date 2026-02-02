@@ -1,4 +1,4 @@
-# PaperCrane Engine - Overview
+# Silkweaver Engine - Overview
 
 A GMS 1.4.9999-inspired game engine and IDE with modern improvements.
 
@@ -38,7 +38,7 @@ A GMS 1.4.9999-inspired game engine and IDE with modern improvements.
 
 ### Monorepo Layout
 ```
-papercrane/
+silkweaver/
 ├── packages/
 │   ├── engine/           # Core runtime engine
 │   ├── ide/              # Web-based IDE

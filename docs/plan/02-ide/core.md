@@ -96,7 +96,7 @@ const compilerOptions = {
   target: "ES2020",
   module: "ESNext",
   strict: true,
-  types: ["papercrane-types"]
+  types: ["silkweaver-types"]
 };
 
 // Custom language features

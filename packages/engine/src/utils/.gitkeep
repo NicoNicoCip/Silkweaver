@@ -1,0 +1,5 @@
+# Utility Functions
+# - string_* functions (string_length, string_pos, string_copy, etc.)
+# - show_message, show_question, get_string
+# - real, string type conversion
+# - Debug helpers, logging

@@ -22,7 +22,7 @@ packages/installer/
 ## Installer Flow
 
 ### 1. Welcome Screen
-- Introduction to PaperCrane
+- Introduction to Silkweaver
 - "Create New Project" button
 
 ### 2. Version Selection

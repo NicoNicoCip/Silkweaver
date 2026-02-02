@@ -1,0 +1,6 @@
+# 3D Basics
+# - d3d_start, d3d_end
+# - d3d_draw_block, d3d_draw_floor, d3d_draw_wall
+# - d3d_set_projection, d3d_set_projection_ext
+# - d3d_transform_* functions
+# - Models, lighting

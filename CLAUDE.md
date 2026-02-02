@@ -1,4 +1,4 @@
-# Papercrane Game Engine
+# Silkweaver Game Engine
 
 Web-based game engine + IDE inspired by GameMaker Studio 1.4.9999. Spiritual successor, not a clone.
 
@@ -44,5 +44,31 @@ npm workspaces monorepo:
 Core loop, drawing/graphics, instance/object system, input, audio, physics, networking, data structures, storage, math/utils, 3D basics, particles
 
 ## Commands
-- Build: (not yet configured - esbuild planned)
+- Build: `npm run build`
 - Entry: `packages/engine/src/index.ts`
+
+## Code Style
+
+### Comments
+- **Classes**: JSDoc block with description
+- **Properties**: Inline comment at end of line (`// description`)
+- **Methods**: JSDoc block with `@param` and `@returns` as needed
+
+Example:
+```ts
+/**
+ * Brief class description.
+ */
+export class example_class {
+    private value: number = 0    // What this property does
+
+    /**
+     * Brief method description.
+     * @param input - Description of parameter
+     * @returns Description of return value
+     */
+    public method(input: string): boolean {
+        // ...
+    }
+}
+```

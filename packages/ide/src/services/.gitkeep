@@ -1,0 +1,7 @@
+# IDE Services
+# - Project management (load, save, export)
+# - Collaboration service (Yjs/WebSocket)
+# - Build service (compile game)
+# - Asset import service
+# - Undo/redo service
+# - Clipboard service
