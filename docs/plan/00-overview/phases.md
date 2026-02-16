@@ -16,45 +16,45 @@ Development organized **by feature area**, starting with engine core.
 - [x] Event dispatcher
 
 ## Phase 3: Rendering System
-- [ ] WebGL 2 renderer setup
-- [ ] Sprite rendering
-- [ ] Shape drawing functions
-- [ ] Text rendering with web fonts
-- [ ] Color and alpha
+- [x] WebGL 2 renderer setup
+- [x] Sprite rendering
+- [x] Shape drawing functions
+- [x] Text rendering with web fonts
+- [x] Color and alpha
 
 ## Phase 4: Instance & Object System
-- [ ] GMObject base class
-- [ ] Instance creation/destruction
-- [ ] Instance variables
-- [ ] Basic collision detection
-- [ ] With statement
+- [x] GMObject base class
+- [x] Instance creation/destruction
+- [x] Instance variables
+- [x] Basic collision detection
+- [x] With statement
 
 ## Phase 5: Input System
-- [ ] Keyboard input
-- [ ] Mouse input
-- [ ] Gamepad support
-- [ ] Touch support
+- [x] Keyboard input
+- [x] Mouse input
+- [x] Gamepad support
+- [x] Touch support
 
 ## Phase 6: Audio System
-- [ ] Web Audio API integration
-- [ ] Sound playback
-- [ ] 3D positional audio
-- [ ] Audio groups
+- [x] Web Audio API integration
+- [x] Sound playback
+- [x] 3D positional audio
+- [x] Audio groups
 
 ## Phase 7: Data Structures
-- [ ] DS List, Map, Grid
-- [ ] DS Stack, Queue, Priority
+- [x] DS List, Map, Grid
+- [x] DS Stack, Queue, Priority
 
 ## Phase 8: Storage System
-- [ ] INI file functions (localStorage)
-- [ ] File functions (IndexedDB)
-- [ ] JSON functions
+- [x] INI file functions (localStorage)
+- [x] File functions (IndexedDB)
+- [x] JSON functions
 
 ## Phase 9: Advanced Rendering
-- [ ] Surface system
-- [ ] Shader system
-- [ ] Blend modes
-- [ ] Views and cameras
+- [x] Surface system
+- [x] Shader system
+- [x] Blend modes
+- [x] Views and cameras
 
 ## Phase 10: Physics System
 - [ ] Matter.js integration

@@ -10,7 +10,9 @@
         "test": "echo \"Error: no test specified\" && exit 1",
         "build:engine": "esbuild ./packages/engine/src/index.ts --bundle --outfile=exports/engine.js --format=esm",
         "build:ide": "esbuild ./packages/ide/src/index.ts --bundle --outfile=exports/ide.js --format=esm",
-        "build": "npm run build:engine && npm run build:ide",
+        "build:installer": "esbuild ./packages/installer/src/index.ts --bundle --outfile=exports/installer.js --format=esm",
+        "build": "npm run build:engine && npm run build:ide && npm run build:installer",
+        "watch:engine": "esbuild ./packages/engine/src/index.ts --bundle --outfile=exports/engine.js --format=esm --watch",
         "watch": "npm run build -- --watch"
     },
     "repository": {
@@ -35,7 +37,11 @@
         "./packages/*"
     ],
     "devDependencies": {
+        "@types/matter-js": "^0.20.2",
         "esbuild": "^0.27.2",
         "typescript": "^5.9.3"
+    },
+    "dependencies": {
+        "matter-js": "^0.20.0"
     }
 }

@@ -1,5 +1,9 @@
 import { EVENT_TYPE, game_event } from "./game_event.js"
 import { room } from "./room.js"
+import { keyboard_manager } from "../input/keyboard.js"
+import { mouse_manager } from "../input/mouse.js"
+import { gamepad_manager } from "../input/gamepad.js"
+import { touch_manager } from "../input/touch.js"
 
 /**
  * Core game loop that handles update and draw cycles.
@@ -13,11 +17,24 @@ export abstract class game_loop {
     public static room: room = null!                // The current active room
     public static room_first: number = -1           // ID of the first room in the game
     public static room_last: number = 0             // ID of the last room in the game
+    private static _canvas: HTMLCanvasElement | null = null  // Canvas for mouse/touch attachment
 
     // Map of update event types to their registered event handlers
     private static update_events: Map<EVENT_TYPE, game_event[]> = new Map()
     // Map of draw event types to their registered event handlers
     private static draw_events: Map<EVENT_TYPE, game_event[]> = new Map()
+
+    /**
+     * Attaches input systems to the given canvas.
+     * Must be called before start() if mouse or touch input is needed.
+     * @param canvas - The game canvas element
+     */
+    public static init_input(canvas: HTMLCanvasElement): void {
+        this._canvas = canvas
+        keyboard_manager.attach()
+        mouse_manager.attach(canvas)
+        touch_manager.attach(canvas)
+    }
 
     /**
      * Starts the game loop.
@@ -59,8 +76,12 @@ export abstract class game_loop {
     /**
      * Runs all update events in GMS order.
      * Create and destroy events run once and are cleared after execution.
+     * Input polling happens before events; end_step clears edge-trigger state after.
      */
     private static update(): void {
+        // Poll input devices before any game logic runs
+        gamepad_manager.poll()
+
         const createEvents = [...(this.update_events.get(EVENT_TYPE.create) ?? [])]
         this.update_events.set(EVENT_TYPE.create, [])
         createEvents.forEach(e => e.run())
@@ -77,6 +98,11 @@ export abstract class game_loop {
         const destroyEvents = [...(this.update_events.get(EVENT_TYPE.destroy) ?? [])]
         this.update_events.set(EVENT_TYPE.destroy, [])
         destroyEvents.forEach(e => e.run())
+
+        // Clear edge-trigger state (pressed/released) after all events have fired
+        keyboard_manager.end_step()
+        mouse_manager.end_step()
+        touch_manager.end_step()
     }
 
     /**
