@@ -1,0 +1,7 @@
+{
+    "version": "0.1.0",
+    "engine_url": "engine.js",
+    "ide_url": "ide/",
+    "installer_url": "installer.html",
+    "changelog": "Initial release — engine phases 1–15 complete."
+}

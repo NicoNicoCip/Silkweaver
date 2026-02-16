@@ -24,7 +24,7 @@ export abstract class resource {
         resource.all.delete(id)
     }
 
-    protected static findByID(id: number): resource | undefined {
+    public static findByID(id: number): resource | undefined {
         return resource.all.get(id)
     }
 }
