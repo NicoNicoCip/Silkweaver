@@ -122,11 +122,11 @@ export class ResourceTree {
 
         const folder_icon = document.createElement('img')
         folder_icon.src = 'icons/folder.svg'
-        folder_icon.style.cssText = 'width:14px;height:14px;filter:invert(0.85);flex-shrink:0;'
+        folder_icon.style.cssText = 'width:14px;height:14px;flex-shrink:0;'
 
         const cat_icon = document.createElement('img')
         cat_icon.src = cat.icon
-        cat_icon.style.cssText = 'width:14px;height:14px;filter:invert(0.7);flex-shrink:0;'
+        cat_icon.style.cssText = 'width:14px;height:14px;flex-shrink:0;'
 
         const label = document.createElement('span')
         label.textContent = cat.label
@@ -188,7 +188,7 @@ export class ResourceTree {
         const cat_def = CATEGORIES.find(c => c.id === cat_id)!
         const icon = document.createElement('img')
         icon.src = cat_def.icon
-        icon.style.cssText = 'width:14px;height:14px;filter:invert(0.7);flex-shrink:0;'
+        icon.style.cssText = 'width:14px;height:14px;flex-shrink:0;'
 
         const label = document.createElement('span')
         label.textContent = name
@@ -238,9 +238,7 @@ function _icon_btn(icon_src: string, title: string, cb: (e: MouseEvent) => void)
     `
     const img = document.createElement('img')
     img.src = icon_src
-    img.style.cssText = 'width:12px;height:12px;filter:invert(0.7);'
-    img.addEventListener('mouseenter', () => { img.style.filter = 'invert(1)' })
-    img.addEventListener('mouseleave', () => { img.style.filter = 'invert(0.7)' })
+    img.style.cssText = 'width:12px;height:12px;'
     btn.appendChild(img)
     btn.addEventListener('click', cb)
     return btn

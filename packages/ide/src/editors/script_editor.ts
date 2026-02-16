@@ -7,7 +7,9 @@
  *   ed.open(workspace, file_handle, 'my_script.ts')
  */
 
-import { FloatingWindow } from '../window_manager.js'
+import { FloatingWindow }                           from '../window_manager.js'
+import { bp_register_editor, bp_unregister_editor, bp_toggle } from '../panels/breakpoint_manager.js'
+import { project_read_file, project_write_file, project_has_folder } from '../services/project.js'
 
 // Monaco is loaded from CDN at runtime via AMD — type it as `any` to avoid
 // requiring the 'monaco-editor' npm package in the IDE workspace.
@@ -276,6 +278,8 @@ export class ScriptEditor {
     private _win:         FloatingWindow
     private _editor:      Monaco | null = null
     private _file_handle: FileSystemFileHandle | null = null
+    private _rel_path:    string | null = null    // Electron / fallback path
+    private _file_key:    string = ''
     private _save_timer:  ReturnType<typeof setTimeout> | null = null
     private _dirty        = false
 
@@ -337,6 +341,19 @@ export class ScriptEditor {
             wordWrap:    'off',
             tabSize:     4,
             insertSpaces: true,
+            glyphMargin: true,
+        })
+
+        // Register with breakpoint manager so it can paint decorations
+        bp_register_editor(this._file_key, this._editor)
+
+        // Glyph margin click → toggle breakpoint
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this._editor.onMouseDown((e: any) => {
+            if (e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
+                const line: number = e.target.position?.lineNumber
+                if (line) bp_toggle(this._file_key, line)
+            }
         })
 
         // Auto-save on change (debounced 500ms)
@@ -362,6 +379,69 @@ export class ScriptEditor {
      * @param content - Initial code content
      * @param lang    - Language (default 'typescript')
      */
+    /**
+     * Mount the window and load a file by relative project path (Electron / fallback).
+     * @param parent   - Workspace element to mount into
+     * @param rel_path - Relative path e.g. 'scripts/player.ts'
+     */
+    async open_path(parent: HTMLElement, rel_path: string): Promise<void> {
+        this._rel_path = rel_path
+        this._win.mount(parent)
+        this._win.set_title(rel_path.split('/').pop() ?? rel_path)
+
+        const monaco = await _load_monaco()
+
+        let content = ''
+        try {
+            content = await project_read_file(rel_path)
+        } catch {
+            content = '// New script\n'
+        }
+
+        this._win.body.innerHTML = ''
+
+        const container = document.createElement('div')
+        container.style.cssText = 'width:100%;height:100%;'
+        this._win.body.appendChild(container)
+
+        this._editor = monaco.editor.create(container, {
+            value:       content,
+            language:    'typescript',
+            theme:       'vs-dark',
+            fontSize:    13,
+            minimap:     { enabled: true },
+            scrollBeyondLastLine: false,
+            automaticLayout: true,
+            wordWrap:    'off',
+            tabSize:     4,
+            insertSpaces: true,
+            glyphMargin: true,
+        })
+
+        bp_register_editor(this._file_key, this._editor)
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this._editor.onMouseDown((e: any) => {
+            if (e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
+                const line: number = e.target.position?.lineNumber
+                if (line) bp_toggle(this._file_key, line)
+            }
+        })
+
+        this._editor.onDidChangeModelContent(() => {
+            this._dirty = true
+            this._win.set_title('● ' + (rel_path.split('/').pop() ?? rel_path))
+            if (this._save_timer !== null) clearTimeout(this._save_timer)
+            this._save_timer = setTimeout(() => this._do_save(), 500)
+        })
+
+        this._win.body.appendChild(
+            Object.assign(document.createElement('div'), {
+                className: 'sw-editor-toolbar',
+            })
+        )
+    }
+
     async open_inline(parent: HTMLElement, content: string, lang = 'typescript'): Promise<void> {
         this._win.mount(parent)
         const monaco = await _load_monaco()
@@ -385,6 +465,15 @@ export class ScriptEditor {
             this._dirty = true
             this.on_save(this._editor!.getValue())
         })
+    }
+
+    /** Set the file key used for breakpoint tracking. */
+    set_file_key(key: string): void {
+        this._file_key = key
+        if (this._editor) {
+            bp_unregister_editor(key)
+            bp_register_editor(key, this._editor)
+        }
     }
 
     /** Returns the current editor content. */
@@ -425,10 +514,18 @@ export class ScriptEditor {
                 console.error('[ScriptEditor] Save failed:', err)
                 return
             }
+        } else if (this._rel_path) {
+            try {
+                await project_write_file(this._rel_path, content)
+            } catch (err) {
+                console.error('[ScriptEditor] Save failed:', err)
+                return
+            }
         }
 
         this._dirty = false
-        this._win.set_title(this._file_handle?.name ?? 'script')
+        const title = this._file_handle?.name ?? this._rel_path?.split('/').pop() ?? 'script'
+        this._win.set_title(title)
         this.on_save(content)
     }
 }
@@ -457,11 +554,62 @@ export async function script_editor_open(
     }
 
     const ed = new ScriptEditor(file_handle.name)
+    ed.set_file_key(key)
     _open_editors.set(key, ed)
-    ed.on_save = () => {}   // caller can override
+    ed.on_save = () => {}
 
-    ed.on_close(() => _open_editors.delete(key))
+    ed.on_close(() => {
+        bp_unregister_editor(key)
+        _open_editors.delete(key)
+    })
 
     await ed.open(parent, file_handle)
     return ed
+}
+
+/**
+ * Open a script editor by relative project path (Electron / fallback mode).
+ * @param parent   - Workspace element
+ * @param rel_path - Relative path e.g. 'scripts/player.ts'
+ */
+export async function script_editor_open_path(
+    parent: HTMLElement,
+    rel_path: string,
+): Promise<ScriptEditor> {
+    const existing = _open_editors.get(rel_path)
+    if (existing) {
+        existing.focus()
+        return existing
+    }
+
+    const filename = rel_path.split('/').pop() ?? rel_path
+    const ed = new ScriptEditor(filename)
+    ed.set_file_key(rel_path)
+    _open_editors.set(rel_path, ed)
+    ed.on_save = () => {}
+
+    ed.on_close(() => {
+        bp_unregister_editor(rel_path)
+        _open_editors.delete(rel_path)
+    })
+
+    await ed.open_path(parent, rel_path)
+    return ed
+}
+
+/**
+ * Opens a script editor using whichever backend is available.
+ * Prefers path-based (Electron/fallback) when no FSAPI dir handle exists.
+ */
+export async function script_editor_open_smart(
+    parent: HTMLElement,
+    rel_path: string,
+    get_handle: () => Promise<FileSystemFileHandle>,
+): Promise<ScriptEditor> {
+    if (!project_has_folder()) { alert('Open a project folder first.'); throw new Error('No project folder') }
+    if ((window as any).swfs || !((window as any).showDirectoryPicker)) {
+        return script_editor_open_path(parent, rel_path)
+    }
+    const handle = await get_handle()
+    return script_editor_open(parent, handle, rel_path)
 }

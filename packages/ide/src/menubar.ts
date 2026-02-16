@@ -103,6 +103,8 @@ function _build_menu(def: menu_def): HTMLElement {
 
     item.addEventListener('mousedown', (e) => {
         e.stopPropagation()
+        // If the click is on a dropdown item, let the click handler fire — don't toggle
+        if ((e.target as HTMLElement).closest('.sw-dropdown')) return
         const bar = item.closest('#sw-menubar') as HTMLElement
         const was_open = item.classList.contains('open')
         _close_all(bar)

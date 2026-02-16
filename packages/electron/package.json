@@ -1,0 +1,8 @@
+{
+    "name": "@silkweaver/electron",
+    "version": "0.1.0",
+    "description": "Electron wrapper for Silkweaver IDE",
+    "type": "module",
+    "main": "../../exports/electron/main.js",
+    "private": true
+}

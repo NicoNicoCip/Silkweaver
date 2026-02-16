@@ -103,24 +103,29 @@ Development organized **by feature area**, starting with engine core.
 - [x] Error highlighting
 
 ## Phase 18: IDE Editors (Part 1)
-- [ ] Sprite editor
-- [ ] Object editor
-- [ ] Room editor
+- [x] Sprite editor
+- [x] Object editor
+- [x] Room editor
 
 ## Phase 19: IDE Editors (Part 2)
-- [ ] Sound, Background, Font editors
-- [ ] Path, Timeline editors
+- [x] Sound, Background, Font editors
+- [x] Path, Timeline editors
 
-## Phase 20: IDE Features
-- [ ] Game preview (embedded)
-- [ ] Hot reload
-- [ ] Console/output
-- [ ] Undo/redo system
+## Phase 20: IDE Features                   !!!
+- [x] Game preview (embedded)
+- [x] Hot reload
+- [x] Console/output
+- [x] Undo/redo system
 
 ## Phase 21: Debugger & Profiler
-- [ ] Breakpoint system
-- [ ] Variable inspection
-- [ ] Profiler (FPS, memory, timing)
+- [x] Breakpoint system
+- [x] Variable inspection
+- [x] Profiler (FPS, memory, timing)
+
+## Phase 21.5: Build & Export System (IDE)
+- [ ] `Run > Build Game…` — bundle player game files into a distributable zip/folder
+- [ ] esbuild integration: compile user scripts + engine into a standalone HTML+JS bundle
+- [ ] Export targets: browser (zip), future: Electron wrapper
 
 ## Phase 22: Collaboration Backend
 - [ ] WebSocket server

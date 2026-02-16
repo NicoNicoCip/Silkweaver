@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Silkweaver — Game Preview</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; background: #111; overflow: hidden; }
+        canvas {
+            display: block;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            image-rendering: pixelated;
+        }
+        #sw-no-game {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #555;
+            font-family: sans-serif;
+            font-size: 14px;
+            gap: 8px;
+        }
+        #sw-no-game span { font-size: 32px; }
+    </style>
+</head>
+<body>
+    <canvas id="sw-canvas" width="640" height="480"></canvas>
+    <div id="sw-no-game" style="display:none;">
+        <span>▶</span>
+        <p>No game loaded.</p>
+        <p style="font-size:12px;color:#444;">Build your project first (Ctrl+F5), then press Play.</p>
+    </div>
+
+    <script type="module">
+        const canvas = document.getElementById('sw-canvas')
+
+        // Try to load the compiled game entry point
+        let game_loaded = false
+        try {
+            const { default: game_init } = await import('../game.js?t=' + Date.now())
+            if (typeof game_init === 'function') {
+                game_init(canvas)
+                game_loaded = true
+            }
+        } catch (e) {
+            // game.js doesn't exist or has no default export — show placeholder
+        }
+
+        if (!game_loaded) {
+            // Draw a placeholder — engine is available but no game scripts exist yet
+            const ctx = canvas.getContext('2d')
+            if (ctx) {
+                ctx.fillStyle = '#1a1a2e'
+                ctx.fillRect(0, 0, canvas.width, canvas.height)
+                ctx.fillStyle = '#444'
+                ctx.font = '14px sans-serif'
+                ctx.textAlign = 'center'
+                ctx.fillText('No game scripts loaded.', canvas.width / 2, canvas.height / 2 - 10)
+                ctx.font = '12px sans-serif'
+                ctx.fillStyle = '#333'
+                ctx.fillText('Build your project (Ctrl+F5), then press Play.', canvas.width / 2, canvas.height / 2 + 14)
+            }
+        }
+    </script>
+</body>
+</html>

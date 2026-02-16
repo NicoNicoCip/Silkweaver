@@ -3,14 +3,101 @@
  * Bootstraps the workspace, menubar, status bar, and resource tree.
  */
 
-import { theme_inject }                                           from './theme.js'
-import { menubar_default }                                        from './menubar.js'
+import { theme_inject }                                              from './theme.js'
+import { menubar_default }                                           from './menubar.js'
 import { status_bar_create, status_set_project, status_set_unsaved } from './status_bar.js'
-import { ResourceTree }                                           from './resource_tree.js'
-import type { open_resource_event, resource_category }            from './resource_tree.js'
-import { project_new, project_open, project_save, project_get_dir } from './services/project.js'
-import type { project_state }                                        from './services/project.js'
-import { script_editor_open }                                        from './editors/script_editor.js'
+import { ResourceTree }                                              from './resource_tree.js'
+import type { open_resource_event, resource_category }               from './resource_tree.js'
+import { project_new, project_open, project_save, project_set_dir, project_set_folder, project_get_dir, project_has_folder }  from './services/project.js'
+import type { project_state }                                         from './services/project.js'
+import { undo_push, undo_undo, undo_redo, undo_clear }               from './services/undo.js'
+import { script_editor_open, script_editor_open_smart } from './editors/script_editor.js'
+import { sprite_editor_open }      from './editors/sprite_editor.js'
+import { object_editor_open }      from './editors/object_editor.js'
+import { room_editor_open }        from './editors/room_editor.js'
+import { sound_editor_open }       from './editors/sound_editor.js'
+import { background_editor_open }  from './editors/background_editor.js'
+import { font_editor_open }        from './editors/font_editor.js'
+import { path_editor_open }        from './editors/path_editor.js'
+import { timeline_editor_open }    from './editors/timeline_editor.js'
+import { preview_play, preview_stop, preview_reload }                from './panels/game_preview.js'
+import { console_open, console_write }                               from './panels/console_panel.js'
+import { debugger_open, debugger_show_hit }                          from './panels/debugger_panel.js'
+import { profiler_open }                                             from './panels/profiler_panel.js'
+import { bp_resume, bp_on_hit }                                      from './panels/breakpoint_manager.js'
+
+// =========================================================================
+// In-renderer modal dialogs (work in Electron and browser alike)
+// =========================================================================
+
+function _modal(content_html: string): { overlay: HTMLElement, close: () => void } {
+    const overlay = document.createElement('div')
+    overlay.style.cssText = `
+        position:fixed; inset:0; z-index:9999;
+        background:rgba(0,0,0,0.55);
+        display:flex; align-items:center; justify-content:center;
+    `
+    const box = document.createElement('div')
+    box.style.cssText = `
+        background:#2b2b2b; border:1px solid #555; border-radius:4px;
+        padding:18px 20px; min-width:320px; max-width:460px;
+        font-family:sans-serif; color:#ccc; font-size:13px;
+        display:flex; flex-direction:column; gap:10px;
+        box-shadow:0 4px 24px rgba(0,0,0,0.6);
+    `
+    box.innerHTML = content_html
+    overlay.appendChild(box)
+    document.body.appendChild(overlay)
+    const close = () => overlay.remove()
+    return { overlay, close }
+}
+
+function _alert(msg: string): Promise<void> {
+    return new Promise(resolve => {
+        const { close } = _modal(`
+            <p style="margin:0;white-space:pre-wrap;">${msg.replace(/</g,'&lt;')}</p>
+            <div style="display:flex;justify-content:flex-end;">
+                <button id="_sw_ok" style="padding:4px 20px;cursor:pointer;">OK</button>
+            </div>
+        `)
+        document.getElementById('_sw_ok')!.addEventListener('click', () => { close(); resolve() })
+    })
+}
+
+function _prompt(msg: string, def = ''): Promise<string | null> {
+    return new Promise(resolve => {
+        const { close } = _modal(`
+            <p style="margin:0;">${msg.replace(/</g,'&lt;')}</p>
+            <input id="_sw_inp" value="${def.replace(/"/g,'&quot;')}"
+                style="padding:5px 8px;background:#3c3c3c;border:1px solid #555;color:#ddd;font-size:13px;border-radius:3px;outline:none;">
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+                <button id="_sw_ok"     style="padding:4px 20px;cursor:pointer;">OK</button>
+                <button id="_sw_cancel" style="padding:4px 20px;cursor:pointer;">Cancel</button>
+            </div>
+        `)
+        const inp = document.getElementById('_sw_inp') as HTMLInputElement
+        inp.focus(); inp.select()
+        const ok     = () => { close(); resolve(inp.value) }
+        const cancel = () => { close(); resolve(null) }
+        document.getElementById('_sw_ok')!    .addEventListener('click', ok)
+        document.getElementById('_sw_cancel')!.addEventListener('click', cancel)
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') ok(); if (e.key === 'Escape') cancel() })
+    })
+}
+
+function _confirm(msg: string): Promise<boolean> {
+    return new Promise(resolve => {
+        const { close } = _modal(`
+            <p style="margin:0;white-space:pre-wrap;">${msg.replace(/</g,'&lt;')}</p>
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+                <button id="_sw_ok"     style="padding:4px 20px;cursor:pointer;">OK</button>
+                <button id="_sw_cancel" style="padding:4px 20px;cursor:pointer;">Cancel</button>
+            </div>
+        `)
+        document.getElementById('_sw_ok')!    .addEventListener('click', () => { close(); resolve(true) })
+        document.getElementById('_sw_cancel')!.addEventListener('click', () => { close(); resolve(false) })
+    })
+}
 
 // =========================================================================
 // State
@@ -75,10 +162,22 @@ function boot(): void {
         if (e.ctrlKey && e.key === 's') { e.preventDefault(); on_file_save() }
         if (e.ctrlKey && e.key === 'n') { e.preventDefault(); on_file_new() }
         if (e.ctrlKey && e.key === 'o') { e.preventDefault(); on_file_open() }
-        if (e.key === 'F5')             { e.preventDefault(); on_run_play() }
+        if (e.ctrlKey && e.key === 'z') { e.preventDefault(); _on_undo() }
+        if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); _on_redo() }
+        if (e.key === 'F5' && !e.ctrlKey) { e.preventDefault(); on_run_play() }
+        if (e.key === 'F5' &&  e.ctrlKey) { e.preventDefault(); on_run_build() }
+        if (e.key === 'F8')               { e.preventDefault(); bp_resume(); console_write('system', '[IDE] Resumed.') }
+        if (e.key === 'F10')              { e.preventDefault(); profiler_open(_workspace) }
+        if (e.key === 'F9')               { e.preventDefault(); debugger_open(_workspace) }
     })
 
-    // 8. Load a blank project initially
+    // 8. Register global breakpoint-hit handler
+    bp_on_hit((file, line, vars) => {
+        debugger_show_hit(_workspace, file, line, vars)
+        console_write('warn', `[Debugger] Break at ${file}:${line}`)
+    })
+
+    // 9. Load a blank project initially
     _set_project(project_new(), null)
 }
 
@@ -87,8 +186,7 @@ function boot(): void {
 // =========================================================================
 
 async function on_file_new(): Promise<void> {
-    const name = prompt('Project name:', 'My Game')
-    if (name === null) return
+    const name = await _prompt('Project name:', 'My Game') ?? 'My Game'
     const state = project_new()
     state.name = name
     _set_project(state, null)
@@ -105,38 +203,76 @@ async function on_file_save(): Promise<void> {
     try {
         await project_save(_project)
         _mark_saved()
-    } catch {
-        await on_file_save_as()
+        preview_reload()
+        console_write('system', '[IDE] Project saved.')
+    } catch (err) {
+        // FSAPI browser: no dir handle yet — fall through to Save As picker
+        if (!project_has_folder()) await on_file_save_as()
+        else console_write('warn', '[IDE] Save failed: ' + err)
     }
 }
 
 async function on_file_save_as(): Promise<void> {
     if (!_project) return
-    const result = await project_open()
-    if (!result) return
-    await project_save(_project, result.dir)
-    _mark_saved()
+    try {
+        if ((window as any).swfs) {
+            // Electron: clear stored folder so _save_electron prompts for a new one
+            project_set_folder(null)
+            await project_save(_project)
+        } else if (typeof (window as any).showDirectoryPicker === 'function') {
+            // Chromium FSAPI: pick a new folder
+            let dir: FileSystemDirectoryHandle
+            try { dir = await (window as any).showDirectoryPicker({ mode: 'readwrite' }) }
+            catch { return }
+            project_set_dir(dir)
+            await project_save(_project, dir)
+        } else {
+            // Firefox / Safari: download as file
+            await project_save(_project)
+        }
+        _mark_saved()
+        console_write('system', '[IDE] Project saved.')
+    } catch {
+        console_write('warn', '[IDE] Save cancelled.')
+    }
 }
 
 // =========================================================================
-// Resource actions
+// Resource actions (with undo/redo)
 // =========================================================================
 
-function on_add_resource(cat: resource_category): void {
-    if (!_project) { alert('Open a project first.'); return }
-    const name = prompt(`New ${cat.slice(0, -1)} name:`)
+async function on_add_resource(cat: resource_category): Promise<void> {
+    if (!_project) { await _alert('Open a project first.'); return }
+    const name = await _prompt(`New ${cat.slice(0, -1)} name:`)
     if (!name) return
-    if (_project.resources[cat][name]) { alert('A resource with that name already exists.'); return }
-    _project.resources[cat][name] = { name }
-    _tree.add_resource(cat, name)
-    _mark_unsaved()
+    if (_project.resources[cat][name]) { await _alert('A resource with that name already exists.'); return }
+
+    undo_push({
+        label: `Add ${cat.slice(0, -1)} "${name}"`,
+        execute:   () => { _tree.add_resource(cat, name);    _mark_unsaved() },
+        unexecute: () => { _tree.remove_resource(cat, name); _mark_unsaved() },
+    })
 }
 
-function on_delete_resource(cat: resource_category, name: string): void {
-    if (!confirm(`Delete "${name}"?`)) return
-    // remove_resource mutates the shared project state reference
-    _tree.remove_resource(cat, name)
-    _mark_unsaved()
+async function on_delete_resource(cat: resource_category, name: string): Promise<void> {
+    if (!await _confirm(`Delete "${name}"?`)) return
+    undo_push({
+        label: `Delete ${cat.slice(0, -1)} "${name}"`,
+        execute:   () => { _tree.remove_resource(cat, name); _mark_unsaved() },
+        unexecute: () => { _tree.add_resource(cat, name);    _mark_unsaved() },
+    })
+}
+
+// =========================================================================
+// Undo / Redo
+// =========================================================================
+
+function _on_undo(): void {
+    if (!undo_undo()) console_write('system', '[IDE] Nothing to undo.')
+}
+
+function _on_redo(): void {
+    if (!undo_redo()) console_write('system', '[IDE] Nothing to redo.')
 }
 
 // =========================================================================
@@ -144,40 +280,61 @@ function on_delete_resource(cat: resource_category, name: string): void {
 // =========================================================================
 
 function on_open_resource(cat: resource_category, name: string): void {
-    if (cat === 'scripts') {
-        _open_script(name)
-        return
+    switch (cat) {
+        case 'scripts':     _open_script(name);                                    break
+        case 'sprites':     sprite_editor_open(_workspace, name, _project?.name ?? ''); break
+        case 'objects':     object_editor_open(_workspace, name);                break
+        case 'rooms':       room_editor_open(_workspace, name);                  break
+        case 'sounds':      sound_editor_open(_workspace, name);                 break
+        case 'backgrounds': background_editor_open(_workspace, name);            break
+        case 'fonts':       font_editor_open(_workspace, name);                  break
+        case 'paths':       path_editor_open(_workspace, name);                  break
+        case 'timelines':   timeline_editor_open(_workspace, name);              break
+        default:
+            console.log(`[IDE] Open ${cat}/${name} — editor not yet implemented`)
     }
-    // Phase 18+ handles other categories
-    console.log(`[IDE] Open ${cat}/${name} — editor not yet implemented`)
 }
 
 async function _open_script(name: string): Promise<void> {
-    const dir = project_get_dir()
-    if (!dir) { alert('Open a project folder first.'); return }
+    const rel = `scripts/${name}.ts`
     try {
-        const scripts_dir = await dir.getDirectoryHandle('scripts', { create: true })
-        const file_handle = await scripts_dir.getFileHandle(`${name}.ts`, { create: true })
-        await script_editor_open(_workspace, file_handle, `scripts/${name}.ts`)
+        await script_editor_open_smart(_workspace, rel, async () => {
+            const dir = project_get_dir()!
+            const scripts_dir = await dir.getDirectoryHandle('scripts', { create: true })
+            return scripts_dir.getFileHandle(`${name}.ts`, { create: true })
+        })
     } catch (err) {
         console.error('[IDE] Failed to open script:', err)
     }
 }
 
 // =========================================================================
-// Run actions (Phase 20+)
+// Run actions
 // =========================================================================
 
-function on_run_play():  void { console.log('[IDE] Run: Play') }
-function on_run_stop():  void { console.log('[IDE] Run: Stop') }
-function on_run_build(): void { console.log('[IDE] Run: Build') }
+function on_run_play(): void {
+    console_open(_workspace)
+    preview_play(_workspace)
+    console_write('system', '[IDE] Running game… (F8=Resume, F9=Debugger, F10=Profiler)')
+}
+
+function on_run_stop(): void {
+    preview_stop()
+    console_write('system', '[IDE] Game stopped.')
+}
+
+async function on_run_build(): Promise<void> {
+    console_open(_workspace)
+    console_write('system', '[IDE] Build triggered (external bundler required).')
+    // After a build the preview reloads automatically on the next Ctrl+S / hot reload
+}
 
 // =========================================================================
 // Help
 // =========================================================================
 
-function on_help_about(): void {
-    alert('Silkweaver Game Engine IDE\nVersion 0.1.0\nGPL-3.0')
+async function on_help_about(): Promise<void> {
+    await _alert('Silkweaver Game Engine IDE\nVersion 0.2.0\nGPL-3.0')
 }
 
 // =========================================================================
@@ -190,6 +347,7 @@ function _set_project(state: project_state, _dir: FileSystemDirectoryHandle | nu
     status_set_unsaved(false)
     _tree.load(state)
     document.title = `${state.name} — Silkweaver IDE`
+    undo_clear()
 }
 
 function _mark_unsaved(): void {

@@ -2,18 +2,21 @@
     "name": "silkweaver",
     "version": "0.1.0",
     "description": "A GMS 1.4 inspired web game engine and IDE using modern TypeScript, along with some other cool stuff :3",
-    "main": "./exports/engine.js",
+    "main": "./exports/electron/main.js",
     "directories": {
         "doc": "docs"
     },
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",
-        "build:engine": "esbuild ./packages/engine/src/index.ts --bundle --outfile=exports/engine.js --format=esm",
+        "build:engine": "esbuild ./packages/engine/src/index.ts --bundle --outfile=exports/engine.js --format=esm --external:matter-js",
         "build:ide": "esbuild ./packages/ide/src/index.ts --bundle --outfile=exports/ide.js --format=esm",
         "build:installer": "esbuild ./packages/installer/src/index.ts --bundle --outfile=exports/installer.js --format=esm",
+        "build:electron": "tsc -p ./packages/electron/tsconfig.json && esbuild ./packages/electron/src/preload.ts --bundle --outfile=exports/electron/preload.cjs --format=cjs --platform=node --external:electron",
         "build": "npm run build:engine && npm run build:ide && npm run build:installer",
         "watch:engine": "esbuild ./packages/engine/src/index.ts --bundle --outfile=exports/engine.js --format=esm --watch",
-        "watch": "npm run build -- --watch"
+        "watch": "npm run build -- --watch",
+        "electron": "npm run build:ide && npm run build:electron && electron .",
+        "electron:dev": "npm run build:electron && electron ."
     },
     "repository": {
         "type": "git",
@@ -37,7 +40,9 @@
         "./packages/*"
     ],
     "devDependencies": {
+        "@electron/packager": "^19.0.5",
         "@types/matter-js": "^0.20.2",
+        "electron": "^40.4.1",
         "esbuild": "^0.27.2",
         "typescript": "^5.9.3"
     },
