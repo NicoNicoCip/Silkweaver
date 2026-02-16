@@ -1,0 +1,8 @@
+{
+    "name": "@silkweaver/ide",
+    "version": "0.1.0",
+    "description": "Silkweaver browser-based IDE",
+    "type": "module",
+    "main": "./src/index.ts",
+    "license": "GPL-3.0"
+}

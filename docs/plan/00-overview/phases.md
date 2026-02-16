@@ -57,50 +57,50 @@ Development organized **by feature area**, starting with engine core.
 - [x] Views and cameras
 
 ## Phase 10: Physics System
-- [ ] Matter.js integration
-- [ ] Fixture system
-- [ ] Body functions
-- [ ] Joints
-- [ ] Physics events
+- [x] Matter.js integration
+- [x] Fixture system
+- [x] Body functions
+- [x] Joints
+- [x] Physics events
 
 ## Phase 11: Networking
-- [ ] Buffer system
-- [ ] WebSocket client (TCP-like)
-- [ ] WebRTC client (UDP-like)
-- [ ] HTTP functions
+- [x] Buffer system
+- [x] WebSocket client (TCP-like)
+- [x] WebRTC client (UDP-like)
+- [x] HTTP functions
 
 ## Phase 12: Paths & Timelines
-- [ ] Path system
-- [ ] Timeline system
-- [ ] Named timer system
+- [x] Path system
+- [x] Timeline system
+- [x] Named timer system
 
 ## Phase 13: Particles
-- [ ] Particle types
-- [ ] Particle emitters
-- [ ] Particle regions
+- [x] Particle types
+- [x] Particle emitters
+- [x] Particle regions
 
 ## Phase 14: 3D System
-- [ ] Basic 3D primitives
-- [ ] 3D transforms
-- [ ] Lighting
-- [ ] Model loading (glTF, OBJ)
+- [x] Basic 3D primitives
+- [x] 3D transforms
+- [x] Lighting
+- [x] Model loading (glTF, OBJ)
 
 ## Phase 15: Math & Utilities
-- [ ] Math functions
-- [ ] Random number generation
-- [ ] String functions
-- [ ] Regex functions
+- [x] Math functions
+- [x] Random number generation
+- [x] String functions
+- [x] Regex functions
 
 ## Phase 16: IDE Core
-- [ ] Basic IDE shell
-- [ ] Project management
-- [ ] Resource tree
-- [ ] Tab system
+- [x] Basic IDE shell
+- [x] Project management
+- [x] Resource tree
+- [x] Tab system
 
 ## Phase 17: IDE Script Editor
-- [ ] Monaco integration
-- [ ] GML IntelliSense
-- [ ] Error highlighting
+- [x] Monaco integration
+- [x] GML IntelliSense
+- [x] Error highlighting
 
 ## Phase 18: IDE Editors (Part 1)
 - [ ] Sprite editor
