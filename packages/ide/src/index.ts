@@ -8,7 +8,7 @@ import { menubar_default }                                           from './men
 import { status_bar_create, status_set_project, status_set_unsaved } from './status_bar.js'
 import { ResourceTree }                                              from './resource_tree.js'
 import type { open_resource_event, resource_category }               from './resource_tree.js'
-import { project_new, project_open, project_save, project_set_dir, project_set_folder, project_get_dir, project_has_folder }  from './services/project.js'
+import { project_new, project_open, project_open_last, project_save, project_set_dir, project_set_folder, project_get_dir, project_has_folder, project_get_folder_path, project_get_last_folder }  from './services/project.js'
 import type { project_state }                                         from './services/project.js'
 import { undo_push, undo_undo, undo_redo, undo_clear }               from './services/undo.js'
 import { script_editor_open, script_editor_open_smart } from './editors/script_editor.js'
@@ -20,7 +20,8 @@ import { background_editor_open }  from './editors/background_editor.js'
 import { font_editor_open }        from './editors/font_editor.js'
 import { path_editor_open }        from './editors/path_editor.js'
 import { timeline_editor_open }    from './editors/timeline_editor.js'
-import { preview_play, preview_stop, preview_reload }                from './panels/game_preview.js'
+import { settings_editor_open }   from './editors/settings_editor.js'
+import { preview_open, preview_play, preview_stop, preview_reload }  from './panels/game_preview.js'
 import { console_open, console_write }                               from './panels/console_panel.js'
 import { debugger_open, debugger_show_hit }                          from './panels/debugger_panel.js'
 import { profiler_open }                                             from './panels/profiler_panel.js'
@@ -138,6 +139,12 @@ function boot(): void {
         res_add_timeline:      () => on_add_resource('timelines'),
         res_add_object:        () => on_add_resource('objects'),
         res_add_room:          () => on_add_resource('rooms'),
+        edit_game_settings:    on_edit_game_settings,
+        view_resources:        () => _tree.show(),
+        view_console:          () => console_open(_workspace),
+        view_debugger:         () => debugger_open(_workspace),
+        view_profiler:         () => profiler_open(_workspace),
+        view_preview:          () => preview_open(_workspace),
         run_play:              on_run_play,
         run_stop:              on_run_stop,
         run_build:             on_run_build,
@@ -167,8 +174,11 @@ function boot(): void {
         if (e.key === 'F5' && !e.ctrlKey) { e.preventDefault(); on_run_play() }
         if (e.key === 'F5' &&  e.ctrlKey) { e.preventDefault(); on_run_build() }
         if (e.key === 'F8')               { e.preventDefault(); bp_resume(); console_write('system', '[IDE] Resumed.') }
-        if (e.key === 'F10')              { e.preventDefault(); profiler_open(_workspace) }
         if (e.key === 'F9')               { e.preventDefault(); debugger_open(_workspace) }
+        if (e.key === 'F10')              { e.preventDefault(); profiler_open(_workspace) }
+        if (e.key === 'F11')              { e.preventDefault(); preview_open(_workspace) }
+        if (e.ctrlKey && e.key === 'r')   { e.preventDefault(); _tree.show() }
+        if (e.ctrlKey && e.shiftKey && e.key === 'P') { e.preventDefault(); on_edit_game_settings() }
     })
 
     // 8. Register global breakpoint-hit handler
@@ -177,8 +187,16 @@ function boot(): void {
         console_write('warn', `[Debugger] Break at ${file}:${line}`)
     })
 
-    // 9. Load a blank project initially
-    _set_project(project_new(), null)
+    // 9. Try to reopen the last project; fall back to a blank one
+    project_open_last().then(result => {
+        if (result) {
+            _set_project(result.state, null)
+            console_open(_workspace)
+            console_write('system', `[IDE] Reopened: ${result.state.name}`)
+        } else {
+            _set_project(project_new(), null)
+        }
+    })
 }
 
 // =========================================================================
@@ -312,8 +330,16 @@ async function _open_script(name: string): Promise<void> {
 // Run actions
 // =========================================================================
 
-function on_run_play(): void {
+async function on_run_play(): Promise<void> {
+    if (!_project) {
+        await _alert('No project open.\n\nUse File → Open Project to open a project first.')
+        return
+    }
     console_open(_workspace)
+    // In Electron: always build first so the preview always has the latest code
+    if ((window as any).swfs?.build_game) {
+        await on_run_build()
+    }
     preview_play(_workspace)
     console_write('system', '[IDE] Running game… (F8=Resume, F9=Debugger, F10=Profiler)')
 }
@@ -325,8 +351,59 @@ function on_run_stop(): void {
 
 async function on_run_build(): Promise<void> {
     console_open(_workspace)
-    console_write('system', '[IDE] Build triggered (external bundler required).')
-    // After a build the preview reloads automatically on the next Ctrl+S / hot reload
+
+    if (!_project) {
+        console_write('warn', '[IDE] No project open.')
+        return
+    }
+
+    const swfs = (window as any).swfs
+    if (!swfs?.build_game) {
+        console_write('warn', '[IDE] Build is only available in the Electron app.')
+        return
+    }
+
+    // Resolve folder: in-memory path → localStorage fallback → prompt
+    let folder = project_get_folder_path() ?? project_get_last_folder()
+    if (folder) {
+        // Folder known — restore it if it wasn't set in memory, then save
+        project_set_folder(folder)
+        try { await project_save(_project); _mark_saved() } catch { /* ignore */ }
+    } else {
+        // No folder at all — ask via save dialog
+        try {
+            await project_save(_project)
+            _mark_saved()
+        } catch {
+            console_write('warn', '[IDE] No project folder — save cancelled.')
+            return
+        }
+        folder = project_get_folder_path()
+    }
+
+    if (!folder) {
+        console_write('warn', '[IDE] No project folder set.')
+        return
+    }
+
+    console_write('system', '[IDE] Building game…')
+    const result: { ok: boolean; error?: string } = await swfs.build_game(folder)
+    if (result.ok) {
+        console_write('system', '[IDE] Build complete. Press Play to run.')
+        preview_reload()
+    } else {
+        console_write('warn', `[IDE] Build failed:\n${result.error}`)
+    }
+}
+
+// =========================================================================
+// Edit actions
+// =========================================================================
+
+function on_edit_game_settings(): void {
+    if (!_project) { _alert('Open a project first.'); return }
+    const room_names = Object.keys(_project.resources.rooms)
+    settings_editor_open(_workspace, _project, room_names, _mark_unsaved)
 }
 
 // =========================================================================

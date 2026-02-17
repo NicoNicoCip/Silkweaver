@@ -1,42 +1,24 @@
 "use strict";
-var __create = Object.create;
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
 
 // packages/electron/src/preload.ts
 var import_electron = require("electron");
-var path = __toESM(require("node:path"), 1);
 import_electron.contextBridge.exposeInMainWorld("swfs", {
   /**
    * Open a folder picker dialog.
    * @param mode - 'open' or 'save'
    * @returns Absolute path of the chosen folder, or null if cancelled.
    */
-  pick_folder: (mode) => import_electron.ipcRenderer.invoke("sw:pick-folder", mode),
+  pick_folder: (mode, defaultPath) => import_electron.ipcRenderer.invoke("sw:pick-folder", mode, defaultPath),
   /**
    * Read a text file.
    * @param abs_path - Absolute path
    */
   read_file: (abs_path) => import_electron.ipcRenderer.invoke("sw:read-file", abs_path),
+  /**
+   * Read a binary file and return it as a Base64 string.
+   * @param abs_path - Absolute path
+   */
+  read_file_base64: (abs_path) => import_electron.ipcRenderer.invoke("sw:read-file-base64", abs_path),
   /**
    * Write a text file (creates parent dirs automatically).
    * @param abs_path - Absolute path
@@ -56,6 +38,15 @@ import_electron.contextBridge.exposeInMainWorld("swfs", {
    * Check if a path exists.
    */
   exists: (abs_path) => import_electron.ipcRenderer.invoke("sw:exists", abs_path),
-  /** Path join helper (avoids shipping path module to renderer) */
-  join: (...parts) => path.join(...parts)
+  /** Path join helper (pure JS, no node:path needed in sandbox) */
+  join: (...parts) => {
+    const sep = parts[0]?.includes("\\") ? "\\" : "/";
+    return parts.join(sep).replace(/[/\\]+/g, sep);
+  },
+  /**
+   * Build the game from the given project folder path into exports/game.js.
+   * @param project_folder - Absolute path to the project folder
+   * @returns { ok: true } or { ok: false, error: string }
+   */
+  build_game: (project_folder) => import_electron.ipcRenderer.invoke("sw:build-game", project_folder)
 });

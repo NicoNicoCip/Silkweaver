@@ -11,6 +11,7 @@ import { font_renderer, font_resource } from './font.js'
 import { color_to_rgb_normalized, bm_normal } from './color.js'
 import type { sprite } from './sprite.js'
 import { set_draw_sprite_ext } from '../core/instance.js'
+import { set_frame_hooks } from '../core/game_loop.js'
 
 /** Surface (render-to-texture target). Created by surface_create(). */
 export interface surface {
@@ -91,6 +92,12 @@ export class renderer {
 
         // Register draw_sprite_ext with the instance system so draw_self() works
         set_draw_sprite_ext(this.draw_sprite_ext.bind(this))
+
+        // Hook the game loop so it clears + flushes the renderer every frame
+        set_frame_hooks(
+            () => this.begin_frame(),
+            () => this.end_frame(),
+        )
     }
 
     // =========================================================================

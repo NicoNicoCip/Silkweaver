@@ -5,6 +5,20 @@ import { mouse_manager } from "../input/mouse.js"
 import { gamepad_manager } from "../input/gamepad.js"
 import { touch_manager } from "../input/touch.js"
 
+/** Injected by renderer.init() — called at the start of every draw frame. */
+let _begin_frame: (() => void) | null = null
+/** Injected by renderer.init() — called at the end of every draw frame. */
+let _end_frame:   (() => void) | null = null
+
+/**
+ * Registers frame begin/end callbacks from the renderer.
+ * Must be called from renderer.init() before the loop starts.
+ */
+export function set_frame_hooks(begin: () => void, end: () => void): void {
+    _begin_frame = begin
+    _end_frame   = end
+}
+
 /**
  * Core game loop that handles update and draw cycles.
  * Uses a fixed timestep for updates and runs drawing once per frame.
@@ -108,10 +122,13 @@ export abstract class game_loop {
     /**
      * Runs all draw events in GMS order.
      * Called once per frame after all updates have completed.
+     * begin_frame clears the canvas; end_frame flushes the batch.
      */
     private static draw(): void {
+        _begin_frame?.()
         this.draw_events.get(EVENT_TYPE.draw)?.forEach(e => e.run())
         this.draw_events.get(EVENT_TYPE.draw_gui)?.forEach(e => e.run())
+        _end_frame?.()
     }
 
     /**

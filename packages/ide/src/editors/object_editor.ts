@@ -184,8 +184,8 @@ class object_editor_window {
         sprite_btn.className = 'sw-btn'
         sprite_btn.style.cssText = 'font-size:10px; padding:2px 6px;'
         sprite_btn.textContent = 'Choose'
-        sprite_btn.addEventListener('click', () => {
-            const name = prompt('Sprite name:', this._data.sprite_name)
+        sprite_btn.addEventListener('click', async () => {
+            const name = await _input_overlay('Sprite name:', this._data.sprite_name)
             if (name === null) return
             this._data.sprite_name = name
             sprite_lbl.textContent = name || '(none)'
@@ -215,8 +215,8 @@ class object_editor_window {
         parent_btn.className = 'sw-btn'
         parent_btn.style.cssText = 'font-size:10px; padding:2px 6px;'
         parent_btn.textContent = 'Choose'
-        parent_btn.addEventListener('click', () => {
-            const name = prompt('Parent object name:', this._data.parent_name)
+        parent_btn.addEventListener('click', async () => {
+            const name = await _input_overlay('Parent object name:', this._data.parent_name)
             if (name === null) return
             this._data.parent_name = name
             parent_lbl.textContent = name || '(none)'
@@ -426,6 +426,37 @@ class object_editor_window {
 // =========================================================================
 // Helpers
 // =========================================================================
+
+function _input_overlay(msg: string, def: string): Promise<string | null> {
+    return new Promise(resolve => {
+        const overlay = document.createElement('div')
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;'
+        const box = document.createElement('div')
+        box.style.cssText = 'background:#2b2b2b;border:1px solid #555;border-radius:4px;padding:18px 20px;min-width:300px;font-family:sans-serif;color:#ccc;font-size:13px;display:flex;flex-direction:column;gap:10px;'
+        box.innerHTML = `<p style="margin:0;">${msg.replace(/</g,'&lt;')}</p>`
+        const inp = document.createElement('input')
+        inp.value = def
+        inp.style.cssText = 'padding:5px 8px;background:#3c3c3c;border:1px solid #555;color:#ddd;font-size:13px;border-radius:3px;outline:none;'
+        const btns = document.createElement('div')
+        btns.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;'
+        const ok_btn     = document.createElement('button')
+        ok_btn.textContent = 'OK'
+        ok_btn.style.cssText = 'padding:4px 20px;cursor:pointer;'
+        const cancel_btn = document.createElement('button')
+        cancel_btn.textContent = 'Cancel'
+        cancel_btn.style.cssText = 'padding:4px 20px;cursor:pointer;'
+        btns.append(ok_btn, cancel_btn)
+        box.append(inp, btns)
+        overlay.appendChild(box)
+        document.body.appendChild(overlay)
+        const ok = () => { overlay.remove(); resolve(inp.value) }
+        const cancel = () => { overlay.remove(); resolve(null) }
+        ok_btn.addEventListener('click', ok)
+        cancel_btn.addEventListener('click', cancel)
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') ok(); if (e.key === 'Escape') cancel() })
+        setTimeout(() => { inp.focus(); inp.select() }, 10)
+    })
+}
 
 function _section_header(text: string): HTMLElement {
     const el = document.createElement('div')

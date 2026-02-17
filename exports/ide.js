@@ -86,7 +86,10 @@ html, body {
 }
 .sw-menu-item.open .sw-dropdown { display: block; }
 .sw-dropdown-item {
-    padding: 5px 16px;
+    display: flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 16px;
     cursor: pointer;
     color: var(--sw-text);
     white-space: nowrap;
@@ -132,6 +135,8 @@ html, body {
     min-height: 60px;
 }
 .sw-window.minimized .sw-window-body { display: none; }
+.sw-window.minimized .sw-resize { display: none; }
+.sw-window.minimized { min-height: 0 !important; overflow: hidden; }
 .sw-window-titlebar {
     height: var(--sw-titlebar-h);
     background: var(--sw-chrome2);
@@ -571,6 +576,56 @@ html, body {
 .sw-dbg-obj  { color: #dcdcaa; }
 .sw-dbg-empty { padding: 8px 12px; color: var(--sw-text-dim); font-style: italic; font-size: 11px; }
 
+/* \u2500\u2500 Resource Tree \u2500\u2500 */
+.sw-tree-arrow {
+    display: inline-block;
+    width: 14px;
+    flex-shrink: 0;
+    font-size: 14px;
+    line-height: 1;
+    color: var(--sw-text-dim);
+    transition: transform 0.12s ease;
+    transform-origin: center 55%;
+    text-align: center;
+}
+.sw-tree-arrow.open {
+    transform: rotate(90deg);
+}
+.sw-tree-cat-glyph {
+    display: inline-block;
+    width: 14px;
+    flex-shrink: 0;
+    font-size: 11px;
+    line-height: 1;
+    text-align: center;
+    color: var(--sw-text-dim);
+}
+.sw-tree-item-glyph {
+    display: inline-block;
+    width: 16px;
+    flex-shrink: 0;
+    font-size: 11px;
+    line-height: 1;
+    text-align: center;
+    color: var(--sw-text-dim);
+}
+.sw-tree-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--sw-text-dim);
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+}
+.sw-tree-btn:hover { color: var(--sw-text); background: rgba(255,255,255,0.1); }
+
 /* \u2500\u2500 Profiler Panel \u2500\u2500 */
 .sw-prof-section {
     background: var(--sw-chrome2);
@@ -692,6 +747,15 @@ function menubar_default(actions) {
       ]
     },
     {
+      label: "Edit",
+      items: [
+        { label: "Undo", shortcut: "Ctrl+Z", disabled: true },
+        { label: "Redo", shortcut: "Ctrl+Y", disabled: true },
+        { separator: true },
+        { label: "Game Settings\u2026", shortcut: "Ctrl+Shift+P", action: actions.edit_game_settings }
+      ]
+    },
+    {
       label: "Resource",
       items: [
         { label: "Add Sprite", action: actions.res_add_sprite },
@@ -704,6 +768,17 @@ function menubar_default(actions) {
         { separator: true },
         { label: "Add Object", action: actions.res_add_object },
         { label: "Add Room", action: actions.res_add_room }
+      ]
+    },
+    {
+      label: "View",
+      items: [
+        { label: "Resources", shortcut: "Ctrl+R", action: actions.view_resources },
+        { separator: true },
+        { label: "Console", shortcut: "Ctrl+`", action: actions.view_console },
+        { label: "Debugger", shortcut: "F9", action: actions.view_debugger },
+        { label: "Profiler", shortcut: "F10", action: actions.view_profiler },
+        { label: "Game Preview", shortcut: "F11", action: actions.view_preview }
       ]
     },
     {
@@ -840,8 +915,13 @@ var FloatingWindow = class {
       this.el.style.left = saved.x + "px";
       this.el.style.top = saved.y + "px";
       this.el.style.width = saved.w + "px";
-      this.el.style.height = saved.h + "px";
-      if (saved.minimized) this.el.classList.add("minimized");
+      if (saved.minimized) {
+        this.el.classList.add("minimized");
+        this.el.dataset.prevH = saved.h + "px";
+        this.el.style.height = "var(--sw-titlebar-h)";
+      } else {
+        this.el.style.height = saved.h + "px";
+      }
     }
   }
   // ── Public API ────────────────────────────────────────────────────────
@@ -866,7 +946,13 @@ var FloatingWindow = class {
   /** Toggle minimized state (collapse to title bar). */
   toggle_minimize() {
     this._maximized = false;
-    this.el.classList.toggle("minimized");
+    const is_min = this.el.classList.toggle("minimized");
+    if (is_min) {
+      this.el.dataset.prevH = this.el.style.height;
+      this.el.style.height = "var(--sw-titlebar-h)";
+    } else {
+      this.el.style.height = this.el.dataset.prevH ?? this.el.style.height;
+    }
     this._persist();
   }
   /** Toggle maximized state (fill workspace). */
@@ -998,183 +1084,11 @@ function _make_btn(label, cls, cb) {
   return btn;
 }
 
-// packages/ide/src/resource_tree.ts
-var CATEGORIES = [
-  { id: "sprites", label: "Sprites", icon: "icons/sprite.svg" },
-  { id: "sounds", label: "Sounds", icon: "icons/sound.svg" },
-  { id: "backgrounds", label: "Backgrounds", icon: "icons/background.svg" },
-  { id: "paths", label: "Paths", icon: "icons/path.svg" },
-  { id: "scripts", label: "Scripts", icon: "icons/script.svg" },
-  { id: "fonts", label: "Fonts", icon: "icons/font.svg" },
-  { id: "timelines", label: "Timelines", icon: "icons/timeline.svg" },
-  { id: "objects", label: "Objects", icon: "icons/object.svg" },
-  { id: "rooms", label: "Rooms", icon: "icons/room.svg" }
-];
-var ResourceTree = class {
-  constructor() {
-    this._state = null;
-    this._category_els = /* @__PURE__ */ new Map();
-    this._expanded = /* @__PURE__ */ new Set();
-    // Callbacks
-    this.on_add_resource = () => {
-    };
-    this.on_delete_resource = () => {
-    };
-    this.on_rename_resource = () => {
-    };
-    this._win = new FloatingWindow(
-      "resource-tree",
-      "Resources",
-      "icons/folder.svg",
-      { x: 8, y: 8, w: 220, h: 500 }
-    );
-    const container = document.createElement("div");
-    container.style.cssText = "overflow-y:auto; height:100%; padding:4px 0;";
-    for (const cat of CATEGORIES) {
-      container.appendChild(this._build_category(cat));
-    }
-    this._win.body.appendChild(container);
-  }
-  // ── Public API ────────────────────────────────────────────────────────
-  /** Mount the resource tree window to the workspace. */
-  mount(parent) {
-    this._win.mount(parent);
-  }
-  /** Populate the tree from a loaded project state. */
-  load(state) {
-    this._state = state;
-    this._refresh_all();
-  }
-  /** Add a resource entry to the tree. */
-  add_resource(cat, name) {
-    if (!this._state) return;
-    this._state.resources[cat][name] = { name };
-    this._refresh_category(cat);
-  }
-  /** Remove a resource entry from the tree. */
-  remove_resource(cat, name) {
-    if (!this._state) return;
-    delete this._state.resources[cat][name];
-    this._refresh_category(cat);
-  }
-  // ── Build ─────────────────────────────────────────────────────────────
-  _build_category(cat) {
-    const wrapper = document.createElement("div");
-    const header = document.createElement("div");
-    header.style.cssText = `
-            display:flex; align-items:center; gap:5px;
-            padding:3px 6px 3px 8px;
-            cursor:pointer;
-            color:var(--sw-text);
-            background:var(--sw-chrome2);
-            border-bottom:1px solid var(--sw-border2);
-        `;
-    header.style.userSelect = "none";
-    const folder_icon = document.createElement("img");
-    folder_icon.src = "icons/folder.svg";
-    folder_icon.style.cssText = "width:14px;height:14px;flex-shrink:0;";
-    const cat_icon = document.createElement("img");
-    cat_icon.src = cat.icon;
-    cat_icon.style.cssText = "width:14px;height:14px;flex-shrink:0;";
-    const label = document.createElement("span");
-    label.textContent = cat.label;
-    label.style.cssText = "flex:1; font-size:12px;";
-    const add_btn = _icon_btn("icons/add.svg", "Add", () => {
-      this.on_add_resource(cat.id);
-    });
-    header.append(folder_icon, cat_icon, label, add_btn);
-    const list = document.createElement("div");
-    list.style.cssText = "display:none;";
-    this._category_els.set(cat.id, list);
-    header.addEventListener("click", (e) => {
-      if (e.target.closest(".sw-icon-btn")) return;
-      const is_open = list.style.display !== "none";
-      list.style.display = is_open ? "none" : "block";
-      folder_icon.src = is_open ? "icons/folder.svg" : "icons/folder_open.svg";
-      if (is_open) this._expanded.delete(cat.id);
-      else this._expanded.add(cat.id);
-    });
-    wrapper.append(header, list);
-    return wrapper;
-  }
-  _refresh_all() {
-    for (const cat of CATEGORIES) {
-      this._refresh_category(cat.id);
-    }
-  }
-  _refresh_category(cat_id) {
-    const list = this._category_els.get(cat_id);
-    if (!list || !this._state) return;
-    list.innerHTML = "";
-    const resources = this._state.resources[cat_id];
-    for (const name of Object.keys(resources).sort()) {
-      list.appendChild(this._build_item(cat_id, name));
-    }
-  }
-  _build_item(cat_id, name) {
-    const row = document.createElement("div");
-    row.style.cssText = `
-            display:flex; align-items:center; gap:5px;
-            padding:2px 6px 2px 28px;
-            cursor:pointer;
-        `;
-    row.style.userSelect = "none";
-    const cat_def = CATEGORIES.find((c) => c.id === cat_id);
-    const icon = document.createElement("img");
-    icon.src = cat_def.icon;
-    icon.style.cssText = "width:14px;height:14px;flex-shrink:0;";
-    const label = document.createElement("span");
-    label.textContent = name;
-    label.style.cssText = "flex:1; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;";
-    const del_btn = _icon_btn("icons/delete.svg", "Delete", (e) => {
-      e.stopPropagation();
-      this.on_delete_resource(cat_id, name);
-    });
-    del_btn.style.display = "none";
-    row.append(icon, label, del_btn);
-    row.addEventListener("mouseenter", () => {
-      del_btn.style.display = "";
-    });
-    row.addEventListener("mouseleave", () => {
-      del_btn.style.display = "none";
-    });
-    row.addEventListener("mouseenter", () => {
-      row.style.background = "var(--sw-select-bg)";
-    });
-    row.addEventListener("mouseleave", () => {
-      row.style.background = "";
-    });
-    row.addEventListener("dblclick", () => {
-      const event = new CustomEvent("sw:open_resource", {
-        bubbles: true,
-        detail: { category: cat_id, name }
-      });
-      document.dispatchEvent(event);
-    });
-    return row;
-  }
-};
-function _icon_btn(icon_src, title, cb) {
-  const btn = document.createElement("button");
-  btn.className = "sw-icon-btn";
-  btn.title = title;
-  btn.style.cssText = `
-        background:none; border:none; cursor:pointer;
-        padding:1px; display:flex; align-items:center;
-        flex-shrink:0;
-    `;
-  const img = document.createElement("img");
-  img.src = icon_src;
-  img.style.cssText = "width:12px;height:12px;";
-  btn.appendChild(img);
-  btn.addEventListener("click", cb);
-  return btn;
-}
-
 // packages/ide/src/services/project.ts
 var _el = () => window.swfs;
 var _has_electron = () => !!_el();
 var _has_fsapi = typeof window.showDirectoryPicker === "function";
+var LAST_FOLDER_KEY = "sw_last_project_folder";
 var _folder_path = null;
 var _dir_handle = null;
 function project_new() {
@@ -1186,7 +1100,8 @@ function project_new() {
       roomSpeed: 60,
       windowWidth: 640,
       windowHeight: 480,
-      startRoom: ""
+      startRoom: "",
+      displayColor: "#000000"
     },
     resources: {
       sprites: {},
@@ -1222,6 +1137,56 @@ function project_set_dir(dir) {
 }
 function project_set_folder(path) {
   _folder_path = path;
+  if (path) localStorage.setItem(LAST_FOLDER_KEY, path);
+  else localStorage.removeItem(LAST_FOLDER_KEY);
+}
+function project_get_folder_path() {
+  return _folder_path;
+}
+function project_get_last_folder() {
+  return localStorage.getItem(LAST_FOLDER_KEY);
+}
+async function project_open_last() {
+  if (!_has_electron()) return null;
+  const folder = localStorage.getItem(LAST_FOLDER_KEY);
+  if (!folder) return null;
+  const fs = _el();
+  const proj_path = fs.join(folder, "project.json");
+  try {
+    const exists = await fs.exists(proj_path);
+    if (!exists) return null;
+    const text = await fs.read_file(proj_path);
+    const state = JSON.parse(text);
+    _folder_path = folder;
+    return { state, dir: null };
+  } catch {
+    return null;
+  }
+}
+async function project_read_binary_url(rel_path) {
+  if (_has_electron()) {
+    const fs = _el();
+    if (!_folder_path) throw new Error("No project folder open");
+    const base64 = await fs.read_file_base64(fs.join(_folder_path, ...rel_path.split("/")));
+    const ext = rel_path.split(".").pop()?.toLowerCase() ?? "png";
+    const mime = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "gif" ? "image/gif" : "image/png";
+    return `data:${mime};base64,${base64}`;
+  }
+  const dir = _dir_handle;
+  if (!dir) throw new Error("No project directory open");
+  const parts = rel_path.split("/");
+  let current = dir;
+  for (let i = 0; i < parts.length - 1; i++) {
+    current = await current.getDirectoryHandle(parts[i], { create: false });
+  }
+  const fh = await current.getFileHandle(parts[parts.length - 1]);
+  const file = await fh.getFile();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 async function project_read_file(rel_path) {
   if (_has_electron()) {
@@ -1285,9 +1250,11 @@ function project_has_folder() {
 }
 async function _open_electron() {
   const fs = _el();
-  const folder = await fs.pick_folder("open");
+  const last = localStorage.getItem(LAST_FOLDER_KEY) ?? void 0;
+  const folder = await fs.pick_folder("open", last);
   if (!folder) return null;
   _folder_path = folder;
+  localStorage.setItem(LAST_FOLDER_KEY, folder);
   const proj_path = fs.join(folder, "project.json");
   let state;
   try {
@@ -1302,9 +1269,11 @@ async function _open_electron() {
 async function _save_electron(state) {
   const fs = _el();
   if (!_folder_path) {
-    const folder = await fs.pick_folder("save");
+    const last = localStorage.getItem(LAST_FOLDER_KEY) ?? void 0;
+    const folder = await fs.pick_folder("save", last);
     if (!folder) throw new Error("No project folder selected");
     _folder_path = folder;
+    localStorage.setItem(LAST_FOLDER_KEY, folder);
   }
   await fs.write_file(fs.join(_folder_path, "project.json"), JSON.stringify(state, null, 2));
 }
@@ -1367,6 +1336,253 @@ function _save_fallback(state) {
   a.download = "project.json";
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// packages/ide/src/resource_tree.ts
+var CATEGORIES = [
+  { id: "sprites", label: "Sprites", glyph: "\u25A4" },
+  // ▤  image grid
+  { id: "sounds", label: "Sounds", glyph: "\u266A" },
+  // ♪  music note
+  { id: "backgrounds", label: "Backgrounds", glyph: "\u2588" },
+  // █  solid block
+  { id: "paths", label: "Paths", glyph: "\u2922" },
+  // ⤢  crossed arrows
+  { id: "scripts", label: "Scripts", glyph: "{" },
+  // {  brace
+  { id: "fonts", label: "Fonts", glyph: "A" },
+  //    letter A
+  { id: "timelines", label: "Timelines", glyph: "\u23F1" },
+  // ⏱  clock
+  { id: "objects", label: "Objects", glyph: "\u25CB" },
+  // ○  circle
+  { id: "rooms", label: "Rooms", glyph: "\u2395" }
+  // ⎕  rectangle
+];
+var ResourceTree = class {
+  constructor() {
+    this._workspace = null;
+    this._closed = false;
+    this._state = null;
+    this._category_els = /* @__PURE__ */ new Map();
+    this._arrows = /* @__PURE__ */ new Map();
+    this._expanded = /* @__PURE__ */ new Set();
+    // Callbacks
+    this.on_add_resource = () => {
+    };
+    this.on_delete_resource = () => {
+    };
+    this.on_rename_resource = () => {
+    };
+    this._win = new FloatingWindow(
+      "resource-tree",
+      "Resources",
+      null,
+      { x: 8, y: 8, w: 220, h: 500 }
+    );
+    this._win.on_close(() => {
+      this._closed = true;
+    });
+    this._container = document.createElement("div");
+    this._container.style.cssText = "overflow-y:auto; height:100%; padding:4px 0;";
+    for (const cat of CATEGORIES) {
+      this._container.appendChild(this._build_category(cat));
+    }
+    this._win.body.appendChild(this._container);
+  }
+  // ── Public API ────────────────────────────────────────────────────────
+  /** Mount the resource tree window to the workspace. */
+  mount(parent) {
+    this._workspace = parent;
+    this._closed = false;
+    this._win.mount(parent);
+  }
+  /**
+   * Show the resource tree. If it was closed, remounts it.
+   * If already open, brings it to the front.
+   */
+  show() {
+    if (!this._workspace) return;
+    if (this._closed) {
+      this._closed = false;
+      this._win.mount(this._workspace);
+    } else {
+      this._win.bring_to_front();
+    }
+  }
+  /** Populate the tree from a loaded project state. */
+  load(state) {
+    this._state = state;
+    this._refresh_all();
+  }
+  /** Add a resource entry to the tree. */
+  add_resource(cat, name) {
+    if (!this._state) return;
+    this._state.resources[cat][name] = { name };
+    this._refresh_category(cat);
+  }
+  /** Remove a resource entry from the tree. */
+  remove_resource(cat, name) {
+    if (!this._state) return;
+    delete this._state.resources[cat][name];
+    this._refresh_category(cat);
+  }
+  // ── Build ─────────────────────────────────────────────────────────────
+  _build_category(cat) {
+    const wrapper = document.createElement("div");
+    const header = document.createElement("div");
+    header.style.cssText = `
+            display:flex; align-items:center; gap:5px;
+            height:24px; padding:0 6px 0 8px;
+            cursor:pointer;
+            color:var(--sw-text);
+            background:var(--sw-chrome2);
+            border-bottom:1px solid var(--sw-border2);
+        `;
+    header.style.userSelect = "none";
+    const arrow = document.createElement("span");
+    arrow.className = "sw-tree-arrow";
+    arrow.textContent = "\u25B6";
+    this._arrows.set(cat.id, arrow);
+    const glyph = document.createElement("span");
+    glyph.className = "sw-tree-cat-glyph";
+    glyph.textContent = cat.glyph;
+    const label = document.createElement("span");
+    label.textContent = cat.label;
+    label.style.cssText = "flex:1; font-size:12px;";
+    const add_btn = _text_btn("+", "Add", () => {
+      this.on_add_resource(cat.id);
+    });
+    header.append(arrow, glyph, label, add_btn);
+    const list = document.createElement("div");
+    list.style.cssText = "display:none;";
+    this._category_els.set(cat.id, list);
+    header.addEventListener("click", (e) => {
+      if (e.target.closest(".sw-tree-btn")) return;
+      const is_open = list.style.display !== "none";
+      list.style.display = is_open ? "none" : "block";
+      if (is_open) {
+        arrow.classList.remove("open");
+        this._expanded.delete(cat.id);
+      } else {
+        arrow.classList.add("open");
+        this._expanded.add(cat.id);
+      }
+    });
+    wrapper.append(header, list);
+    return wrapper;
+  }
+  _refresh_all() {
+    for (const cat of CATEGORIES) {
+      this._refresh_category(cat.id);
+    }
+  }
+  _refresh_category(cat_id) {
+    const list = this._category_els.get(cat_id);
+    if (!list || !this._state) return;
+    list.innerHTML = "";
+    const resources = this._state.resources[cat_id];
+    for (const name of Object.keys(resources).sort()) {
+      list.appendChild(this._build_item(cat_id, name));
+    }
+  }
+  _build_item(cat_id, name) {
+    const row = document.createElement("div");
+    row.style.cssText = `
+            display:flex; align-items:center; gap:5px;
+            height:22px; padding:0 6px 0 28px;
+            cursor:pointer;
+        `;
+    row.style.userSelect = "none";
+    const icon_el = this._make_item_icon(cat_id, name);
+    const label = document.createElement("span");
+    label.textContent = name;
+    label.style.cssText = "flex:1; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;";
+    const del_btn = _text_btn("\xD7", "Delete", (e) => {
+      e.stopPropagation();
+      this.on_delete_resource(cat_id, name);
+    });
+    del_btn.style.display = "none";
+    row.append(icon_el, label, del_btn);
+    row.addEventListener("mouseenter", () => {
+      del_btn.style.display = "";
+      row.style.background = "var(--sw-select-bg)";
+    });
+    row.addEventListener("mouseleave", () => {
+      del_btn.style.display = "none";
+      row.style.background = "";
+    });
+    row.addEventListener("dblclick", () => {
+      const event = new CustomEvent("sw:open_resource", {
+        bubbles: true,
+        detail: { category: cat_id, name }
+      });
+      document.dispatchEvent(event);
+    });
+    return row;
+  }
+  /**
+   * Creates the icon element for an item row.
+   * Sprites: a 16×16 canvas showing the first frame thumbnail.
+   * All others: a span with the category glyph.
+   */
+  _make_item_icon(cat_id, name) {
+    const cat_def = CATEGORIES.find((c) => c.id === cat_id);
+    if (cat_id === "sprites" && this._state) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 16;
+      canvas.height = 16;
+      canvas.style.cssText = "width:16px;height:16px;flex-shrink:0;image-rendering:pixelated;";
+      const sprite = this._state.resources["sprites"][name];
+      const frames = sprite?.frames;
+      if (frames && frames.length > 0) {
+        const frame = frames[0];
+        const src = frame.data_url ?? null;
+        const draw = (url) => {
+          const img = new Image();
+          img.onload = () => {
+            const ctx = canvas.getContext("2d");
+            ctx.clearRect(0, 0, 16, 16);
+            ctx.drawImage(img, 0, 0, 16, 16);
+          };
+          img.src = url;
+        };
+        if (src) {
+          draw(src);
+        } else if (frame.name) {
+          const rel = `sprites/${name}/${frame.name}`;
+          project_read_binary_url(rel).then(draw).catch(() => {
+          });
+        }
+      } else {
+        _draw_placeholder(canvas);
+      }
+      return canvas;
+    }
+    const span = document.createElement("span");
+    span.className = "sw-tree-item-glyph";
+    span.textContent = cat_def.glyph;
+    return span;
+  }
+};
+function _text_btn(char, title, cb) {
+  const btn = document.createElement("button");
+  btn.className = "sw-tree-btn";
+  btn.title = title;
+  btn.textContent = char;
+  btn.addEventListener("click", cb);
+  return btn;
+}
+function _draw_placeholder(canvas) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const size = 4;
+  for (let y = 0; y < canvas.height; y += size) {
+    for (let x = 0; x < canvas.width; x += size) {
+      ctx.fillStyle = (x / size + y / size) % 2 === 0 ? "#555" : "#333";
+      ctx.fillRect(x, y, size, size);
+    }
+  }
 }
 
 // packages/ide/src/services/undo.ts
@@ -2170,14 +2386,34 @@ var sprite_editor_window = class {
     input.click();
   }
   _clear_frames() {
-    if (!confirm(`Clear all frames from "${this._sprite_name}"?`)) return;
-    this._stop_anim();
-    this._data.frames = [];
-    this._data.width = 0;
-    this._data.height = 0;
-    this._rebuild_frame_list();
-    this._clear_canvas();
-    this._save_meta();
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;";
+    const box = document.createElement("div");
+    box.style.cssText = "background:#2b2b2b;border:1px solid #555;border-radius:4px;padding:18px 20px;min-width:280px;font-family:sans-serif;color:#ccc;font-size:13px;display:flex;flex-direction:column;gap:10px;";
+    box.innerHTML = `<p style="margin:0;">Clear all frames from "<b>${this._sprite_name}</b>"?</p>`;
+    const btns = document.createElement("div");
+    btns.style.cssText = "display:flex;justify-content:flex-end;gap:8px;";
+    const ok_btn = document.createElement("button");
+    ok_btn.textContent = "Clear";
+    ok_btn.style.cssText = "padding:4px 20px;cursor:pointer;";
+    const cancel_btn = document.createElement("button");
+    cancel_btn.textContent = "Cancel";
+    cancel_btn.style.cssText = "padding:4px 20px;cursor:pointer;";
+    btns.append(ok_btn, cancel_btn);
+    box.appendChild(btns);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    ok_btn.addEventListener("click", () => {
+      overlay.remove();
+      this._stop_anim();
+      this._data.frames = [];
+      this._data.width = 0;
+      this._data.height = 0;
+      this._rebuild_frame_list();
+      this._clear_canvas();
+      this._save_meta();
+    });
+    cancel_btn.addEventListener("click", () => overlay.remove());
   }
   _rebuild_frame_list() {
     this._frame_list.innerHTML = "";
@@ -2356,11 +2592,18 @@ var sprite_editor_window = class {
       if (loaded.mask_h !== void 0) this._data.mask_h = loaded.mask_h;
       if (loaded.frames && loaded.frames.length > 0) {
         for (const f of loaded.frames) {
-          this._data.frames.push({ name: f.name, data_url: "" });
+          let data_url = "";
+          try {
+            data_url = await project_read_binary_url(`sprites/${this._sprite_name}/${f.name}`);
+          } catch {
+          }
+          this._data.frames.push({ name: f.name, data_url });
         }
       }
     } catch {
     }
+    if (this._data.width > 0) this._canvas.width = Math.min(192, this._data.width);
+    if (this._data.height > 0) this._canvas.height = Math.min(192, this._data.height);
     this._rebuild_frame_list();
     this._restart_anim();
   }
@@ -2544,8 +2787,8 @@ var object_editor_window = class {
     sprite_btn.className = "sw-btn";
     sprite_btn.style.cssText = "font-size:10px; padding:2px 6px;";
     sprite_btn.textContent = "Choose";
-    sprite_btn.addEventListener("click", () => {
-      const name = prompt("Sprite name:", this._data.sprite_name);
+    sprite_btn.addEventListener("click", async () => {
+      const name = await _input_overlay("Sprite name:", this._data.sprite_name);
       if (name === null) return;
       this._data.sprite_name = name;
       sprite_lbl.textContent = name || "(none)";
@@ -2573,8 +2816,8 @@ var object_editor_window = class {
     parent_btn.className = "sw-btn";
     parent_btn.style.cssText = "font-size:10px; padding:2px 6px;";
     parent_btn.textContent = "Choose";
-    parent_btn.addEventListener("click", () => {
-      const name = prompt("Parent object name:", this._data.parent_name);
+    parent_btn.addEventListener("click", async () => {
+      const name = await _input_overlay("Parent object name:", this._data.parent_name);
       if (name === null) return;
       this._data.parent_name = name;
       parent_lbl.textContent = name || "(none)";
@@ -2773,6 +3016,48 @@ var object_editor_window = class {
     });
   }
 };
+function _input_overlay(msg, def) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;";
+    const box = document.createElement("div");
+    box.style.cssText = "background:#2b2b2b;border:1px solid #555;border-radius:4px;padding:18px 20px;min-width:300px;font-family:sans-serif;color:#ccc;font-size:13px;display:flex;flex-direction:column;gap:10px;";
+    box.innerHTML = `<p style="margin:0;">${msg.replace(/</g, "&lt;")}</p>`;
+    const inp = document.createElement("input");
+    inp.value = def;
+    inp.style.cssText = "padding:5px 8px;background:#3c3c3c;border:1px solid #555;color:#ddd;font-size:13px;border-radius:3px;outline:none;";
+    const btns = document.createElement("div");
+    btns.style.cssText = "display:flex;justify-content:flex-end;gap:8px;";
+    const ok_btn = document.createElement("button");
+    ok_btn.textContent = "OK";
+    ok_btn.style.cssText = "padding:4px 20px;cursor:pointer;";
+    const cancel_btn = document.createElement("button");
+    cancel_btn.textContent = "Cancel";
+    cancel_btn.style.cssText = "padding:4px 20px;cursor:pointer;";
+    btns.append(ok_btn, cancel_btn);
+    box.append(inp, btns);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    const ok = () => {
+      overlay.remove();
+      resolve(inp.value);
+    };
+    const cancel = () => {
+      overlay.remove();
+      resolve(null);
+    };
+    ok_btn.addEventListener("click", ok);
+    cancel_btn.addEventListener("click", cancel);
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") ok();
+      if (e.key === "Escape") cancel();
+    });
+    setTimeout(() => {
+      inp.focus();
+      inp.select();
+    }, 10);
+  });
+}
 function _section_header(text) {
   const el = document.createElement("div");
   el.style.cssText = "font-size:10px; color:var(--sw-text-dim); text-transform:uppercase; letter-spacing:0.05em; margin-top:4px;";
@@ -4888,28 +5173,196 @@ var timeline_editor_window = class {
   }
 };
 
-// packages/ide/src/panels/game_preview.ts
+// packages/ide/src/editors/settings_editor.ts
 var _win = null;
-var _iframe = null;
-var _running = false;
-function preview_open(workspace) {
+function settings_editor_open(workspace, state, room_names, on_change) {
   if (_win) {
+    _win.body.innerHTML = "";
+    _build_ui(_win.body, state, room_names, on_change);
     _win.bring_to_front();
     return;
   }
   _win = new FloatingWindow(
+    "sw-settings",
+    "Game Settings",
+    null,
+    { x: 160, y: 60, w: 420, h: 480 }
+  );
+  _win.on_close(() => {
+    _win = null;
+  });
+  _build_ui(_win.body, state, room_names, on_change);
+  _win.mount(workspace);
+}
+function _build_ui(body, state, room_names, on_change) {
+  const root = document.createElement("div");
+  root.style.cssText = "padding:12px; overflow-y:auto; height:100%; display:flex; flex-direction:column; gap:16px;";
+  root.appendChild(_section2("Project", [
+    _field_text("Name", state.name, (v) => {
+      state.name = v;
+      on_change();
+    }),
+    _field_text("Version", state.version, (v) => {
+      state.version = v;
+      on_change();
+    }),
+    _field_text("Engine Version", state.engineVersion, null)
+    // read-only
+  ]));
+  root.appendChild(_section2("Display", [
+    _field_number("Window Width", state.settings.windowWidth, 1, 7680, (v) => {
+      state.settings.windowWidth = v;
+      on_change();
+    }),
+    _field_number("Window Height", state.settings.windowHeight, 1, 4320, (v) => {
+      state.settings.windowHeight = v;
+      on_change();
+    }),
+    _field_color("Background Color", state.settings.displayColor ?? "#000000", (v) => {
+      state.settings.displayColor = v;
+      on_change();
+    })
+  ]));
+  root.appendChild(_section2("Game", [
+    _field_number("Room Speed (FPS)", state.settings.roomSpeed, 1, 960, (v) => {
+      state.settings.roomSpeed = v;
+      on_change();
+    }),
+    _field_select(
+      "Start Room",
+      state.settings.startRoom,
+      room_names,
+      (v) => {
+        state.settings.startRoom = v;
+        on_change();
+      }
+    )
+  ]));
+  body.appendChild(root);
+}
+function _section2(title, fields) {
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "display:flex; flex-direction:column; gap:6px;";
+  const hdr = document.createElement("div");
+  hdr.textContent = title;
+  hdr.style.cssText = `
+        font-size:11px; font-weight:bold; text-transform:uppercase;
+        letter-spacing:0.5px; color:var(--sw-text-dim);
+        padding-bottom:4px; border-bottom:1px solid var(--sw-border2);
+    `;
+  wrap.appendChild(hdr);
+  fields.forEach((f) => wrap.appendChild(f));
+  return wrap;
+}
+function _row(label, control) {
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex; align-items:center; gap:8px;";
+  const lbl = document.createElement("label");
+  lbl.className = "sw-label";
+  lbl.textContent = label;
+  lbl.style.cssText += "min-width:140px; flex-shrink:0; margin:0;";
+  row.append(lbl, control);
+  return row;
+}
+function _field_text(label, value, on_input) {
+  const inp = document.createElement("input");
+  inp.className = "sw-input";
+  inp.type = "text";
+  inp.value = value;
+  inp.style.flex = "1";
+  if (!on_input) inp.readOnly = true;
+  else inp.addEventListener("input", () => on_input(inp.value));
+  return _row(label, inp);
+}
+function _field_number(label, value, min, max, on_change) {
+  const inp = document.createElement("input");
+  inp.className = "sw-input";
+  inp.type = "number";
+  inp.min = String(min);
+  inp.max = String(max);
+  inp.value = String(value);
+  inp.style.flex = "1";
+  inp.addEventListener("change", () => {
+    const n = Math.max(min, Math.min(max, Number(inp.value) || min));
+    inp.value = String(n);
+    on_change(n);
+  });
+  return _row(label, inp);
+}
+function _field_select(label, value, options, on_change) {
+  const sel = document.createElement("select");
+  sel.className = "sw-select";
+  sel.style.flex = "1";
+  if (options.length === 0) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "(no rooms defined)";
+    sel.appendChild(opt);
+  } else {
+    for (const name of options) {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      if (name === value) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  }
+  sel.addEventListener("change", () => on_change(sel.value));
+  return _row(label, sel);
+}
+function _field_color(label, value, on_change) {
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "display:flex; align-items:center; gap:6px; flex:1;";
+  const picker = document.createElement("input");
+  picker.type = "color";
+  picker.value = value;
+  picker.style.cssText = "width:32px; height:24px; border:none; cursor:pointer; background:none; padding:0;";
+  picker.addEventListener("input", () => {
+    hex.value = picker.value.toUpperCase();
+    on_change(picker.value);
+  });
+  const hex = document.createElement("input");
+  hex.className = "sw-input";
+  hex.type = "text";
+  hex.value = value.toUpperCase();
+  hex.maxLength = 7;
+  hex.style.cssText += "flex:1; font-family:Consolas,monospace; font-size:11px;";
+  hex.addEventListener("change", () => {
+    const v = hex.value.startsWith("#") ? hex.value : "#" + hex.value;
+    if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+      picker.value = v.toLowerCase();
+      hex.value = v.toUpperCase();
+      on_change(v.toLowerCase());
+    } else {
+      hex.value = picker.value.toUpperCase();
+    }
+  });
+  wrap.append(picker, hex);
+  return _row(label, wrap);
+}
+
+// packages/ide/src/panels/game_preview.ts
+var _win2 = null;
+var _iframe = null;
+var _running = false;
+function preview_open(workspace) {
+  if (_win2) {
+    _win2.bring_to_front();
+    return;
+  }
+  _win2 = new FloatingWindow(
     "sw-game-preview",
     "Game Preview",
     "icons/room.svg",
     { x: 300, y: 60, w: 640, h: 480 }
   );
-  _win.on_close(() => {
+  _win2.on_close(() => {
     _iframe = null;
-    _win = null;
+    _win2 = null;
     _running = false;
   });
-  _build_ui(workspace);
-  _win.mount(workspace);
+  _build_ui2(workspace);
+  _win2.mount(workspace);
 }
 function preview_play(workspace) {
   preview_open(workspace);
@@ -4924,9 +5377,9 @@ function preview_reload() {
   if (!_iframe || !_running) return;
   _load_game();
 }
-function _build_ui(workspace) {
-  if (!_win) return;
-  const body = _win.body;
+function _build_ui2(workspace) {
+  if (!_win2) return;
+  const body = _win2.body;
   body.style.cssText = "display:flex;flex-direction:column;overflow:hidden;";
   const toolbar = document.createElement("div");
   toolbar.className = "sw-editor-toolbar";
@@ -4966,43 +5419,46 @@ function _load_game() {
 }
 
 // packages/ide/src/panels/console_panel.ts
-var _win2 = null;
+var _win3 = null;
 var _list_el = null;
 var _entries = [];
 var _filter = /* @__PURE__ */ new Set(["log", "warn", "error", "info", "system"]);
 var _listener_attached2 = false;
 var MAX_ENTRIES = 500;
 function console_open(workspace) {
-  if (_win2) {
-    _win2.bring_to_front();
+  if (_win3) {
+    _win3.bring_to_front();
     return;
   }
-  _win2 = new FloatingWindow(
+  _win3 = new FloatingWindow(
     "sw-console",
     "Output",
     "icons/script.svg",
     { x: 0, y: 400, w: 700, h: 200 }
   );
-  _win2.on_close(() => {
-    _win2 = null;
+  _win3.on_close(() => {
+    _win3 = null;
     _list_el = null;
   });
-  _build_ui2();
-  _win2.mount(workspace);
+  _build_ui3();
+  _win3.mount(workspace);
   _render_all();
   _ensure_listener2();
 }
 function console_write(level, text) {
   _push({ level, text, time: _timestamp() });
   _ensure_listener2();
+  if (level === "error") console.error("[SW]", text);
+  else if (level === "warn") console.warn("[SW]", text);
+  else console.log("[SW]", text);
 }
 function console_clear() {
   _entries = [];
   if (_list_el) _list_el.innerHTML = "";
 }
-function _build_ui2() {
-  if (!_win2) return;
-  const body = _win2.body;
+function _build_ui3() {
+  if (!_win3) return;
+  const body = _win3.body;
   body.style.cssText = "display:flex;flex-direction:column;overflow:hidden;";
   const toolbar = document.createElement("div");
   toolbar.className = "sw-editor-toolbar";
@@ -5088,32 +5544,35 @@ function _ensure_listener2() {
       }
     }).join(" ");
     _push({ level, text, time: _timestamp() });
+    if (level === "error") console.error("[Game]", text);
+    else if (level === "warn") console.warn("[Game]", text);
+    else console.log("[Game]", text);
   });
 }
 
 // packages/ide/src/panels/debugger_panel.ts
-var _win3 = null;
+var _win4 = null;
 var _vars_el = null;
 var _status_el = null;
 var _listener_registered = false;
 function debugger_open(workspace) {
-  if (_win3) {
-    _win3.bring_to_front();
+  if (_win4) {
+    _win4.bring_to_front();
     return;
   }
-  _win3 = new FloatingWindow(
+  _win4 = new FloatingWindow(
     "sw-debugger",
     "Debugger",
     "icons/script.svg",
     { x: 700, y: 60, w: 340, h: 420 }
   );
-  _win3.on_close(() => {
-    _win3 = null;
+  _win4.on_close(() => {
+    _win4 = null;
     _vars_el = null;
     _status_el = null;
   });
-  _build_ui3();
-  _win3.mount(workspace);
+  _build_ui4();
+  _win4.mount(workspace);
   _ensure_listener3();
 }
 function debugger_show_hit(workspace, file, line, vars) {
@@ -5121,9 +5580,9 @@ function debugger_show_hit(workspace, file, line, vars) {
   _set_status(`Paused at ${file}:${line}`, true);
   _render_vars(vars);
 }
-function _build_ui3() {
-  if (!_win3) return;
-  const body = _win3.body;
+function _build_ui4() {
+  if (!_win4) return;
+  const body = _win4.body;
   body.style.cssText = "display:flex;flex-direction:column;overflow:hidden;";
   const toolbar = document.createElement("div");
   toolbar.className = "sw-editor-toolbar";
@@ -5219,7 +5678,7 @@ var HISTORY = 120;
 var W = 280;
 var H = 48;
 var TARGET_FPS = 60;
-var _win4 = null;
+var _win5 = null;
 var _active = false;
 var _listener_attached3 = false;
 var _fps_buf = [];
@@ -5229,31 +5688,31 @@ var _fps_ui = null;
 var _step_ui = null;
 var _heap_ui = null;
 function profiler_open(workspace) {
-  if (_win4) {
-    _win4.bring_to_front();
+  if (_win5) {
+    _win5.bring_to_front();
     return;
   }
-  _win4 = new FloatingWindow(
+  _win5 = new FloatingWindow(
     "sw-profiler",
     "Profiler",
     "icons/script.svg",
     { x: 10, y: 60, w: 320, h: 480 }
   );
-  _win4.on_close(() => {
-    _win4 = null;
+  _win5.on_close(() => {
+    _win5 = null;
     _active = false;
     _fps_ui = null;
     _step_ui = null;
     _heap_ui = null;
   });
-  _build_ui4();
-  _win4.mount(workspace);
+  _build_ui5();
+  _win5.mount(workspace);
   _active = true;
   _ensure_listener4();
 }
-function _build_ui4() {
-  if (!_win4) return;
-  const body = _win4.body;
+function _build_ui5() {
+  if (!_win5) return;
+  const body = _win5.body;
   body.style.cssText = "display:flex;flex-direction:column;overflow-y:auto;background:var(--sw-chrome);padding:8px;gap:8px;";
   _fps_ui = _make_metric_section(body, "FPS", "#4caf50");
   _step_ui = _make_metric_section(body, "Step (ms)", "#2196f3");
@@ -5465,6 +5924,12 @@ function boot() {
     res_add_timeline: () => on_add_resource("timelines"),
     res_add_object: () => on_add_resource("objects"),
     res_add_room: () => on_add_resource("rooms"),
+    edit_game_settings: on_edit_game_settings,
+    view_resources: () => _tree.show(),
+    view_console: () => console_open(_workspace),
+    view_debugger: () => debugger_open(_workspace),
+    view_profiler: () => profiler_open(_workspace),
+    view_preview: () => preview_open(_workspace),
     run_play: on_run_play,
     run_stop: on_run_stop,
     run_build: on_run_build,
@@ -5513,20 +5978,40 @@ function boot() {
       bp_resume();
       console_write("system", "[IDE] Resumed.");
     }
+    if (e.key === "F9") {
+      e.preventDefault();
+      debugger_open(_workspace);
+    }
     if (e.key === "F10") {
       e.preventDefault();
       profiler_open(_workspace);
     }
-    if (e.key === "F9") {
+    if (e.key === "F11") {
       e.preventDefault();
-      debugger_open(_workspace);
+      preview_open(_workspace);
+    }
+    if (e.ctrlKey && e.key === "r") {
+      e.preventDefault();
+      _tree.show();
+    }
+    if (e.ctrlKey && e.shiftKey && e.key === "P") {
+      e.preventDefault();
+      on_edit_game_settings();
     }
   });
   bp_on_hit((file, line, vars) => {
     debugger_show_hit(_workspace, file, line, vars);
     console_write("warn", `[Debugger] Break at ${file}:${line}`);
   });
-  _set_project(project_new(), null);
+  project_open_last().then((result) => {
+    if (result) {
+      _set_project(result.state, null);
+      console_open(_workspace);
+      console_write("system", `[IDE] Reopened: ${result.state.name}`);
+    } else {
+      _set_project(project_new(), null);
+    }
+  });
 }
 async function on_file_new() {
   const name = await _prompt("Project name:", "My Game") ?? "My Game";
@@ -5663,8 +6148,15 @@ async function _open_script(name) {
     console.error("[IDE] Failed to open script:", err);
   }
 }
-function on_run_play() {
+async function on_run_play() {
+  if (!_project) {
+    await _alert("No project open.\n\nUse File \u2192 Open Project to open a project first.");
+    return;
+  }
   console_open(_workspace);
+  if (window.swfs?.build_game) {
+    await on_run_build();
+  }
   preview_play(_workspace);
   console_write("system", "[IDE] Running game\u2026 (F8=Resume, F9=Debugger, F10=Profiler)");
 }
@@ -5674,7 +6166,54 @@ function on_run_stop() {
 }
 async function on_run_build() {
   console_open(_workspace);
-  console_write("system", "[IDE] Build triggered (external bundler required).");
+  if (!_project) {
+    console_write("warn", "[IDE] No project open.");
+    return;
+  }
+  const swfs = window.swfs;
+  if (!swfs?.build_game) {
+    console_write("warn", "[IDE] Build is only available in the Electron app.");
+    return;
+  }
+  let folder = project_get_folder_path() ?? project_get_last_folder();
+  if (folder) {
+    project_set_folder(folder);
+    try {
+      await project_save(_project);
+      _mark_saved();
+    } catch {
+    }
+  } else {
+    try {
+      await project_save(_project);
+      _mark_saved();
+    } catch {
+      console_write("warn", "[IDE] No project folder \u2014 save cancelled.");
+      return;
+    }
+    folder = project_get_folder_path();
+  }
+  if (!folder) {
+    console_write("warn", "[IDE] No project folder set.");
+    return;
+  }
+  console_write("system", "[IDE] Building game\u2026");
+  const result = await swfs.build_game(folder);
+  if (result.ok) {
+    console_write("system", "[IDE] Build complete. Press Play to run.");
+    preview_reload();
+  } else {
+    console_write("warn", `[IDE] Build failed:
+${result.error}`);
+  }
+}
+function on_edit_game_settings() {
+  if (!_project) {
+    _alert("Open a project first.");
+    return;
+  }
+  const room_names = Object.keys(_project.resources.rooms);
+  settings_editor_open(_workspace, _project, room_names, _mark_unsaved);
 }
 async function on_help_about() {
   await _alert("Silkweaver Game Engine IDE\nVersion 0.2.0\nGPL-3.0");

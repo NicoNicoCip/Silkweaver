@@ -131,6 +131,7 @@ export interface menubar_actions {
     file_open:   () => void
     file_save:   () => void
     file_save_as:() => void
+    edit_game_settings: () => void
     res_add_sprite:   () => void
     res_add_sound:    () => void
     res_add_background:() => void
@@ -140,6 +141,11 @@ export interface menubar_actions {
     res_add_timeline: () => void
     res_add_object:   () => void
     res_add_room:     () => void
+    view_resources:  () => void
+    view_console:    () => void
+    view_debugger:   () => void
+    view_profiler:   () => void
+    view_preview:    () => void
     run_play:    () => void
     run_stop:    () => void
     run_build:   () => void
@@ -163,6 +169,15 @@ export function menubar_default(actions: menubar_actions): HTMLElement {
             ],
         },
         {
+            label: 'Edit',
+            items: [
+                { label: 'Undo',           shortcut: 'Ctrl+Z',       disabled: true },
+                { label: 'Redo',           shortcut: 'Ctrl+Y',       disabled: true },
+                { separator: true },
+                { label: 'Game Settings…', shortcut: 'Ctrl+Shift+P', action: actions.edit_game_settings },
+            ],
+        },
+        {
             label: 'Resource',
             items: [
                 { label: 'Add Sprite',     action: actions.res_add_sprite },
@@ -175,6 +190,17 @@ export function menubar_default(actions: menubar_actions): HTMLElement {
                 { separator: true },
                 { label: 'Add Object',     action: actions.res_add_object },
                 { label: 'Add Room',       action: actions.res_add_room },
+            ],
+        },
+        {
+            label: 'View',
+            items: [
+                { label: 'Resources',    shortcut: 'Ctrl+R', action: actions.view_resources },
+                { separator: true },
+                { label: 'Console',      shortcut: 'Ctrl+`', action: actions.view_console },
+                { label: 'Debugger',     shortcut: 'F9',     action: actions.view_debugger },
+                { label: 'Profiler',     shortcut: 'F10',    action: actions.view_profiler },
+                { label: 'Game Preview', shortcut: 'F11',    action: actions.view_preview },
             ],
         },
         {

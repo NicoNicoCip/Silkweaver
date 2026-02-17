@@ -62,6 +62,10 @@ export function console_open(workspace: HTMLElement): void {
 export function console_write(level: log_level, text: string): void {
     _push({ level, text, time: _timestamp() })
     _ensure_listener()
+    // Mirror to DevTools console so errors are visible without copying from the panel
+    if      (level === 'error')  console.error('[SW]', text)
+    else if (level === 'warn')   console.warn('[SW]', text)
+    else                         console.log('[SW]', text)
 }
 
 /**
@@ -178,5 +182,8 @@ function _ensure_listener(): void {
             try { return JSON.stringify(a) } catch { return String(a) }
         }).join(' ')
         _push({ level, text, time: _timestamp() })
+        if      (level === 'error')  console.error('[Game]', text)
+        else if (level === 'warn')   console.warn('[Game]', text)
+        else                         console.log('[Game]', text)
     })
 }

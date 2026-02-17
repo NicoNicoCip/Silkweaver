@@ -6,7 +6,6 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron'
-import * as path from 'node:path'
 
 contextBridge.exposeInMainWorld('swfs', {
     /**
@@ -14,8 +13,8 @@ contextBridge.exposeInMainWorld('swfs', {
      * @param mode - 'open' or 'save'
      * @returns Absolute path of the chosen folder, or null if cancelled.
      */
-    pick_folder: (mode: 'open' | 'save'): Promise<string | null> =>
-        ipcRenderer.invoke('sw:pick-folder', mode),
+    pick_folder: (mode: 'open' | 'save', defaultPath?: string): Promise<string | null> =>
+        ipcRenderer.invoke('sw:pick-folder', mode, defaultPath),
 
     /**
      * Read a text file.
@@ -23,6 +22,13 @@ contextBridge.exposeInMainWorld('swfs', {
      */
     read_file: (abs_path: string): Promise<string> =>
         ipcRenderer.invoke('sw:read-file', abs_path),
+
+    /**
+     * Read a binary file and return it as a Base64 string.
+     * @param abs_path - Absolute path
+     */
+    read_file_base64: (abs_path: string): Promise<string> =>
+        ipcRenderer.invoke('sw:read-file-base64', abs_path),
 
     /**
      * Write a text file (creates parent dirs automatically).
@@ -48,7 +54,17 @@ contextBridge.exposeInMainWorld('swfs', {
     exists: (abs_path: string): Promise<boolean> =>
         ipcRenderer.invoke('sw:exists', abs_path),
 
-    /** Path join helper (avoids shipping path module to renderer) */
-    join: (...parts: string[]): string => path.join(...parts),
+    /** Path join helper (pure JS, no node:path needed in sandbox) */
+    join: (...parts: string[]): string => {
+        const sep = parts[0]?.includes('\\') ? '\\' : '/'
+        return parts.join(sep).replace(/[/\\]+/g, sep)
+    },
 
+    /**
+     * Build the game from the given project folder path into exports/game.js.
+     * @param project_folder - Absolute path to the project folder
+     * @returns { ok: true } or { ok: false, error: string }
+     */
+    build_game: (project_folder: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('sw:build-game', project_folder),
 })

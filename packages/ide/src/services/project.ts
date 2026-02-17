@@ -12,10 +12,11 @@
 // =========================================================================
 
 export interface project_settings {
-    roomSpeed:    number    // target steps per second
-    windowWidth:  number
-    windowHeight: number
-    startRoom:    string    // name of the first room
+    roomSpeed:     number    // target steps per second
+    windowWidth:   number
+    windowHeight:  number
+    startRoom:     string    // name of the first room
+    displayColor:  string    // CSS hex background clear colour, e.g. '#000000'
 }
 
 export interface resource_ref {
@@ -49,12 +50,13 @@ export interface project_state {
 
 /** Electron preload bridge */
 const _el = () => (window as any).swfs as {
-    pick_folder:  (mode: 'open' | 'save') => Promise<string | null>
-    read_file:    (abs_path: string) => Promise<string>
-    write_file:   (abs_path: string, content: string) => Promise<void>
-    write_binary: (abs_path: string, buffer: ArrayBuffer) => Promise<void>
-    exists:       (abs_path: string) => Promise<boolean>
-    join:         (...parts: string[]) => string
+    pick_folder:      (mode: 'open' | 'save', defaultPath?: string) => Promise<string | null>
+    read_file:        (abs_path: string) => Promise<string>
+    read_file_base64: (abs_path: string) => Promise<string>
+    write_file:       (abs_path: string, content: string) => Promise<void>
+    write_binary:     (abs_path: string, buffer: ArrayBuffer) => Promise<void>
+    exists:           (abs_path: string) => Promise<boolean>
+    join:             (...parts: string[]) => string
 } | undefined
 
 const _has_electron = () => !!_el()
@@ -63,6 +65,8 @@ const _has_fsapi    = typeof (window as any).showDirectoryPicker === 'function'
 // =========================================================================
 // State
 // =========================================================================
+
+const LAST_FOLDER_KEY = 'sw_last_project_folder'
 
 /** Absolute folder path — used in Electron mode */
 let _folder_path: string | null = null
@@ -87,6 +91,7 @@ export function project_new(): project_state {
             windowWidth:  640,
             windowHeight: 480,
             startRoom:    '',
+            displayColor: '#000000',
         },
         resources: {
             sprites:     {},
@@ -131,6 +136,77 @@ export function project_set_dir(dir: FileSystemDirectoryHandle): void {
 /** Sets (or clears) the Electron folder path. Pass null to force a new folder pick on next save. */
 export function project_set_folder(path: string | null): void {
     _folder_path = path
+    if (path) localStorage.setItem(LAST_FOLDER_KEY, path)
+    else      localStorage.removeItem(LAST_FOLDER_KEY)
+}
+
+/** Returns the current project folder path (Electron mode only). Null in browser mode. */
+export function project_get_folder_path(): string | null {
+    return _folder_path
+}
+
+/**
+ * Returns the last used project folder path from localStorage (Electron mode only).
+ * Null if none was recorded.
+ */
+export function project_get_last_folder(): string | null {
+    return localStorage.getItem(LAST_FOLDER_KEY)
+}
+
+/**
+ * Silently opens the last project from localStorage without showing a folder picker.
+ * Electron only. Returns the loaded state or null if no last folder, folder missing,
+ * or not running in Electron.
+ */
+export async function project_open_last(): Promise<{ state: project_state; dir: null } | null> {
+    if (!_has_electron()) return null
+    const folder = localStorage.getItem(LAST_FOLDER_KEY)
+    if (!folder) return null
+    const fs = _el()!
+    const proj_path = fs.join(folder, 'project.json')
+    try {
+        const exists = await fs.exists(proj_path)
+        if (!exists) return null
+        const text = await fs.read_file(proj_path)
+        const state = JSON.parse(text) as project_state
+        _folder_path = folder
+        return { state, dir: null }
+    } catch {
+        return null
+    }
+}
+
+/**
+ * Reads a binary file as a data URL (e.g. for displaying images).
+ * @param rel_path - e.g. 'sprites/spr_player/spr_player_0.png'
+ * @returns A data: URL string
+ */
+export async function project_read_binary_url(rel_path: string): Promise<string> {
+    if (_has_electron()) {
+        const fs = _el()!
+        if (!_folder_path) throw new Error('No project folder open')
+        const base64 = await fs.read_file_base64(fs.join(_folder_path, ...rel_path.split('/')))
+        const ext = rel_path.split('.').pop()?.toLowerCase() ?? 'png'
+        const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
+                   : ext === 'gif' ? 'image/gif'
+                   : 'image/png'
+        return `data:${mime};base64,${base64}`
+    }
+    const dir = _dir_handle
+    if (!dir) throw new Error('No project directory open')
+    const parts = rel_path.split('/')
+    let current: FileSystemDirectoryHandle = dir
+    for (let i = 0; i < parts.length - 1; i++) {
+        current = await current.getDirectoryHandle(parts[i]!, { create: false })
+    }
+    const fh   = await current.getFileHandle(parts[parts.length - 1]!)
+    const file = await fh.getFile()
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload  = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+    })
 }
 
 /**
@@ -225,9 +301,11 @@ export function project_has_folder(): boolean {
 
 async function _open_electron(): Promise<{ state: project_state; dir: null } | null> {
     const fs = _el()!
-    const folder = await fs.pick_folder('open')
+    const last = localStorage.getItem(LAST_FOLDER_KEY) ?? undefined
+    const folder = await fs.pick_folder('open', last)
     if (!folder) return null
     _folder_path = folder
+    localStorage.setItem(LAST_FOLDER_KEY, folder)
 
     const proj_path = fs.join(folder, 'project.json')
     let state: project_state
@@ -246,9 +324,11 @@ async function _save_electron(state: project_state): Promise<void> {
     const fs = _el()!
     if (!_folder_path) {
         // No folder yet — ask the user to pick one
-        const folder = await fs.pick_folder('save')
+        const last = localStorage.getItem(LAST_FOLDER_KEY) ?? undefined
+        const folder = await fs.pick_folder('save', last)
         if (!folder) throw new Error('No project folder selected')
         _folder_path = folder
+        localStorage.setItem(LAST_FOLDER_KEY, folder)
     }
     await fs.write_file(fs.join(_folder_path, 'project.json'), JSON.stringify(state, null, 2))
 }

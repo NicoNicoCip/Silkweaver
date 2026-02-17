@@ -48,7 +48,7 @@
                 game_loaded = true
             }
         } catch (e) {
-            // game.js doesn't exist or has no default export — show placeholder
+            console.error('[Game] Failed to load or run game.js:', e)
         }
 
         if (!game_loaded) {
@@ -60,10 +60,12 @@
                 ctx.fillStyle = '#444'
                 ctx.font = '14px sans-serif'
                 ctx.textAlign = 'center'
-                ctx.fillText('No game scripts loaded.', canvas.width / 2, canvas.height / 2 - 10)
+                ctx.fillText('No game scripts loaded.', canvas.width / 2, canvas.height / 2 - 22)
                 ctx.font = '12px sans-serif'
                 ctx.fillStyle = '#333'
-                ctx.fillText('Build your project (Ctrl+F5), then press Play.', canvas.width / 2, canvas.height / 2 + 14)
+                ctx.fillText('1. File → Open Project', canvas.width / 2, canvas.height / 2 + 4)
+                ctx.fillText('2. Ctrl+F5 to build', canvas.width / 2, canvas.height / 2 + 22)
+                ctx.fillText('3. F5 to play', canvas.width / 2, canvas.height / 2 + 40)
             }
         }
     </script>

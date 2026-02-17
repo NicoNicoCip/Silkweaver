@@ -4,7 +4,7 @@
  */
 
 import { FloatingWindow }                                                    from '../window_manager.js'
-import { project_write_binary, project_read_file, project_write_file }       from '../services/project.js'
+import { project_write_binary, project_read_file, project_write_file, project_read_binary_url } from '../services/project.js'
 
 // =========================================================================
 // Types
@@ -285,14 +285,35 @@ class sprite_editor_window {
     }
 
     private _clear_frames(): void {
-        if (!confirm(`Clear all frames from "${this._sprite_name}"?`)) return
-        this._stop_anim()
-        this._data.frames = []
-        this._data.width  = 0
-        this._data.height = 0
-        this._rebuild_frame_list()
-        this._clear_canvas()
-        this._save_meta()
+        // In-renderer confirm overlay (works in Electron and browser alike)
+        const overlay = document.createElement('div')
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;'
+        const box = document.createElement('div')
+        box.style.cssText = 'background:#2b2b2b;border:1px solid #555;border-radius:4px;padding:18px 20px;min-width:280px;font-family:sans-serif;color:#ccc;font-size:13px;display:flex;flex-direction:column;gap:10px;'
+        box.innerHTML = `<p style="margin:0;">Clear all frames from "<b>${this._sprite_name}</b>"?</p>`
+        const btns = document.createElement('div')
+        btns.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;'
+        const ok_btn = document.createElement('button')
+        ok_btn.textContent = 'Clear'
+        ok_btn.style.cssText = 'padding:4px 20px;cursor:pointer;'
+        const cancel_btn = document.createElement('button')
+        cancel_btn.textContent = 'Cancel'
+        cancel_btn.style.cssText = 'padding:4px 20px;cursor:pointer;'
+        btns.append(ok_btn, cancel_btn)
+        box.appendChild(btns)
+        overlay.appendChild(box)
+        document.body.appendChild(overlay)
+        ok_btn.addEventListener('click', () => {
+            overlay.remove()
+            this._stop_anim()
+            this._data.frames = []
+            this._data.width  = 0
+            this._data.height = 0
+            this._rebuild_frame_list()
+            this._clear_canvas()
+            this._save_meta()
+        })
+        cancel_btn.addEventListener('click', () => overlay.remove())
     }
 
     private _rebuild_frame_list(): void {
@@ -457,28 +478,32 @@ class sprite_editor_window {
         try {
             const json = await project_read_file(`sprites/${this._sprite_name}/meta.json`)
             const loaded = JSON.parse(json) as Partial<sprite_data>
-            // Merge loaded fields into defaults
-            if (loaded.origin_x !== undefined) this._data.origin_x = loaded.origin_x
-            if (loaded.origin_y !== undefined) this._data.origin_y = loaded.origin_y
-            if (loaded.width    !== undefined) this._data.width    = loaded.width
-            if (loaded.height   !== undefined) this._data.height   = loaded.height
+            if (loaded.origin_x   !== undefined) this._data.origin_x   = loaded.origin_x
+            if (loaded.origin_y   !== undefined) this._data.origin_y   = loaded.origin_y
+            if (loaded.width      !== undefined) this._data.width      = loaded.width
+            if (loaded.height     !== undefined) this._data.height     = loaded.height
             if (loaded.anim_speed !== undefined) this._data.anim_speed = loaded.anim_speed
             if (loaded.mask_type  !== undefined) this._data.mask_type  = loaded.mask_type
-            if (loaded.mask_x !== undefined) this._data.mask_x = loaded.mask_x
-            if (loaded.mask_y !== undefined) this._data.mask_y = loaded.mask_y
-            if (loaded.mask_w !== undefined) this._data.mask_w = loaded.mask_w
-            if (loaded.mask_h !== undefined) this._data.mask_h = loaded.mask_h
+            if (loaded.mask_x     !== undefined) this._data.mask_x     = loaded.mask_x
+            if (loaded.mask_y     !== undefined) this._data.mask_y     = loaded.mask_y
+            if (loaded.mask_w     !== undefined) this._data.mask_w     = loaded.mask_w
+            if (loaded.mask_h     !== undefined) this._data.mask_h     = loaded.mask_h
 
-            // Restore frame list from stored names (data_url is session-only;
-            // thumbnails will be blank until user re-imports or we add a blob loader)
             if (loaded.frames && loaded.frames.length > 0) {
                 for (const f of loaded.frames) {
-                    this._data.frames.push({ name: f.name, data_url: '' })
+                    // Try to reload image from disk; fall back to blank placeholder
+                    let data_url = ''
+                    try {
+                        data_url = await project_read_binary_url(`sprites/${this._sprite_name}/${f.name}`)
+                    } catch { /* image not on disk yet */ }
+                    this._data.frames.push({ name: f.name, data_url })
                 }
             }
         } catch {
             // No meta yet — fresh sprite
         }
+        if (this._data.width  > 0) this._canvas.width  = Math.min(192, this._data.width)
+        if (this._data.height > 0) this._canvas.height = Math.min(192, this._data.height)
         this._rebuild_frame_list()
         this._restart_anim()
     }

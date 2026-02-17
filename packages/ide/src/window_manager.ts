@@ -147,11 +147,16 @@ export class FloatingWindow {
         // ── Restore saved layout ─────────────────────────────────────────
         const saved = _load_layouts()[id]
         if (saved) {
-            this.el.style.left   = saved.x + 'px'
-            this.el.style.top    = saved.y + 'px'
-            this.el.style.width  = saved.w + 'px'
-            this.el.style.height = saved.h + 'px'
-            if (saved.minimized) this.el.classList.add('minimized')
+            this.el.style.left  = saved.x + 'px'
+            this.el.style.top   = saved.y + 'px'
+            this.el.style.width = saved.w + 'px'
+            if (saved.minimized) {
+                this.el.classList.add('minimized')
+                this.el.dataset.prevH = saved.h + 'px'
+                this.el.style.height  = 'var(--sw-titlebar-h)'
+            } else {
+                this.el.style.height = saved.h + 'px'
+            }
         }
     }
 
@@ -182,7 +187,14 @@ export class FloatingWindow {
     /** Toggle minimized state (collapse to title bar). */
     toggle_minimize(): void {
         this._maximized = false
-        this.el.classList.toggle('minimized')
+        const is_min = this.el.classList.toggle('minimized')
+        if (is_min) {
+            // Save full height so we can restore it, then collapse to titlebar only
+            this.el.dataset.prevH = this.el.style.height
+            this.el.style.height  = 'var(--sw-titlebar-h)'
+        } else {
+            this.el.style.height = this.el.dataset.prevH ?? this.el.style.height
+        }
         this._persist()
     }
 

@@ -1598,6 +1598,12 @@ function device_get_touch_count() {
 }
 
 // packages/engine/src/core/game_loop.ts
+var _begin_frame = null;
+var _end_frame = null;
+function set_frame_hooks(begin, end) {
+  _begin_frame = begin;
+  _end_frame = end;
+}
 var game_loop = class {
   static {
     this.room_speed = 60;
@@ -1707,10 +1713,13 @@ var game_loop = class {
   /**
    * Runs all draw events in GMS order.
    * Called once per frame after all updates have completed.
+   * begin_frame clears the canvas; end_frame flushes the batch.
    */
   static draw() {
+    _begin_frame?.();
     this.draw_events.get("DRAW" /* draw */)?.forEach((e) => e.run());
     this.draw_events.get("DRAW_GUI" /* draw_gui */)?.forEach((e) => e.run());
+    _end_frame?.();
   }
   /**
    * Registers a function to be called for a specific event type.
@@ -3433,6 +3442,10 @@ var renderer = class {
     gl.useProgram(this.program);
     this.upload_projection(width, height);
     set_draw_sprite_ext(this.draw_sprite_ext.bind(this));
+    set_frame_hooks(
+      () => this.begin_frame(),
+      () => this.end_frame()
+    );
   }
   // =========================================================================
   // Projection helpers
