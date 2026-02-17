@@ -5,6 +5,8 @@
 
 import { FloatingWindow }                                                    from '../window_manager.js'
 import { project_write_binary, project_read_file, project_write_file, project_read_binary_url } from '../services/project.js'
+import { pixel_editor_open }                                                 from './pixel_editor.js'
+import { show_prompt }                                                       from '../services/dialogs.js'
 
 // =========================================================================
 // Types
@@ -80,6 +82,9 @@ class sprite_editor_window {
     private _anim_timer:  ReturnType<typeof setInterval> | null = null
     private _anim_frame   = 0
     private _on_closed_cb: (() => void) | null = null
+    private _zoom:        number = 1
+    private _dragging:    'origin' | 'mask' | null = null
+    private _drag_offset: { x: number; y: number } = { x: 0, y: 0 }
 
     constructor(workspace: HTMLElement, sprite_name: string, project_name: string) {
         this._sprite_name = sprite_name
@@ -132,9 +137,10 @@ class sprite_editor_window {
         const toolbar = document.createElement('div')
         toolbar.className = 'sw-editor-toolbar'
 
-        const btn_import = _tool_btn('Import Frames', () => this._import_frames())
-        const btn_clear  = _tool_btn('Clear All',     () => this._clear_frames())
-        toolbar.append(btn_import, btn_clear)
+        const btn_new_frame = _tool_btn('New Frame',     () => this._create_new_frame())
+        const btn_import    = _tool_btn('Import Frames', () => this._import_frames())
+        const btn_clear     = _tool_btn('Clear All',     () => this._clear_frames())
+        toolbar.append(btn_new_frame, btn_import, btn_clear)
         body.appendChild(toolbar)
 
         // ── Main area ──────────────────────────────────────────────────────
@@ -148,15 +154,60 @@ class sprite_editor_window {
         this._frame_list = left
         main.appendChild(left)
 
-        // Center: canvas preview
+        // Center: canvas preview with controls
         const center = document.createElement('div')
         center.className = 'sw-sprite-preview-area'
+        center.style.cssText = 'flex:1; display:flex; flex-direction:column; overflow:hidden; background:var(--sw-chrome1);'
+
+        // Zoom controls toolbar
+        const zoom_bar = document.createElement('div')
+        zoom_bar.style.cssText = 'display:flex; align-items:center; gap:8px; padding:4px 8px; background:var(--sw-chrome2); border-bottom:1px solid var(--sw-border2);'
+
+        const zoom_out = document.createElement('button')
+        zoom_out.textContent = '\u2212' // −
+        zoom_out.title = 'Zoom Out'
+        zoom_out.style.cssText = 'width:24px; height:24px; cursor:pointer; background:var(--sw-chrome2); border:1px solid var(--sw-border2); color:var(--sw-text);'
+        zoom_out.addEventListener('click', () => this._adjust_zoom(-1))
+
+        const zoom_label = document.createElement('span')
+        zoom_label.id = 'zoom-label'
+        zoom_label.textContent = '1x'
+        zoom_label.style.cssText = 'font-size:11px; color:var(--sw-text); min-width:30px; text-align:center;'
+
+        const zoom_in = document.createElement('button')
+        zoom_in.textContent = '\u002B' // +
+        zoom_in.title = 'Zoom In'
+        zoom_in.style.cssText = 'width:24px; height:24px; cursor:pointer; background:var(--sw-chrome2); border:1px solid var(--sw-border2); color:var(--sw-text);'
+        zoom_in.addEventListener('click', () => this._adjust_zoom(1))
+
+        const zoom_fit = document.createElement('button')
+        zoom_fit.textContent = 'Fit'
+        zoom_fit.title = 'Fit to View'
+        zoom_fit.style.cssText = 'padding:4px 8px; cursor:pointer; background:var(--sw-chrome2); border:1px solid var(--sw-border2); color:var(--sw-text); font-size:11px;'
+        zoom_fit.addEventListener('click', () => this._fit_zoom())
+
+        zoom_bar.append(zoom_out, zoom_label, zoom_in, zoom_fit)
+        center.appendChild(zoom_bar)
+
+        // Canvas container with scroll
+        const canvas_container = document.createElement('div')
+        canvas_container.style.cssText = 'flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; background:#2a2a2a;'
+
         this._canvas = document.createElement('canvas')
         this._canvas.width  = 192
         this._canvas.height = 192
         this._canvas.className = 'sw-sprite-canvas'
+        this._canvas.style.cssText = 'image-rendering:pixelated; cursor:crosshair;'
         this._ctx = this._canvas.getContext('2d')!
-        center.appendChild(this._canvas)
+
+        // Mouse interaction for dragging origin/mask
+        this._canvas.addEventListener('mousedown', this._on_canvas_mousedown)
+        this._canvas.addEventListener('mousemove', this._on_canvas_mousemove)
+        this._canvas.addEventListener('mouseup', this._on_canvas_mouseup)
+        this._canvas.addEventListener('mouseleave', this._on_canvas_mouseup)
+
+        canvas_container.appendChild(this._canvas)
+        center.appendChild(canvas_container)
         main.appendChild(center)
 
         // Right: properties
@@ -246,6 +297,83 @@ class sprite_editor_window {
     }
 
     // ── Frame management ───────────────────────────────────────────────────
+
+    private async _create_new_frame(): Promise<void> {
+        // Prompt for dimensions if no frames exist yet
+        if (this._data.frames.length === 0) {
+            const w = await show_prompt('Frame width (pixels):', '32')
+            if (!w) return
+            const h = await show_prompt('Frame height (pixels):', '32')
+            if (!h) return
+            const width = Math.max(1, parseInt(w) || 32)
+            const height = Math.max(1, parseInt(h) || 32)
+
+            // Set sprite dimensions from first frame
+            this._data.width = width
+            this._data.height = height
+            this._data.mask_w = width
+            this._data.mask_h = height
+            this._canvas.width = Math.min(192, width)
+            this._canvas.height = Math.min(192, height)
+        }
+
+        // Open pixel editor
+        pixel_editor_open(
+            this._win.body.parentElement!,
+            this._data.width,
+            this._data.height,
+            null,
+            (data_url) => this._save_new_frame(data_url)
+        )
+    }
+
+    private _edit_frame(index: number): void {
+        const frame = this._data.frames[index]
+        if (!frame) return
+
+        pixel_editor_open(
+            this._win.body.parentElement!,
+            this._data.width,
+            this._data.height,
+            frame.data_url,
+            (data_url) => this._update_frame(index, data_url)
+        )
+    }
+
+    private async _save_new_frame(data_url: string): Promise<void> {
+        const frame_name = `${this._sprite_name}_${this._data.frames.length}.png`
+        this._data.frames.push({ name: frame_name, data_url })
+
+        // Save to disk
+        try {
+            const blob = await fetch(data_url).then(r => r.blob())
+            await project_write_binary(`sprites/${this._sprite_name}/${frame_name}`, blob)
+        } catch {
+            // No project dir open — data_url preview still works
+        }
+
+        this._rebuild_frame_list()
+        this._restart_anim()
+        this._save_meta()
+    }
+
+    private async _update_frame(index: number, data_url: string): Promise<void> {
+        const frame = this._data.frames[index]
+        if (!frame) return
+
+        frame.data_url = data_url
+
+        // Save to disk
+        try {
+            const blob = await fetch(data_url).then(r => r.blob())
+            await project_write_binary(`sprites/${this._sprite_name}/${frame.name}`, blob)
+        } catch {
+            // No project dir open — data_url preview still works
+        }
+
+        this._rebuild_frame_list()
+        this._restart_anim()
+    }
 
     private async _import_frames(): Promise<void> {
         const input = document.createElement('input')
@@ -338,6 +466,15 @@ class sprite_editor_window {
             label.textContent = `#${i}`
             label.style.cssText = 'font-size:11px; flex:1;'
 
+            const edit_btn = document.createElement('button')
+            edit_btn.textContent = '\u270E'  // ✎
+            edit_btn.title = 'Edit frame'
+            edit_btn.style.cssText = 'width:20px; height:20px; font-size:10px; flex-shrink:0; cursor:pointer; background:var(--sw-chrome2); border:1px solid var(--sw-border2);'
+            edit_btn.addEventListener('click', (e) => {
+                e.stopPropagation()
+                this._edit_frame(i)
+            })
+
             const del_btn = document.createElement('button')
             del_btn.textContent = '✕'
             del_btn.className = 'sw-window-btn close'
@@ -368,7 +505,7 @@ class sprite_editor_window {
                 this._save_meta()
             })
 
-            row.append(thumb, label, del_btn)
+            row.append(thumb, label, edit_btn, del_btn)
             this._frame_list.appendChild(row)
         })
     }
@@ -395,15 +532,22 @@ class sprite_editor_window {
         if (!frame) { this._clear_canvas(); return }
         const img = new Image()
         img.onload = () => {
-            const ctx  = this._ctx
-            const cw   = this._canvas.width
-            const ch   = this._canvas.height
+            const ctx = this._ctx
+            const cw = this._canvas.width
+            const ch = this._canvas.height
+
             ctx.clearRect(0, 0, cw, ch)
+
             // Checkerboard background for transparency
             _draw_checkerboard(ctx, cw, ch)
+
+            // Draw sprite with nearest neighbor scaling
+            ctx.imageSmoothingEnabled = false
             ctx.drawImage(img, 0, 0, cw, ch)
+
             // Origin crosshair
             this._draw_origin(ctx)
+
             // Mask outline
             this._draw_mask(ctx)
         }
@@ -418,34 +562,139 @@ class sprite_editor_window {
         _draw_checkerboard(ctx, cw, ch)
     }
 
+    // ── Zoom controls ──────────────────────────────────────────────────────
+
+    private _adjust_zoom(delta: number): void {
+        const zoom_levels = [1, 2, 4, 8, 16, 32]
+        const current_idx = zoom_levels.indexOf(this._zoom)
+        let new_idx = current_idx + delta
+
+        if (new_idx < 0) new_idx = 0
+        if (new_idx >= zoom_levels.length) new_idx = zoom_levels.length - 1
+
+        this._zoom = zoom_levels[new_idx]
+        this._update_canvas_size()
+        this._redraw()
+
+        const label = document.getElementById('zoom-label')
+        if (label) label.textContent = `${this._zoom}x`
+    }
+
+    private _fit_zoom(): void {
+        if (this._data.width === 0 || this._data.height === 0) return
+
+        const container_width = 400  // Approximate
+        const container_height = 300
+        const zoom_x = Math.floor(container_width / this._data.width)
+        const zoom_y = Math.floor(container_height / this._data.height)
+        const fit_zoom = Math.max(1, Math.min(zoom_x, zoom_y, 32))
+
+        this._zoom = fit_zoom
+        this._update_canvas_size()
+        this._redraw()
+
+        const label = document.getElementById('zoom-label')
+        if (label) label.textContent = `${this._zoom}x`
+    }
+
+    private _update_canvas_size(): void {
+        if (this._data.width > 0 && this._data.height > 0) {
+            this._canvas.width = this._data.width * this._zoom
+            this._canvas.height = this._data.height * this._zoom
+        }
+    }
+
+    // ── Canvas interaction ─────────────────────────────────────────────────
+
+    private _on_canvas_mousedown = (e: MouseEvent): void => {
+        const rect = this._canvas.getBoundingClientRect()
+        const x = Math.floor((e.clientX - rect.left) / this._zoom)
+        const y = Math.floor((e.clientY - rect.top) / this._zoom)
+
+        // Check if clicking on origin (within 5px radius)
+        const origin_dist = Math.sqrt(Math.pow(x - this._data.origin_x, 2) + Math.pow(y - this._data.origin_y, 2))
+        if (origin_dist < 5 / this._zoom + 3) {
+            this._dragging = 'origin'
+            this._drag_offset = { x: x - this._data.origin_x, y: y - this._data.origin_y }
+            return
+        }
+
+        // Check if clicking on mask
+        const mx = this._data.mask_x
+        const my = this._data.mask_y
+        const mw = this._data.mask_w
+        const mh = this._data.mask_h
+        if (x >= mx && x <= mx + mw && y >= my && y <= my + mh) {
+            this._dragging = 'mask'
+            this._drag_offset = { x: x - mx, y: y - my }
+            return
+        }
+    }
+
+    private _on_canvas_mousemove = (e: MouseEvent): void => {
+        if (!this._dragging) return
+
+        const rect = this._canvas.getBoundingClientRect()
+        const x = Math.floor((e.clientX - rect.left) / this._zoom)
+        const y = Math.floor((e.clientY - rect.top) / this._zoom)
+
+        if (this._dragging === 'origin') {
+            this._data.origin_x = Math.max(0, Math.min(this._data.width, x - this._drag_offset.x))
+            this._data.origin_y = Math.max(0, Math.min(this._data.height, y - this._drag_offset.y))
+            this._redraw()
+            this._save_meta()
+        } else if (this._dragging === 'mask') {
+            this._data.mask_x = Math.max(0, Math.min(this._data.width - this._data.mask_w, x - this._drag_offset.x))
+            this._data.mask_y = Math.max(0, Math.min(this._data.height - this._data.mask_h, y - this._drag_offset.y))
+            this._redraw()
+            this._save_meta()
+        }
+    }
+
+    private _on_canvas_mouseup = (): void => {
+        this._dragging = null
+    }
+
     private _draw_origin(ctx: CanvasRenderingContext2D): void {
-        const cw = this._canvas.width
-        const ch = this._canvas.height
-        const fw = this._data.width  || cw
-        const fh = this._data.height || ch
-        const sx = (this._data.origin_x / fw) * cw
-        const sy = (this._data.origin_y / fh) * ch
+        const ox = this._data.origin_x * this._zoom
+        const oy = this._data.origin_y * this._zoom
+        const size = 8
+
         ctx.save()
+        // Draw circle at origin point
+        ctx.fillStyle = '#ff4444'
+        ctx.beginPath()
+        ctx.arc(ox, oy, 3, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Draw crosshair
         ctx.strokeStyle = '#ff4444'
-        ctx.lineWidth   = 1
-        ctx.beginPath(); ctx.moveTo(sx - 6, sy); ctx.lineTo(sx + 6, sy); ctx.stroke()
-        ctx.beginPath(); ctx.moveTo(sx, sy - 6); ctx.lineTo(sx, sy + 6); ctx.stroke()
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.moveTo(ox - size, oy)
+        ctx.lineTo(ox + size, oy)
+        ctx.moveTo(ox, oy - size)
+        ctx.lineTo(ox, oy + size)
+        ctx.stroke()
+
+        // Draw white outline for visibility
+        ctx.strokeStyle = '#ffffff'
+        ctx.lineWidth = 1
+        ctx.stroke()
         ctx.restore()
     }
 
     private _draw_mask(ctx: CanvasRenderingContext2D): void {
-        const cw  = this._canvas.width
-        const ch  = this._canvas.height
-        const fw  = this._data.width  || cw
-        const fh  = this._data.height || ch
-        const sx  = (this._data.mask_x / fw) * cw
-        const sy  = (this._data.mask_y / fh) * ch
-        const sw  = (this._data.mask_w / fw) * cw
-        const sh  = (this._data.mask_h / fh) * ch
+        const sx = this._data.mask_x * this._zoom
+        const sy = this._data.mask_y * this._zoom
+        const sw = this._data.mask_w * this._zoom
+        const sh = this._data.mask_h * this._zoom
+
         ctx.save()
-        ctx.strokeStyle = 'rgba(0,200,255,0.8)'
-        ctx.lineWidth   = 1
-        ctx.setLineDash([3, 2])
+        ctx.strokeStyle = '#00c8ff'
+        ctx.lineWidth = 2
+        ctx.setLineDash([4, 4])
+
         switch (this._data.mask_type) {
             case 'rectangle':
                 ctx.strokeRect(sx, sy, sw, sh)
@@ -458,15 +707,15 @@ class sprite_editor_window {
             case 'diamond':
                 ctx.beginPath()
                 ctx.moveTo(sx + sw / 2, sy)
-                ctx.lineTo(sx + sw,     sy + sh / 2)
+                ctx.lineTo(sx + sw, sy + sh / 2)
                 ctx.lineTo(sx + sw / 2, sy + sh)
-                ctx.lineTo(sx,          sy + sh / 2)
+                ctx.lineTo(sx, sy + sh / 2)
                 ctx.closePath()
                 ctx.stroke()
                 break
             case 'precise':
-                // Precise mask uses full frame bounds as indicator
-                ctx.strokeRect(0, 0, cw, ch)
+                // Precise mask uses full frame bounds
+                ctx.strokeRect(0, 0, this._canvas.width, this._canvas.height)
                 break
         }
         ctx.restore()
@@ -502,8 +751,10 @@ class sprite_editor_window {
         } catch {
             // No meta yet — fresh sprite
         }
-        if (this._data.width  > 0) this._canvas.width  = Math.min(192, this._data.width)
-        if (this._data.height > 0) this._canvas.height = Math.min(192, this._data.height)
+
+        // Initialize with fit zoom
+        this._fit_zoom()
+
         this._rebuild_frame_list()
         this._restart_anim()
     }

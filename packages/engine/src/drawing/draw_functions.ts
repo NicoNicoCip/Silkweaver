@@ -138,6 +138,64 @@ export function draw_sprite_stretched(spr: sprite, subimg: number, x: number, y:
 }
 
 // =========================================================================
+// Background drawing
+// =========================================================================
+
+/**
+ * Draws a background at the given position.
+ * @param bg - Background resource
+ * @param x - X position
+ * @param y - Y position
+ */
+export function draw_background(bg: any, x: number, y: number): void {
+    renderer.draw_background(bg, x, y)
+}
+
+/**
+ * Draws a background with full transform control.
+ * @param bg - Background resource
+ * @param x - X position
+ * @param y - Y position
+ * @param xscale - Horizontal scale (1 = normal)
+ * @param yscale - Vertical scale (1 = normal)
+ * @param rot - Rotation in degrees (counter-clockwise)
+ * @param color - Tint color as BGR integer
+ * @param alpha - Alpha (0–1)
+ */
+export function draw_background_ext(
+    bg: any,
+    x: number, y: number,
+    xscale: number, yscale: number,
+    rot: number, color: number, alpha: number
+): void {
+    renderer.draw_background_ext(bg, x, y, xscale, yscale, rot, color, alpha)
+}
+
+/**
+ * Draws a background stretched to fill a region.
+ * @param bg - Background resource
+ * @param x - X position
+ * @param y - Y position
+ * @param w - Width
+ * @param h - Height
+ */
+export function draw_background_stretched(bg: any, x: number, y: number, w: number, h: number): void {
+    renderer.draw_background_stretched(bg, x, y, w, h)
+}
+
+/**
+ * Draws a background tiled to fill a region.
+ * @param bg - Background resource
+ * @param x - X position
+ * @param y - Y position
+ * @param tile_x - X offset for tiling
+ * @param tile_y - Y offset for tiling
+ */
+export function draw_background_tiled(bg: any, x: number, y: number, tile_x: number, tile_y: number): void {
+    renderer.draw_background_tiled(bg, x, y, tile_x, tile_y)
+}
+
+// =========================================================================
 // Shape drawing
 // =========================================================================
 

@@ -3881,13 +3881,13 @@ var require_matter = __commonJS({
               };
               Render.world = function(render, time) {
                 var startTime = Common.now(), engine = render.engine, world = engine.world, canvas = render.canvas, context = render.context, options = render.options, timing = render.timing;
-                var allBodies = Composite.allBodies(world), allConstraints = Composite.allConstraints(world), background = options.wireframes ? options.wireframeBackground : options.background, bodies = [], constraints = [], i;
+                var allBodies = Composite.allBodies(world), allConstraints = Composite.allConstraints(world), background2 = options.wireframes ? options.wireframeBackground : options.background, bodies = [], constraints = [], i;
                 var event = {
                   timestamp: engine.timing.timestamp
                 };
                 Events.trigger(render, "beforeRender", event);
-                if (render.currentBackground !== background)
-                  _applyBackground(render, background);
+                if (render.currentBackground !== background2)
+                  _applyBackground(render, background2);
                 context.globalCompositeOperation = "source-in";
                 context.fillStyle = "transparent";
                 context.fillRect(0, 0, canvas.width, canvas.height);
@@ -4151,15 +4151,15 @@ var require_matter = __commonJS({
                       c.globalAlpha = part.render.opacity;
                     }
                     if (part.render.sprite && part.render.sprite.texture && !options.wireframes) {
-                      var sprite = part.render.sprite, texture = _getTexture(render, sprite.texture);
+                      var sprite2 = part.render.sprite, texture = _getTexture(render, sprite2.texture);
                       c.translate(part.position.x, part.position.y);
                       c.rotate(part.angle);
                       c.drawImage(
                         texture,
-                        texture.width * -sprite.xOffset * sprite.xScale,
-                        texture.height * -sprite.yOffset * sprite.yScale,
-                        texture.width * sprite.xScale,
-                        texture.height * sprite.yScale
+                        texture.width * -sprite2.xOffset * sprite2.xScale,
+                        texture.height * -sprite2.yOffset * sprite2.yScale,
+                        texture.width * sprite2.xScale,
+                        texture.height * sprite2.yScale
                       );
                       c.rotate(-part.angle);
                       c.translate(-part.position.x, -part.position.y);
@@ -4568,13 +4568,13 @@ var require_matter = __commonJS({
                 image.src = imagePath;
                 return image;
               };
-              var _applyBackground = function(render, background) {
-                var cssBackground = background;
-                if (/(jpg|gif|png)$/.test(background))
-                  cssBackground = "url(" + background + ")";
+              var _applyBackground = function(render, background2) {
+                var cssBackground = background2;
+                if (/(jpg|gif|png)$/.test(background2))
+                  cssBackground = "url(" + background2 + ")";
                 render.canvas.style.background = cssBackground;
                 render.canvas.style.backgroundSize = "contain";
-                render.currentBackground = background;
+                render.currentBackground = background2;
               };
             })();
           }),
@@ -5154,8 +5154,8 @@ var room = class _room extends resource {
    * @param depth - Drawing depth of the tile
    * @returns The unique ID of the created tile
    */
-  room_tile_add(x, y, background, left, top, width, height, depth) {
-    return this.tile_add(background, left, top, width, height, x, y, depth);
+  room_tile_add(x, y, background2, left, top, width, height, depth) {
+    return this.tile_add(background2, left, top, width, height, x, y, depth);
   }
   /**
    * Adds a tile to the room at design time, with extended options.
@@ -5172,13 +5172,13 @@ var room = class _room extends resource {
    * @param alpha - Transparency (0-1)
    * @returns The unique ID of the created tile
    */
-  room_tile_add_ext(x, y, background, left, top, width, height, depth, xscale, yscale, alpha) {
+  room_tile_add_ext(x, y, background2, left, top, width, height, depth, xscale, yscale, alpha) {
     const id = _room.next_tile_id++;
     this.tiles.push({
       id,
       x,
       y,
-      background,
+      background: background2,
       left,
       top,
       width,
@@ -5213,13 +5213,13 @@ var room = class _room extends resource {
    * @param depth - Drawing depth
    * @returns The unique ID of the created tile
    */
-  tile_add(background, left, top, width, height, x, y, depth) {
+  tile_add(background2, left, top, width, height, x, y, depth) {
     const id = _room.next_tile_id++;
     this.tiles.push({
       id,
       x,
       y,
-      background,
+      background: background2,
       left,
       top,
       width,
@@ -5345,10 +5345,10 @@ var room = class _room extends resource {
    * @param width - Width of the tile region
    * @param height - Height of the tile region
    */
-  tile_set_background(id, background, left, top, width, height) {
+  tile_set_background(id, background2, left, top, width, height) {
     const tile = this.tiles.find((t) => t.id === id);
     if (tile) {
-      tile.background = background;
+      tile.background = background2;
       tile.left = left;
       tile.top = top;
       tile.width = width;
@@ -5403,10 +5403,10 @@ var room = class _room extends resource {
    * @param hspeed - Horizontal scroll speed
    * @param vspeed - Vertical scroll speed
    */
-  room_set_background(index, visible, foreground, background, x, y, htiled, vtiled, hspeed, vspeed) {
+  room_set_background(index, visible, foreground, background2, x, y, htiled, vtiled, hspeed, vspeed) {
     this.background_visible[index] = visible;
     this.background_foreground[index] = foreground;
-    this.background_index[index] = background;
+    this.background_index[index] = background2;
     this.background_x[index] = x;
     this.background_y[index] = y;
     this.background_htiled[index] = htiled;
@@ -7587,15 +7587,7 @@ var font_renderer = class {
     this.cache.clear();
   }
 };
-var c_black = 0;
-var c_white = 16777215;
 var bm_normal = 0;
-function make_color_rgb(r, g, b) {
-  r = Math.max(0, Math.min(255, Math.round(r)));
-  g = Math.max(0, Math.min(255, Math.round(g)));
-  b = Math.max(0, Math.min(255, Math.round(b)));
-  return b << 16 | g << 8 | r;
-}
 function color_get_red(col) {
   return col & 255;
 }
@@ -7968,6 +7960,104 @@ var renderer = class {
     const [r, g, b] = color_to_rgb_normalized(this.draw_color);
     this.batch.add_quad(x, y, w, h, 0, 0, 1, 1, r, g, b, this.draw_alpha, frame.texture.texture);
   }
+  // ═══════════════════════════════════════════════════════════════════════
+  // Background drawing
+  // ═══════════════════════════════════════════════════════════════════════
+  /**
+   * Draws a background at the given position.
+   * @param bg - Background resource
+   * @param x - X position
+   * @param y - Y position
+   */
+  static draw_background(bg, x, y) {
+    if (!bg || !bg.texture) return;
+    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+    this.batch.add_quad(
+      x,
+      y,
+      bg.width,
+      bg.height,
+      0,
+      0,
+      1,
+      1,
+      r,
+      g,
+      b,
+      this.draw_alpha,
+      bg.texture.texture
+    );
+  }
+  /**
+   * Draws a background with extended transforms (scale, rotation, blend color, alpha).
+   * @param bg - Background resource
+   * @param x - X position
+   * @param y - Y position
+   * @param xscale - Horizontal scale factor
+   * @param yscale - Vertical scale factor
+   * @param rot - Rotation in degrees (counter-clockwise)
+   * @param color - Blend color as BGR integer
+   * @param alpha - Alpha transparency (0–1)
+   */
+  static draw_background_ext(bg, x, y, xscale, yscale, rot, color, alpha) {
+    if (!bg || !bg.texture) return;
+    const w = bg.width * xscale;
+    const h = bg.height * yscale;
+    const [r, g, b] = color_to_rgb_normalized(color);
+    this.batch.add_quad_rotated(x, y, w, h, rot, 0, 0, 1, 1, r, g, b, alpha, bg.texture.texture);
+  }
+  /**
+   * Draws a background stretched to fill a specified region.
+   * @param bg - Background resource
+   * @param x - X position
+   * @param y - Y position
+   * @param w - Width
+   * @param h - Height
+   */
+  static draw_background_stretched(bg, x, y, w, h) {
+    if (!bg || !bg.texture) return;
+    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+    this.batch.add_quad(x, y, w, h, 0, 0, 1, 1, r, g, b, this.draw_alpha, bg.texture.texture);
+  }
+  /**
+   * Draws a background tiled to fill the current view.
+   * @param bg - Background resource
+   * @param x - X offset
+   * @param y - Y offset
+   * @param tile_x - X tile offset
+   * @param tile_y - Y tile offset
+   */
+  static draw_background_tiled(bg, x, y, tile_x, tile_y) {
+    if (!bg || !bg.texture) return;
+    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+    const view_w = this.canvas_width;
+    const view_h = this.canvas_height;
+    const tiles_x = Math.ceil(view_w / bg.width) + 1;
+    const tiles_y = Math.ceil(view_h / bg.height) + 1;
+    const start_x = x - tile_x % bg.width;
+    const start_y = y - tile_y % bg.height;
+    for (let ty = 0; ty < tiles_y; ty++) {
+      for (let tx = 0; tx < tiles_x; tx++) {
+        const draw_x = start_x + tx * bg.width;
+        const draw_y = start_y + ty * bg.height;
+        this.batch.add_quad(
+          draw_x,
+          draw_y,
+          bg.width,
+          bg.height,
+          0,
+          0,
+          1,
+          1,
+          r,
+          g,
+          b,
+          this.draw_alpha,
+          bg.texture.texture
+        );
+      }
+    }
+  }
   /**
    * Draws a surface as if it were a sprite.
    * @param surf - Surface to draw
@@ -8295,6 +8385,65 @@ var renderer = class {
     this.gl.deleteProgram(this.program);
   }
 };
+var sprite = class extends resource {
+  // Height of the first frame
+  constructor() {
+    super();
+    this.frames = [];
+    this.xoffset = 0;
+    this.yoffset = 0;
+    this.width = 0;
+    this.height = 0;
+  }
+  /**
+   * Adds a frame to this sprite.
+   * @param frame - The frame to add
+   */
+  add_frame(frame) {
+    this.frames.push(frame);
+    if (this.frames.length === 1) {
+      this.width = frame.width;
+      this.height = frame.height;
+    }
+  }
+  /**
+   * Returns the number of frames in this sprite.
+   */
+  get_number() {
+    return this.frames.length;
+  }
+  /**
+   * Returns the frame at the given index, wrapping around if out of range.
+   * @param index - Frame index
+   * @returns sprite_frame or undefined if the sprite has no frames
+   */
+  get_frame(index) {
+    if (this.frames.length === 0) return void 0;
+    const i = Math.floor(index) % this.frames.length;
+    return this.frames[i < 0 ? i + this.frames.length : i];
+  }
+};
+var background = class extends resource {
+  // Use smooth filtering
+  constructor() {
+    super();
+    this.texture = null;
+    this.width = 0;
+    this.height = 0;
+    this.tile_h = false;
+    this.tile_v = false;
+    this.smooth = false;
+  }
+  /**
+   * Sets the texture for this background.
+   * @param texture - The texture entry to use
+   */
+  set_texture(texture) {
+    this.texture = texture;
+    this.width = texture.width;
+    this.height = texture.height;
+  }
+};
 function make_default_view(port_w = 800, port_h = 600) {
   return {
     enabled: false,
@@ -8311,18 +8460,6 @@ function make_default_view(port_w = 800, port_h = 600) {
 }
 var MAX_VIEWS = 8;
 var _views = Array.from({ length: MAX_VIEWS }, () => make_default_view());
-function draw_set_color(col) {
-  renderer.set_color(col);
-}
-function draw_rectangle(x1, y1, x2, y2, outline) {
-  renderer.draw_rectangle(x1, y1, x2, y2, outline);
-}
-function draw_circle(x, y, r, outline) {
-  renderer.draw_circle(x, y, r, outline);
-}
-function draw_text(x, y, text) {
-  renderer.draw_text(x, y, String(text));
-}
 var audio_system = class {
   static {
     this._ctx = null;
@@ -8457,354 +8594,364 @@ var _lights = Array.from({ length: MAX_LIGHTS }, _default_light);
 var DEG2RAD = Math.PI / 180;
 var RAD2DEG = 180 / Math.PI;
 
-// ../../Silkweaver/_entry.ts
-var obj_platform = class extends gm_object {
-  static object_name = "obj_platform";
+// ../Jump-Clone/_entry.ts
+var o_player = class extends gm_object {
+  static object_name = "o_player";
   on_create() {
-    this.pw = 96;
-    this.ph = 24;
-    this.bbox_left = this.x;
-    this.bbox_top = this.y;
-    this.bbox_right = this.x + 96;
-    this.bbox_bottom = this.y + 24;
-  }
-  on_step_begin() {
-    const pw = this.pw;
-    const ph = this.ph;
-    this.bbox_left = this.x;
-    this.bbox_top = this.y;
-    this.bbox_right = this.x + pw;
-    this.bbox_bottom = this.y + ph;
+    this.sprite_index = _sprite_map["s_player"] ?? -1;
+    this.bbox_left = this.x - 16;
+    this.bbox_top = this.y - 16;
+    this.bbox_right = this.x + 16;
+    this.bbox_bottom = this.y + 16;
   }
   on_step() {
-  }
-  on_draw() {
-    const pw = this.pw;
-    const ph = this.ph;
-    draw_set_color(make_color_rgb(60, 140, 60));
-    draw_rectangle(this.x, this.y, this.x + pw, this.y + ph, false);
-    draw_set_color(make_color_rgb(100, 200, 100));
-    draw_rectangle(this.x, this.y, this.x + pw, this.y + ph, true);
-  }
-};
-var obj_coin = class extends gm_object {
-  static object_name = "obj_coin";
-  on_create() {
-    ;
-    this.cr = 8;
-    this.bbox_left = this.x - 8;
-    this.bbox_top = this.y - 8;
-    this.bbox_right = this.x + 8;
-    this.bbox_bottom = this.y + 8;
-  }
-  on_step() {
-    this.bbox_left = this.x - 8;
-    this.bbox_top = this.y - 8;
-    this.bbox_right = this.x + 8;
-    this.bbox_bottom = this.y + 8;
-  }
-  on_draw() {
-    draw_set_color(make_color_rgb(255, 215, 0));
-    draw_circle(this.x, this.y, 8, false);
-    draw_set_color(make_color_rgb(255, 165, 0));
-    draw_circle(this.x, this.y, 8, true);
-  }
-};
-var obj_enemy = class extends gm_object {
-  static object_name = "obj_enemy";
-  on_create() {
-    ;
-    this.ew = 32;
-    this.eh = 32;
-    this.patrol_left = this.x - 80;
-    this.patrol_right = this.x + 80;
-    this.hspeed = 1.5;
-  }
-  on_step() {
-    const ew = this.ew;
-    const eh = this.eh;
-    const pl = this.patrol_left;
-    const pr = this.patrol_right;
-    if (this.x <= pl) {
-      this.x = pl;
-      this.hspeed = 1.5;
+    let move = 0;
+    if (keyboard_check(vk_left)) {
+      move = -1;
     }
-    if (this.x + ew >= pr) {
-      this.x = pr - ew;
-      this.hspeed = -1.5;
+    if (keyboard_check(vk_right)) {
+      move = 1;
     }
-    this.bbox_left = this.x;
-    this.bbox_top = this.y;
-    this.bbox_right = this.x + ew;
-    this.bbox_bottom = this.y + eh;
-  }
-  on_draw() {
-    const ew = this.ew;
-    const eh = this.eh;
-    draw_set_color(make_color_rgb(200, 50, 50));
-    draw_rectangle(this.x, this.y, this.x + ew, this.y + eh, false);
-    draw_set_color(make_color_rgb(255, 255, 255));
-    const eye_y = this.y + 8;
-    if (this.hspeed > 0) {
-      draw_circle(this.x + 22, eye_y, 5, false);
-      draw_set_color(make_color_rgb(0, 0, 0));
-      draw_circle(this.x + 23, eye_y, 2, false);
-    } else {
-      draw_circle(this.x + 10, eye_y, 5, false);
-      draw_set_color(make_color_rgb(0, 0, 0));
-      draw_circle(this.x + 9, eye_y, 2, false);
+    const move_speed = 4;
+    this.hspeed = move * move_speed;
+    this.vspeed += 0.5;
+    if (this.vspeed > 15) {
+      this.vspeed = 15;
     }
-  }
-};
-var obj_player = class extends gm_object {
-  static object_name = "obj_player";
-  on_create() {
-    ;
-    this.pw = 28;
-    this.ph = 40;
-    this.on_ground = false;
-    this.score = 0;
-    this.dead = false;
-    this.gravity = 0;
-  }
-  on_step() {
-    if (this.dead) return;
-    const pw = this.pw;
-    const ph = this.ph;
-    const platforms = [];
-    for (const other of this.room.instance_get_all()) {
-      if (other === this || !other.active || !other.solid) continue;
-      const opw = other.pw;
-      const oph = other.ph;
-      if (opw !== void 0 && oph !== void 0) {
-        platforms.push({ left: other.x, top: other.y, right: other.x + opw, bottom: other.y + oph });
-      } else {
-        platforms.push({ left: other.bbox_left, top: other.bbox_top, right: other.bbox_right, bottom: other.bbox_bottom });
-      }
-    }
-    if (Math.floor(this.room.room_speed > 0 ? Date.now() / 1e3 : 0) % 3 === 0 && this._dbg_t !== Math.floor(Date.now() / 1e3)) {
-      ;
-      this._dbg_t = Math.floor(Date.now() / 1e3);
-      console.log("[DBG] player xy", this.x, this.y, "platforms found:", platforms.length, platforms[0]);
-    }
-    function bbox_overlap_check(xl, yt, xr, yb, p) {
-      return xl < p.right && xr > p.left && yt < p.bottom && yb > p.top;
-    }
-    {
-      const xl = this.x, yt = this.y + 2, xr = this.x + pw, yb = this.y + ph - 2;
-      for (const p of platforms) {
-        if (bbox_overlap_check(xl, yt, xr, yb, p)) {
-          if (this.hspeed > 0) this.x = p.left - pw;
-          else if (this.hspeed < 0) this.x = p.right;
-          this.hspeed = 0;
-          break;
-        }
-      }
-    }
-    ;
-    this.on_ground = false;
-    {
-      const xl = this.x + 2, yt = this.y, xr = this.x + pw - 2, yb = this.y + ph;
-      for (const p of platforms) {
-        if (bbox_overlap_check(xl, yt, xr, yb, p)) {
-          if (this.vspeed > 0) {
-            this.y = p.top - ph;
-            this.on_ground = true;
-          } else {
-            this.y = p.bottom;
-          }
-          this.vspeed = 0;
-          break;
-        }
-      }
-    }
-    this.bbox_left = this.x;
-    this.bbox_top = this.y;
-    this.bbox_right = this.x + pw;
-    this.bbox_bottom = this.y + ph;
-    if (this.x < 0) {
-      this.x = 0;
-      this.hspeed = 0;
-    }
-    if (this.x + pw > this.room.room_width) {
-      this.x = this.room.room_width - pw;
-      this.hspeed = 0;
-    }
-    if (this.y > this.room.room_height + 64) {
-      this.x = this.xstart;
-      this.y = this.ystart;
-      this.vspeed = 0;
-      this.hspeed = 0;
-    }
-    const move_spd = 3;
-    if (keyboard_check(vk_left)) this.hspeed = -move_spd;
-    else if (keyboard_check(vk_right)) this.hspeed = move_spd;
-    else this.hspeed = 0;
-    if (keyboard_check_pressed(vk_space) && this.on_ground) {
+    const on_ground = this.place_meeting(this.x, this.y + this.vspeed, o_wall);
+    if (keyboard_check_pressed(vk_space) && on_ground) {
       this.vspeed = -10;
     }
-    if (!this.on_ground) {
-      this.vspeed += 0.5;
-      if (this.vspeed > 12) this.vspeed = 12;
+    if (this.place_meeting(this.x + this.hspeed, this.y, o_wall)) {
+      while (!this.place_meeting(this.x + sign2(this.hspeed), this.y, o_wall)) {
+        this.x += sign2(this.hspeed);
+      }
+      this.hspeed = 0;
     }
-    for (const other of this.room.instance_get_all()) {
-      if (!other.active) continue;
-      if (!(other instanceof obj_coin)) continue;
-      const cr = other.cr ?? 8;
-      const ol = other.x - cr, ot = other.y - cr;
-      const or_ = other.x + cr, ob = other.y + cr;
-      if (this.bbox_left < or_ && this.bbox_right > ol && this.bbox_top < ob && this.bbox_bottom > ot) {
-        ;
-        this.score = this.score + 1;
-        other.instance_destroy();
+    this.x += this.hspeed;
+    if (this.place_meeting(this.x, this.y + this.vspeed, o_wall)) {
+      while (!this.place_meeting(this.x, this.y + sign2(this.vspeed), o_wall)) {
+        this.y += sign2(this.vspeed);
+      }
+      this.vspeed = 0;
+    }
+    this.y += this.vspeed;
+    if (this.place_meeting(this.x, this.y, o_coin)) {
+      const coin = instance.instance_nearest(this.x, this.y, o_coin);
+      if (coin) {
+        coin.instance_destroy();
       }
     }
-    for (const other of this.room.instance_get_all()) {
-      if (!other.active) continue;
-      if (!(other instanceof obj_enemy)) continue;
-      const oew = other.ew ?? 32;
-      const oeh = other.eh ?? 32;
-      const el = other.x, et = other.y;
-      const er = other.x + oew, eb = other.y + oeh;
-      if (this.bbox_left < er && this.bbox_right > el && this.bbox_top < eb && this.bbox_bottom > et) {
-        if (this.vspeed >= 0 && this.bbox_bottom <= et + 12) {
-          other.instance_destroy();
-          this.vspeed = -7;
-        } else {
-          ;
-          this.score = 0;
-          this.x = this.xstart;
-          this.y = this.ystart;
-          this.hspeed = 0;
-          this.vspeed = 0;
-        }
-      }
+    if (this.place_meeting(this.x, this.y, o_enemy)) {
+      this.x = 64;
+      this.y = 64;
+    }
+    function sign2(value) {
+      if (value > 0) return 1;
+      if (value < 0) return -1;
+      return 0;
     }
   }
   on_draw() {
-    const pw = this.pw;
-    const ph = this.ph;
-    const score = this.score;
-    draw_set_color(make_color_rgb(60, 100, 220));
-    draw_rectangle(this.x, this.y, this.x + pw, this.y + ph, false);
-    draw_set_color(make_color_rgb(100, 150, 240));
-    draw_rectangle(this.x + 4, this.y, this.x + pw - 4, this.y + 16, false);
-    draw_set_color(c_white);
-    draw_circle(this.x + 8, this.y + 6, 3, false);
-    draw_circle(this.x + 20, this.y + 6, 3, false);
-    draw_set_color(c_black);
-    draw_circle(this.x + 9, this.y + 7, 1, false);
-    draw_circle(this.x + 21, this.y + 7, 1, false);
-    draw_set_color(c_white);
-    draw_text(8, 8, "Coins: " + String(score));
+    this.draw_self();
   }
 };
+var o_wall = class extends gm_object {
+  static object_name = "o_wall";
+  on_draw() {
+    this.draw_self();
+  }
+  on_create() {
+    this.sprite_index = _sprite_map["s_wall"] ?? -1;
+  }
+};
+var o_enemy = class extends gm_object {
+  static object_name = "o_enemy";
+  on_create() {
+    this.sprite_index = _sprite_map["s_enemy"] ?? -1;
+    this.hspeed = 2;
+    this.move_direction = 1;
+  }
+  on_step() {
+    this.vspeed += 0.5;
+    if (this.vspeed > 15) {
+      this.vspeed = 15;
+    }
+    this.hspeed = this.move_direction * 2;
+    const wall_ahead = this.place_meeting(this.x + this.hspeed * 2, this.y, o_wall);
+    const ledge_ahead = !this.place_meeting(this.x + this.hspeed * 8, this.y + 16, o_wall);
+    if (wall_ahead || ledge_ahead) {
+      this.move_direction *= -1;
+    }
+    if (this.place_meeting(this.x + this.hspeed, this.y, o_wall)) {
+      while (!this.place_meeting(this.x + sign2(this.hspeed), this.y, o_wall)) {
+        this.x += sign2(this.hspeed);
+      }
+      this.hspeed = 0;
+    }
+    this.x += this.hspeed;
+    if (this.place_meeting(this.x, this.y + this.vspeed, o_wall)) {
+      while (!this.place_meeting(this.x, this.y + sign2(this.vspeed), o_wall)) {
+        this.y += sign2(this.vspeed);
+      }
+      this.vspeed = 0;
+    }
+    this.y += this.vspeed;
+    function sign2(value) {
+      if (value > 0) return 1;
+      if (value < 0) return -1;
+      return 0;
+    }
+  }
+  on_draw() {
+    this.draw_self();
+  }
+};
+var o_coin = class extends gm_object {
+  static object_name = "o_coin";
+  on_create() {
+    this.sprite_index = _sprite_map["s_coin"] ?? -1;
+    this.float_offset = 0;
+    this.float_speed = 0.1;
+    this.start_y = this.y;
+  }
+  on_step() {
+    this.float_offset += this.float_speed;
+    this.y = this.start_y + Math.sin(this.float_offset) * 4;
+  }
+  on_draw() {
+    this.draw_self();
+  }
+};
+var _sprite_map = {};
+async function _load_sprite(name, meta_path, img_dir) {
+  try {
+    const meta = await fetch("file://" + meta_path).then((r) => r.json());
+    const spr = new sprite();
+    spr.width = meta.width || 32;
+    spr.height = meta.height || 32;
+    spr.xoffset = meta.origin_x || 0;
+    spr.yoffset = meta.origin_y || 0;
+    const frames = meta.frames || [];
+    if (frames.length === 0) {
+      console.warn(`[Sprite] ${name} has no frames defined in meta.json`);
+      return;
+    }
+    for (const frame_meta of frames) {
+      const frame_name = frame_meta.name || frame_meta;
+      const frame_url = "file://" + img_dir.replace(/\\/g, "/") + "/" + frame_name;
+      try {
+        const tex_entry = await renderer.tex_mgr.load(frame_url, false);
+        spr.add_frame({
+          texture: tex_entry,
+          width: tex_entry.width,
+          height: tex_entry.height
+        });
+      } catch (err) {
+        console.warn(`[Sprite] Failed to load frame ${frame_name} for ${name}:`, err);
+      }
+    }
+    if (spr.frames.length > 0) {
+      _sprite_map[name] = spr.id;
+    } else {
+      console.warn(`[Sprite] ${name} has no valid frames`);
+    }
+  } catch (err) {
+    console.warn(`[Sprite] Failed to load ${name}:`, err);
+  }
+}
+var _background_map = {};
+async function _load_background(name, meta_path, img_dir) {
+  try {
+    const meta = await fetch("file://" + meta_path).then((r) => r.json());
+    if (!meta.file_name) {
+      console.warn(`[Background] ${name} has no file_name in meta.json`);
+      return;
+    }
+    const bg = new background();
+    bg.tile_h = meta.tile_h ?? false;
+    bg.tile_v = meta.tile_v ?? false;
+    bg.smooth = meta.smooth ?? false;
+    const img_url = "file://" + img_dir.replace(/\\/g, "/") + "/" + meta.file_name;
+    try {
+      const tex_entry = await renderer.tex_mgr.load(img_url, bg.smooth);
+      bg.set_texture(tex_entry);
+      _background_map[name] = bg.id;
+    } catch (err) {
+      console.warn(`[Background] Failed to load image for ${name}:`, err);
+    }
+  } catch (err) {
+    console.warn(`[Background] Failed to load ${name}:`, err);
+  }
+}
 async function init(canvas) {
   renderer.init(canvas, 640, 480);
   game_loop.init_input(canvas);
-  const _room_room_level1 = new room();
-  _room_room_level1.room_width = 640;
-  _room_room_level1.room_height = 480;
-  _room_room_level1.room_speed = 60;
-  _room_room_level1.room_persistent = false;
-  const _inst_obj_platform_0 = new obj_platform(_room_room_level1);
-  _room_room_level1.room_instance_add(0, 448, _inst_obj_platform_0);
-  _inst_obj_platform_0.solid = true;
-  _inst_obj_platform_0.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_0.on_create.bind(_inst_obj_platform_0));
-  const _inst_obj_platform_1 = new obj_platform(_room_room_level1);
-  _room_room_level1.room_instance_add(96, 448, _inst_obj_platform_1);
-  _inst_obj_platform_1.solid = true;
-  _inst_obj_platform_1.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_1.on_create.bind(_inst_obj_platform_1));
-  const _inst_obj_platform_2 = new obj_platform(_room_room_level1);
-  _room_room_level1.room_instance_add(192, 448, _inst_obj_platform_2);
-  _inst_obj_platform_2.solid = true;
-  _inst_obj_platform_2.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_2.on_create.bind(_inst_obj_platform_2));
-  const _inst_obj_platform_3 = new obj_platform(_room_room_level1);
-  _room_room_level1.room_instance_add(288, 448, _inst_obj_platform_3);
-  _inst_obj_platform_3.solid = true;
-  _inst_obj_platform_3.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_3.on_create.bind(_inst_obj_platform_3));
-  const _inst_obj_platform_4 = new obj_platform(_room_room_level1);
-  _room_room_level1.room_instance_add(384, 448, _inst_obj_platform_4);
-  _inst_obj_platform_4.solid = true;
-  _inst_obj_platform_4.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_4.on_create.bind(_inst_obj_platform_4));
-  const _inst_obj_platform_5 = new obj_platform(_room_room_level1);
-  _room_room_level1.room_instance_add(480, 448, _inst_obj_platform_5);
-  _inst_obj_platform_5.solid = true;
-  _inst_obj_platform_5.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_5.on_create.bind(_inst_obj_platform_5));
-  const _inst_obj_platform_6 = new obj_platform(_room_room_level1);
-  _room_room_level1.room_instance_add(544, 448, _inst_obj_platform_6);
-  _inst_obj_platform_6.solid = true;
-  _inst_obj_platform_6.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_6.on_create.bind(_inst_obj_platform_6));
-  const _inst_obj_platform_7 = new obj_platform(_room_room_level1);
-  _room_room_level1.room_instance_add(100, 360, _inst_obj_platform_7);
-  _inst_obj_platform_7.solid = true;
-  _inst_obj_platform_7.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_7.on_create.bind(_inst_obj_platform_7));
-  const _inst_obj_platform_8 = new obj_platform(_room_room_level1);
-  _room_room_level1.room_instance_add(196, 360, _inst_obj_platform_8);
-  _inst_obj_platform_8.solid = true;
-  _inst_obj_platform_8.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_8.on_create.bind(_inst_obj_platform_8));
-  const _inst_obj_platform_9 = new obj_platform(_room_room_level1);
-  _room_room_level1.room_instance_add(300, 280, _inst_obj_platform_9);
-  _inst_obj_platform_9.solid = true;
-  _inst_obj_platform_9.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_9.on_create.bind(_inst_obj_platform_9));
-  const _inst_obj_platform_10 = new obj_platform(_room_room_level1);
-  _room_room_level1.room_instance_add(470, 320, _inst_obj_platform_10);
-  _inst_obj_platform_10.solid = true;
-  _inst_obj_platform_10.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_10.on_create.bind(_inst_obj_platform_10));
-  const _inst_obj_platform_11 = new obj_platform(_room_room_level1);
-  _room_room_level1.room_instance_add(185, 220, _inst_obj_platform_11);
-  _inst_obj_platform_11.solid = true;
-  _inst_obj_platform_11.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_11.on_create.bind(_inst_obj_platform_11));
-  const _inst_obj_platform_12 = new obj_platform(_room_room_level1);
-  _room_room_level1.room_instance_add(390, 190, _inst_obj_platform_12);
-  _inst_obj_platform_12.solid = true;
-  _inst_obj_platform_12.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_12.on_create.bind(_inst_obj_platform_12));
-  const _inst_obj_coin_13 = new obj_coin(_room_room_level1);
-  _room_room_level1.room_instance_add(148, 330, _inst_obj_coin_13);
-  _inst_obj_coin_13.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_coin_13.on_create.bind(_inst_obj_coin_13));
-  const _inst_obj_coin_14 = new obj_coin(_room_room_level1);
-  _room_room_level1.room_instance_add(244, 330, _inst_obj_coin_14);
-  _inst_obj_coin_14.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_coin_14.on_create.bind(_inst_obj_coin_14));
-  const _inst_obj_coin_15 = new obj_coin(_room_room_level1);
-  _room_room_level1.room_instance_add(348, 250, _inst_obj_coin_15);
-  _inst_obj_coin_15.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_coin_15.on_create.bind(_inst_obj_coin_15));
-  const _inst_obj_coin_16 = new obj_coin(_room_room_level1);
-  _room_room_level1.room_instance_add(233, 190, _inst_obj_coin_16);
-  _inst_obj_coin_16.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_coin_16.on_create.bind(_inst_obj_coin_16));
-  const _inst_obj_coin_17 = new obj_coin(_room_room_level1);
-  _room_room_level1.room_instance_add(438, 160, _inst_obj_coin_17);
-  _inst_obj_coin_17.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_coin_17.on_create.bind(_inst_obj_coin_17));
-  const _inst_obj_coin_18 = new obj_coin(_room_room_level1);
-  _room_room_level1.room_instance_add(518, 290, _inst_obj_coin_18);
-  _inst_obj_coin_18.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_coin_18.on_create.bind(_inst_obj_coin_18));
-  const _inst_obj_enemy_19 = new obj_enemy(_room_room_level1);
-  _room_room_level1.room_instance_add(310, 248, _inst_obj_enemy_19);
-  _inst_obj_enemy_19.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_enemy_19.on_create.bind(_inst_obj_enemy_19));
-  const _inst_obj_player_20 = new obj_player(_room_room_level1);
-  _room_room_level1.room_instance_add(50, 396, _inst_obj_player_20);
-  _inst_obj_player_20.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_obj_player_20.on_create.bind(_inst_obj_player_20));
-  const start = _room_room_level1;
+  await _load_sprite("s_player", "D:/Projects/TypeScript/Jump-Clone/sprites/s_player/meta.json", "D:/Projects/TypeScript/Jump-Clone/sprites/s_player");
+  await _load_sprite("s_wall", "D:/Projects/TypeScript/Jump-Clone/sprites/s_wall/meta.json", "D:/Projects/TypeScript/Jump-Clone/sprites/s_wall");
+  await _load_sprite("s_enemy", "D:/Projects/TypeScript/Jump-Clone/sprites/s_enemy/meta.json", "D:/Projects/TypeScript/Jump-Clone/sprites/s_enemy");
+  await _load_sprite("s_coin", "D:/Projects/TypeScript/Jump-Clone/sprites/s_coin/meta.json", "D:/Projects/TypeScript/Jump-Clone/sprites/s_coin");
+  await _load_background("bg_test", "D:/Projects/TypeScript/Jump-Clone/backgrounds/bg_test/meta.json", "D:/Projects/TypeScript/Jump-Clone/backgrounds/bg_test");
+  const _room_r_main = new room();
+  _room_r_main.room_width = 640;
+  _room_r_main.room_height = 480;
+  _room_r_main.room_speed = 60;
+  _room_r_main.room_persistent = false;
+  const _inst_o_player_0 = new o_player(_room_r_main);
+  _room_r_main.room_instance_add(64, 64, _inst_o_player_0);
+  _inst_o_player_0.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_player_0.on_create.bind(_inst_o_player_0));
+  const _inst_o_wall_1 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(0, 448, _inst_o_wall_1);
+  _inst_o_wall_1.solid = true;
+  _inst_o_wall_1.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_1.on_create.bind(_inst_o_wall_1));
+  const _inst_o_wall_2 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(32, 448, _inst_o_wall_2);
+  _inst_o_wall_2.solid = true;
+  _inst_o_wall_2.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_2.on_create.bind(_inst_o_wall_2));
+  const _inst_o_wall_3 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(64, 448, _inst_o_wall_3);
+  _inst_o_wall_3.solid = true;
+  _inst_o_wall_3.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_3.on_create.bind(_inst_o_wall_3));
+  const _inst_o_wall_4 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(96, 448, _inst_o_wall_4);
+  _inst_o_wall_4.solid = true;
+  _inst_o_wall_4.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_4.on_create.bind(_inst_o_wall_4));
+  const _inst_o_wall_5 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(128, 448, _inst_o_wall_5);
+  _inst_o_wall_5.solid = true;
+  _inst_o_wall_5.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_5.on_create.bind(_inst_o_wall_5));
+  const _inst_o_wall_6 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(160, 448, _inst_o_wall_6);
+  _inst_o_wall_6.solid = true;
+  _inst_o_wall_6.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_6.on_create.bind(_inst_o_wall_6));
+  const _inst_o_wall_7 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(192, 448, _inst_o_wall_7);
+  _inst_o_wall_7.solid = true;
+  _inst_o_wall_7.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_7.on_create.bind(_inst_o_wall_7));
+  const _inst_o_wall_8 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(224, 448, _inst_o_wall_8);
+  _inst_o_wall_8.solid = true;
+  _inst_o_wall_8.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_8.on_create.bind(_inst_o_wall_8));
+  const _inst_o_wall_9 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(256, 448, _inst_o_wall_9);
+  _inst_o_wall_9.solid = true;
+  _inst_o_wall_9.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_9.on_create.bind(_inst_o_wall_9));
+  const _inst_o_wall_10 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(288, 448, _inst_o_wall_10);
+  _inst_o_wall_10.solid = true;
+  _inst_o_wall_10.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_10.on_create.bind(_inst_o_wall_10));
+  const _inst_o_wall_11 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(320, 448, _inst_o_wall_11);
+  _inst_o_wall_11.solid = true;
+  _inst_o_wall_11.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_11.on_create.bind(_inst_o_wall_11));
+  const _inst_o_wall_12 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(352, 448, _inst_o_wall_12);
+  _inst_o_wall_12.solid = true;
+  _inst_o_wall_12.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_12.on_create.bind(_inst_o_wall_12));
+  const _inst_o_wall_13 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(384, 448, _inst_o_wall_13);
+  _inst_o_wall_13.solid = true;
+  _inst_o_wall_13.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_13.on_create.bind(_inst_o_wall_13));
+  const _inst_o_wall_14 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(416, 448, _inst_o_wall_14);
+  _inst_o_wall_14.solid = true;
+  _inst_o_wall_14.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_14.on_create.bind(_inst_o_wall_14));
+  const _inst_o_wall_15 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(448, 448, _inst_o_wall_15);
+  _inst_o_wall_15.solid = true;
+  _inst_o_wall_15.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_15.on_create.bind(_inst_o_wall_15));
+  const _inst_o_wall_16 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(480, 448, _inst_o_wall_16);
+  _inst_o_wall_16.solid = true;
+  _inst_o_wall_16.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_16.on_create.bind(_inst_o_wall_16));
+  const _inst_o_wall_17 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(512, 448, _inst_o_wall_17);
+  _inst_o_wall_17.solid = true;
+  _inst_o_wall_17.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_17.on_create.bind(_inst_o_wall_17));
+  const _inst_o_wall_18 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(544, 448, _inst_o_wall_18);
+  _inst_o_wall_18.solid = true;
+  _inst_o_wall_18.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_18.on_create.bind(_inst_o_wall_18));
+  const _inst_o_wall_19 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(576, 448, _inst_o_wall_19);
+  _inst_o_wall_19.solid = true;
+  _inst_o_wall_19.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_19.on_create.bind(_inst_o_wall_19));
+  const _inst_o_wall_20 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(608, 448, _inst_o_wall_20);
+  _inst_o_wall_20.solid = true;
+  _inst_o_wall_20.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_20.on_create.bind(_inst_o_wall_20));
+  const _inst_o_wall_21 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(200, 320, _inst_o_wall_21);
+  _inst_o_wall_21.solid = true;
+  _inst_o_wall_21.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_21.on_create.bind(_inst_o_wall_21));
+  const _inst_o_wall_22 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(232, 320, _inst_o_wall_22);
+  _inst_o_wall_22.solid = true;
+  _inst_o_wall_22.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_22.on_create.bind(_inst_o_wall_22));
+  const _inst_o_wall_23 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(264, 320, _inst_o_wall_23);
+  _inst_o_wall_23.solid = true;
+  _inst_o_wall_23.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_23.on_create.bind(_inst_o_wall_23));
+  const _inst_o_wall_24 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(400, 240, _inst_o_wall_24);
+  _inst_o_wall_24.solid = true;
+  _inst_o_wall_24.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_24.on_create.bind(_inst_o_wall_24));
+  const _inst_o_wall_25 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(432, 240, _inst_o_wall_25);
+  _inst_o_wall_25.solid = true;
+  _inst_o_wall_25.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_25.on_create.bind(_inst_o_wall_25));
+  const _inst_o_wall_26 = new o_wall(_room_r_main);
+  _room_r_main.room_instance_add(464, 240, _inst_o_wall_26);
+  _inst_o_wall_26.solid = true;
+  _inst_o_wall_26.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_wall_26.on_create.bind(_inst_o_wall_26));
+  const _inst_o_enemy_27 = new o_enemy(_room_r_main);
+  _room_r_main.room_instance_add(300, 400, _inst_o_enemy_27);
+  _inst_o_enemy_27.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_enemy_27.on_create.bind(_inst_o_enemy_27));
+  const _inst_o_enemy_28 = new o_enemy(_room_r_main);
+  _room_r_main.room_instance_add(430, 200, _inst_o_enemy_28);
+  _inst_o_enemy_28.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_enemy_28.on_create.bind(_inst_o_enemy_28));
+  const _inst_o_coin_29 = new o_coin(_room_r_main);
+  _room_r_main.room_instance_add(230, 280, _inst_o_coin_29);
+  _inst_o_coin_29.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_coin_29.on_create.bind(_inst_o_coin_29));
+  const _inst_o_coin_30 = new o_coin(_room_r_main);
+  _room_r_main.room_instance_add(430, 200, _inst_o_coin_30);
+  _inst_o_coin_30.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_coin_30.on_create.bind(_inst_o_coin_30));
+  const _inst_o_coin_31 = new o_coin(_room_r_main);
+  _room_r_main.room_instance_add(500, 400, _inst_o_coin_31);
+  _inst_o_coin_31.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_o_coin_31.on_create.bind(_inst_o_coin_31));
+  const start = _room_r_main;
   if (!start) {
     console.error("[Game] No rooms defined.");
     return;
@@ -8813,10 +8960,10 @@ async function init(canvas) {
 }
 export {
   init as default,
-  obj_coin,
-  obj_enemy,
-  obj_platform,
-  obj_player
+  o_coin,
+  o_enemy,
+  o_player,
+  o_wall
 };
 /*! Bundled license information:
 

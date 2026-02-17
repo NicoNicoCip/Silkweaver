@@ -197,10 +197,10 @@ export function menubar_default(actions: menubar_actions): HTMLElement {
             items: [
                 { label: 'Resources',    shortcut: 'Ctrl+R', action: actions.view_resources },
                 { separator: true },
-                { label: 'Console',      shortcut: 'Ctrl+`', action: actions.view_console },
+                { label: 'Output',       shortcut: 'F11',    action: actions.view_console },
                 { label: 'Debugger',     shortcut: 'F9',     action: actions.view_debugger },
                 { label: 'Profiler',     shortcut: 'F10',    action: actions.view_profiler },
-                { label: 'Game Preview', shortcut: 'F11',    action: actions.view_preview },
+                { label: 'Game Preview', shortcut: '',       action: actions.view_preview },
             ],
         },
         {

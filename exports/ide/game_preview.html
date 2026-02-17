@@ -12,6 +12,7 @@
             top: 50%; left: 50%;
             transform: translate(-50%, -50%);
             image-rendering: pixelated;
+            outline: none;
         }
         #sw-no-game {
             position: absolute;
@@ -29,7 +30,7 @@
     </style>
 </head>
 <body>
-    <canvas id="sw-canvas" width="640" height="480"></canvas>
+    <canvas id="sw-canvas" width="640" height="480" tabindex="0"></canvas>
     <div id="sw-no-game" style="display:none;">
         <span>▶</span>
         <p>No game loaded.</p>
@@ -38,6 +39,51 @@
 
     <script type="module">
         const canvas = document.getElementById('sw-canvas')
+
+        // Focus canvas so it can receive keyboard input
+        canvas.focus()
+        canvas.addEventListener('click', () => canvas.focus())
+
+        // Forward console messages to parent IDE window
+        const _original_error = console.error
+        const _original_warn = console.warn
+        const _original_log = console.log
+
+        console.error = (...args) => {
+            _original_error(...args)
+            window.parent.postMessage({ type: 'console', level: 'error', message: args.map(a => String(a)).join(' ') }, '*')
+        }
+
+        console.warn = (...args) => {
+            _original_warn(...args)
+            window.parent.postMessage({ type: 'console', level: 'warn', message: args.map(a => String(a)).join(' ') }, '*')
+        }
+
+        console.log = (...args) => {
+            _original_log(...args)
+            const text = args.map(a => String(a)).join(' ')
+            if (!text.startsWith('[SW]') && !text.startsWith('[Game]')) {
+                window.parent.postMessage({ type: 'console', level: 'log', message: text }, '*')
+            }
+        }
+
+        // Capture uncaught errors
+        window.addEventListener('error', (e) => {
+            window.parent.postMessage({
+                type: 'console',
+                level: 'error',
+                message: `Uncaught: ${e.message} at ${e.filename}:${e.lineno}:${e.colno}`
+            }, '*')
+        })
+
+        // Capture unhandled promise rejections
+        window.addEventListener('unhandledrejection', (e) => {
+            window.parent.postMessage({
+                type: 'console',
+                level: 'error',
+                message: `Unhandled Promise Rejection: ${e.reason}`
+            }, '*')
+        })
 
         // Try to load the compiled game entry point
         let game_loaded = false

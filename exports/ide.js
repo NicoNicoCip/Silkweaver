@@ -775,10 +775,10 @@ function menubar_default(actions) {
       items: [
         { label: "Resources", shortcut: "Ctrl+R", action: actions.view_resources },
         { separator: true },
-        { label: "Console", shortcut: "Ctrl+`", action: actions.view_console },
+        { label: "Output", shortcut: "F11", action: actions.view_console },
         { label: "Debugger", shortcut: "F9", action: actions.view_debugger },
         { label: "Profiler", shortcut: "F10", action: actions.view_profiler },
-        { label: "Game Preview", shortcut: "F11", action: actions.view_preview }
+        { label: "Game Preview", shortcut: "", action: actions.view_preview }
       ]
     },
     {
@@ -1188,6 +1188,26 @@ async function project_read_binary_url(rel_path) {
     reader.readAsDataURL(file);
   });
 }
+async function project_file_exists(rel_path) {
+  try {
+    if (_has_electron()) {
+      const fs = _el();
+      if (!_folder_path) return false;
+      return await fs.exists(fs.join(_folder_path, ...rel_path.split("/")));
+    }
+    const dir = _dir_handle;
+    if (!dir) return false;
+    const parts = rel_path.split("/");
+    let current = dir;
+    for (let i = 0; i < parts.length - 1; i++) {
+      current = await current.getDirectoryHandle(parts[i], { create: false });
+    }
+    await current.getFileHandle(parts[parts.length - 1]);
+    return true;
+  } catch {
+    return false;
+  }
+}
 async function project_read_file(rel_path) {
   if (_has_electron()) {
     const fs = _el();
@@ -1533,30 +1553,57 @@ var ResourceTree = class {
       canvas.width = 16;
       canvas.height = 16;
       canvas.style.cssText = "width:16px;height:16px;flex-shrink:0;image-rendering:pixelated;";
-      const sprite = this._state.resources["sprites"][name];
-      const frames = sprite?.frames;
-      if (frames && frames.length > 0) {
-        const frame = frames[0];
-        const src = frame.data_url ?? null;
-        const draw = (url) => {
-          const img = new Image();
-          img.onload = () => {
-            const ctx = canvas.getContext("2d");
-            ctx.clearRect(0, 0, 16, 16);
-            ctx.drawImage(img, 0, 0, 16, 16);
-          };
-          img.src = url;
-        };
-        if (src) {
-          draw(src);
-        } else if (frame.name) {
-          const rel = `sprites/${name}/${frame.name}`;
-          project_read_binary_url(rel).then(draw).catch(() => {
-          });
+      const load_thumbnail = async () => {
+        try {
+          const meta_text = await project_read_file(`sprites/${name}/meta.json`);
+          const meta = JSON.parse(meta_text);
+          if (meta.frames && meta.frames.length > 0) {
+            const first_frame = meta.frames[0];
+            const frame_name = typeof first_frame === "string" ? first_frame : first_frame.name;
+            const img_url = await project_read_binary_url(`sprites/${name}/${frame_name}`);
+            const img = new Image();
+            img.onload = () => {
+              const ctx = canvas.getContext("2d");
+              ctx.clearRect(0, 0, 16, 16);
+              ctx.drawImage(img, 0, 0, 16, 16);
+            };
+            img.src = img_url;
+          } else {
+            _draw_placeholder(canvas);
+          }
+        } catch {
+          _draw_placeholder(canvas);
         }
-      } else {
-        _draw_placeholder(canvas);
-      }
+      };
+      load_thumbnail();
+      return canvas;
+    }
+    if (cat_id === "backgrounds" && this._state) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 16;
+      canvas.height = 16;
+      canvas.style.cssText = "width:16px;height:16px;flex-shrink:0;image-rendering:pixelated;";
+      const load_thumbnail = async () => {
+        try {
+          const meta_text = await project_read_file(`backgrounds/${name}/meta.json`);
+          const meta = JSON.parse(meta_text);
+          if (meta.file_name) {
+            const img_url = await project_read_binary_url(`backgrounds/${name}/${meta.file_name}`);
+            const img = new Image();
+            img.onload = () => {
+              const ctx = canvas.getContext("2d");
+              ctx.clearRect(0, 0, 16, 16);
+              ctx.drawImage(img, 0, 0, 16, 16);
+            };
+            img.src = img_url;
+          } else {
+            _draw_placeholder(canvas);
+          }
+        } catch {
+          _draw_placeholder(canvas);
+        }
+      };
+      load_thumbnail();
       return canvas;
     }
     const span = document.createElement("span");
@@ -1715,6 +1762,9 @@ function _load_monaco() {
   return _monaco_ready;
 }
 var SW_TYPES = `
+// \u2500\u2500 Context \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+declare var this: gm_object;
+
 declare const enum EVENT_TYPE {
     CREATE = 'create', DESTROY = 'destroy',
     STEP = 'step', STEP_BEGIN = 'step_begin', STEP_END = 'step_end',
@@ -1728,11 +1778,19 @@ declare class gm_object {
     x: number; y: number; z: number;
     speed: number; direction: number;
     hspeed: number; vspeed: number;
-    sprite_index: string; image_index: number; image_speed: number;
+    sprite_index: number; image_index: number; image_speed: number;
+    image_xscale: number; image_yscale: number; image_angle: number;
     image_alpha: number; image_blend: number;
     visible: boolean; solid: boolean; persistent: boolean; depth: number;
     id: number; object_index: string;
     bbox_left: number; bbox_right: number; bbox_top: number; bbox_bottom: number;
+    mask_index: number;
+    gravity: number; gravity_direction: number; friction: number;
+    xprevious: number; yprevious: number;
+    move_direction: number;  // Custom property example
+    [key: string]: any;  // Allow any custom properties
+
+    // Lifecycle methods
     create(): void;
     destroy(): void;
     step(): void;
@@ -1740,6 +1798,15 @@ declare class gm_object {
     step_end(): void;
     draw(): void;
     draw_gui(): void;
+
+    // Instance methods
+    place_meeting(x: number, y: number, obj: any): boolean;
+    place_free(x: number, y: number): boolean;
+    instance_place(x: number, y: number, obj: any): any;
+    instance_destroy(): void;
+    draw_self(): void;
+
+    // Event registration
     on(event: EVENT_TYPE, callback: () => void): void;
     timer_create(name: string, steps: number, repeat: boolean, callback: () => void): void;
     timer_destroy(name: string): void;
@@ -1766,20 +1833,33 @@ declare const fa_top: number; declare const fa_middle: number; declare const fa_
 declare const c_white: number; declare const c_black: number; declare const c_red: number;
 declare const c_green: number; declare const c_blue: number; declare const c_yellow: number;
 declare const c_orange: number; declare const c_purple: number; declare const c_aqua: number;
+declare const c_gray: number; declare const c_silver: number; declare const c_ltgray: number;
+declare const c_dkgray: number; declare const c_lime: number; declare const c_maroon: number;
+declare const c_navy: number; declare const c_olive: number; declare const c_teal: number;
+declare const c_fuchsia: number;
 declare function make_color_rgb(r: number, g: number, b: number): number;
 declare function color_get_red(col: number): number;
 declare function color_get_green(col: number): number;
 declare function color_get_blue(col: number): number;
 
 // \u2500\u2500 Instances \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-declare function instance_create(x: number, y: number, obj: string): number;
+declare class instance {
+    static instance_create(x: number, y: number, obj: any): any;
+    static instance_nearest(x: number, y: number, obj: any): any;
+    static instance_destroy_id(id: number): void;
+    instance_destroy(): void;
+    place_meeting(x: number, y: number, obj: any): boolean;
+    place_free(x: number, y: number): boolean;
+    instance_place(x: number, y: number, obj: any): any;
+}
+declare function instance_create(x: number, y: number, obj: any): number;
 declare function instance_destroy(id?: number): void;
 declare function instance_exists(id: number): boolean;
-declare function instance_number(obj: string): number;
-declare function instance_find(obj: string, n: number): number;
-declare function instance_nearest(x: number, y: number, obj: string): number;
-declare function with_object(obj: string | number, fn: (inst: gm_object) => void): void;
-declare function place_meeting(x: number, y: number, obj: string): boolean;
+declare function instance_number(obj: any): number;
+declare function instance_find(obj: any, n: number): number;
+declare function instance_nearest(x: number, y: number, obj: any): any;
+declare function with_object(obj: any, fn: (inst: gm_object) => void): void;
+declare function place_meeting(x: number, y: number, obj: any): boolean;
 declare function place_free(x: number, y: number): boolean;
 declare function move_contact(dir: number, maxdist: number, solid: boolean): void;
 declare function move_towards_point(x: number, y: number, sp: number): void;
@@ -1905,8 +1985,9 @@ function _setup_monaco(monaco) {
   monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
     target: monaco.languages.typescript.ScriptTarget.ES2020,
     module: monaco.languages.typescript.ModuleKind.ESNext,
-    strict: true,
-    noImplicitAny: true,
+    strict: false,
+    noImplicitAny: false,
+    noImplicitThis: false,
     lib: ["es2020", "dom"],
     allowNonTsExtensions: true
   });
@@ -1973,7 +2054,8 @@ var ScriptEditor = class {
       wordWrap: "off",
       tabSize: 4,
       insertSpaces: true,
-      glyphMargin: true
+      glyphMargin: true,
+      fixedOverflowWidgets: true
     });
     bp_register_editor(this._file_key, this._editor);
     this._editor.onMouseDown((e) => {
@@ -2031,7 +2113,8 @@ var ScriptEditor = class {
       wordWrap: "off",
       tabSize: 4,
       insertSpaces: true,
-      glyphMargin: true
+      glyphMargin: true,
+      fixedOverflowWidgets: true
     });
     bp_register_editor(this._file_key, this._editor);
     this._editor.onMouseDown((e) => {
@@ -2066,7 +2149,8 @@ var ScriptEditor = class {
       fontSize: 13,
       minimap: { enabled: false },
       automaticLayout: true,
-      scrollBeyondLastLine: false
+      scrollBeyondLastLine: false,
+      fixedOverflowWidgets: true
     });
     this._editor.onDidChangeModelContent(() => {
       this._dirty = true;
@@ -2176,6 +2260,396 @@ async function script_editor_open_smart(parent, rel_path, get_handle) {
   const handle = await get_handle();
   return script_editor_open(parent, handle, rel_path);
 }
+var _project_types_disposable = null;
+function inject_project_types(state) {
+  _load_monaco().then((monaco) => {
+    if (_project_types_disposable) {
+      _project_types_disposable.dispose();
+    }
+    const object_names = Object.keys(state.resources?.objects || {});
+    const declarations = object_names.map(
+      (name) => `declare const ${name}: typeof gm_object;`
+    ).join("\n");
+    const project_types = `
+// Project-specific object classes
+${declarations}
+`;
+    _project_types_disposable = monaco.languages.typescript.typescriptDefaults.addExtraLib(
+      project_types,
+      "ts:silkweaver/project-objects.d.ts"
+    );
+  });
+}
+
+// packages/ide/src/editors/pixel_editor.ts
+function pixel_editor_open(workspace, width, height, initial_data, on_save) {
+  new PixelEditor(workspace, width, height, initial_data, on_save);
+}
+var PixelEditor = class {
+  constructor(workspace, width, height, initial_data, on_save) {
+    this._zoom = 20;
+    // pixels per grid cell
+    this._tool = "pencil";
+    this._color = "#000000";
+    this._is_drawing = false;
+    // UI elements
+    this._tool_btns = /* @__PURE__ */ new Map();
+    this._on_keydown = (e) => {
+      if (e.key === "p" || e.key === "P") this._set_tool("pencil");
+      if (e.key === "e" || e.key === "E") this._set_tool("eraser");
+      if (e.key === "f" || e.key === "F") this._set_tool("fill");
+      if (e.key === "i" || e.key === "I") this._set_tool("eyedropper");
+    };
+    // ── Drawing ───────────────────────────────────────────────────────────
+    this._on_mousedown = (e) => {
+      e.preventDefault();
+      this._is_drawing = true;
+      const { px, py } = this._get_pixel_coords(e);
+      if (px < 0 || py < 0 || px >= this._width || py >= this._height) return;
+      const is_erasing = e.button === 2;
+      if (this._tool === "fill" && !is_erasing) {
+        this._flood_fill(px, py);
+      } else if (this._tool === "eyedropper" && !is_erasing) {
+        this._pick_color(px, py);
+      } else {
+        this._draw_pixel(px, py, is_erasing);
+      }
+    };
+    this._on_mousemove = (e) => {
+      if (!this._is_drawing) return;
+      const is_erasing = e.buttons === 2;
+      if (this._tool === "fill" || this._tool === "eyedropper") return;
+      const { px, py } = this._get_pixel_coords(e);
+      if (px < 0 || py < 0 || px >= this._width || py >= this._height) return;
+      this._draw_pixel(px, py, is_erasing);
+    };
+    this._on_mouseup = () => {
+      this._is_drawing = false;
+    };
+    this._width = width;
+    this._height = height;
+    this._on_save = on_save;
+    this._win = new FloatingWindow(
+      "pixel-editor",
+      "Pixel Editor",
+      null,
+      { x: 100, y: 100, w: Math.min(800, width * this._zoom + 200), h: Math.min(600, height * this._zoom + 150) }
+    );
+    this._build_ui();
+    this._setup_canvas(initial_data);
+    this._win.mount(workspace);
+  }
+  // ── UI Construction ───────────────────────────────────────────────────
+  _build_ui() {
+    const body = this._win.body;
+    body.style.cssText = "display:flex; flex-direction:column; overflow:hidden; background:#1e1e1e;";
+    const toolbar = document.createElement("div");
+    toolbar.style.cssText = `
+            display:flex; gap:8px; padding:8px;
+            background:var(--sw-chrome2); border-bottom:1px solid var(--sw-border2);
+            align-items:center;
+        `;
+    const tools = [
+      { tool: "pencil", char: "\u270E", title: "Pencil (P)" },
+      // ✎
+      { tool: "eraser", char: "\u2573", title: "Eraser (E)" },
+      // ╳
+      { tool: "fill", char: "\u25A8", title: "Fill Bucket (F)" },
+      // ▨
+      { tool: "eyedropper", char: "\u25BC", title: "Eyedropper (I)" }
+      // ▼
+    ];
+    tools.forEach(({ tool, char, title }) => {
+      const btn = document.createElement("button");
+      btn.textContent = char;
+      btn.title = title;
+      btn.style.cssText = `
+                width:28px; height:28px; cursor:pointer;
+                border:1px solid var(--sw-border2); background:var(--sw-chrome2); color:var(--sw-text);
+                font-size:14px; padding:0; display:flex; align-items:center; justify-content:center;
+            `;
+      btn.addEventListener("click", () => this._set_tool(tool));
+      this._tool_btns.set(tool, btn);
+      toolbar.appendChild(btn);
+    });
+    const sep = document.createElement("div");
+    sep.style.cssText = "width:1px; height:24px; background:var(--sw-border2); margin:0 8px;";
+    toolbar.appendChild(sep);
+    this._color_preview = document.createElement("div");
+    this._color_preview.style.cssText = `
+            width:28px; height:28px; border:1px solid var(--sw-border2);
+            background:${this._color}; cursor:pointer;
+        `;
+    this._color_preview.title = "Click to pick color";
+    this._color_preview.addEventListener("click", () => this._color_input.click());
+    toolbar.appendChild(this._color_preview);
+    this._color_input = document.createElement("input");
+    this._color_input.type = "color";
+    this._color_input.value = this._color;
+    this._color_input.style.cssText = "display:none;";
+    this._color_input.addEventListener("input", () => {
+      this._color = this._color_input.value;
+      this._color_preview.style.background = this._color;
+    });
+    toolbar.appendChild(this._color_input);
+    const save_btn = document.createElement("button");
+    save_btn.textContent = "Save";
+    save_btn.style.cssText = `
+            margin-left:auto; padding:5px 16px; cursor:pointer;
+            background:var(--sw-chrome2); color:var(--sw-text);
+            border:1px solid var(--sw-border2); font-size:12px;
+        `;
+    save_btn.addEventListener("click", () => this._save());
+    toolbar.appendChild(save_btn);
+    body.appendChild(toolbar);
+    const container = document.createElement("div");
+    container.style.cssText = `
+            flex:1; overflow:auto; display:flex; align-items:center; justify-content:center;
+            background:#1a1a1a;
+        `;
+    this._canvas = document.createElement("canvas");
+    this._canvas.width = this._width;
+    this._canvas.height = this._height;
+    this._ctx = this._canvas.getContext("2d", { willReadFrequently: true });
+    this._display_canvas = document.createElement("canvas");
+    this._display_canvas.width = this._width * this._zoom;
+    this._display_canvas.height = this._height * this._zoom;
+    this._display_canvas.style.cssText = `
+            image-rendering:pixelated; cursor:crosshair;
+            border:1px solid var(--sw-border2);
+        `;
+    this._display_ctx = this._display_canvas.getContext("2d");
+    this._display_ctx.imageSmoothingEnabled = false;
+    container.appendChild(this._display_canvas);
+    body.appendChild(container);
+    this._set_tool("pencil");
+    window.addEventListener("keydown", this._on_keydown);
+    this._win.on_close(() => {
+      window.removeEventListener("keydown", this._on_keydown);
+    });
+  }
+  _setup_canvas(initial_data) {
+    this._ctx.fillStyle = "#ffffff";
+    this._ctx.fillRect(0, 0, this._width, this._height);
+    if (initial_data) {
+      const img = new Image();
+      img.onload = () => {
+        this._ctx.clearRect(0, 0, this._width, this._height);
+        this._ctx.drawImage(img, 0, 0, this._width, this._height);
+        this._redraw();
+      };
+      img.src = initial_data;
+    } else {
+      this._redraw();
+    }
+    this._display_canvas.addEventListener("mousedown", this._on_mousedown);
+    this._display_canvas.addEventListener("mousemove", this._on_mousemove);
+    this._display_canvas.addEventListener("mouseup", this._on_mouseup);
+    this._display_canvas.addEventListener("mouseleave", this._on_mouseup);
+    this._display_canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+  // ── Tools ─────────────────────────────────────────────────────────────
+  _set_tool(tool) {
+    this._tool = tool;
+    this._tool_btns.forEach((btn, t) => {
+      if (t === tool) {
+        btn.style.background = "var(--sw-select-bg)";
+        btn.style.borderColor = "var(--sw-accent)";
+      } else {
+        btn.style.background = "var(--sw-chrome2)";
+        btn.style.borderColor = "var(--sw-border2)";
+      }
+    });
+  }
+  _get_pixel_coords(e) {
+    const rect = this._display_canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    return {
+      px: Math.floor(x / this._zoom),
+      py: Math.floor(y / this._zoom)
+    };
+  }
+  _draw_pixel(px, py, force_erase = false) {
+    if (this._tool === "eraser" || force_erase) {
+      this._ctx.clearRect(px, py, 1, 1);
+    } else {
+      this._ctx.fillStyle = this._color;
+      this._ctx.fillRect(px, py, 1, 1);
+    }
+    this._redraw();
+  }
+  _pick_color(px, py) {
+    const imageData = this._ctx.getImageData(px, py, 1, 1);
+    const [r, g, b] = imageData.data;
+    this._color = `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+    this._color_input.value = this._color;
+    this._color_preview.style.background = this._color;
+    this._set_tool("pencil");
+  }
+  _flood_fill(px, py) {
+    const imageData = this._ctx.getImageData(0, 0, this._width, this._height);
+    const data = imageData.data;
+    const target_color = this._get_pixel_color(data, px, py);
+    const fill_color = this._hex_to_rgba(this._color);
+    if (this._colors_equal(target_color, fill_color)) return;
+    const stack = [[px, py]];
+    const visited = /* @__PURE__ */ new Set();
+    while (stack.length > 0) {
+      const [x, y] = stack.pop();
+      const key = `${x},${y}`;
+      if (visited.has(key)) continue;
+      if (x < 0 || y < 0 || x >= this._width || y >= this._height) continue;
+      const current = this._get_pixel_color(data, x, y);
+      if (!this._colors_equal(current, target_color)) continue;
+      visited.add(key);
+      this._set_pixel_color(data, x, y, fill_color);
+      stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+    }
+    this._ctx.putImageData(imageData, 0, 0);
+    this._redraw();
+  }
+  _get_pixel_color(data, x, y) {
+    const idx = (y * this._width + x) * 4;
+    return [data[idx], data[idx + 1], data[idx + 2], data[idx + 3]];
+  }
+  _set_pixel_color(data, x, y, color) {
+    const idx = (y * this._width + x) * 4;
+    data[idx] = color[0];
+    data[idx + 1] = color[1];
+    data[idx + 2] = color[2];
+    data[idx + 3] = color[3];
+  }
+  _hex_to_rgba(hex) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return [r, g, b, 255];
+  }
+  _colors_equal(a, b) {
+    return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
+  }
+  // ── Display ───────────────────────────────────────────────────────────
+  _redraw() {
+    this._display_ctx.clearRect(0, 0, this._display_canvas.width, this._display_canvas.height);
+    const checker_size = this._zoom;
+    for (let y = 0; y < this._height; y++) {
+      for (let x = 0; x < this._width; x++) {
+        const is_light = (x + y) % 2 === 0;
+        this._display_ctx.fillStyle = is_light ? "#e0e0e0" : "#c0c0c0";
+        this._display_ctx.fillRect(x * this._zoom, y * this._zoom, this._zoom, this._zoom);
+      }
+    }
+    this._display_ctx.imageSmoothingEnabled = false;
+    this._display_ctx.drawImage(this._canvas, 0, 0, this._width * this._zoom, this._height * this._zoom);
+    this._display_ctx.strokeStyle = "rgba(0,0,0,0.15)";
+    this._display_ctx.lineWidth = 1;
+    for (let x = 0; x <= this._width; x++) {
+      this._display_ctx.beginPath();
+      this._display_ctx.moveTo(x * this._zoom + 0.5, 0);
+      this._display_ctx.lineTo(x * this._zoom + 0.5, this._display_canvas.height);
+      this._display_ctx.stroke();
+    }
+    for (let y = 0; y <= this._height; y++) {
+      this._display_ctx.beginPath();
+      this._display_ctx.moveTo(0, y * this._zoom + 0.5);
+      this._display_ctx.lineTo(this._display_canvas.width, y * this._zoom + 0.5);
+      this._display_ctx.stroke();
+    }
+  }
+  // ── Save ──────────────────────────────────────────────────────────────
+  _save() {
+    const data_url = this._canvas.toDataURL("image/png");
+    this._on_save(data_url);
+    this._win.close();
+  }
+};
+
+// packages/ide/src/services/dialogs.ts
+function _modal(content_html) {
+  const overlay = document.createElement("div");
+  overlay.style.cssText = `
+        position:fixed; inset:0; z-index:9999;
+        background:rgba(0,0,0,0.55);
+        display:flex; align-items:center; justify-content:center;
+    `;
+  const box = document.createElement("div");
+  box.style.cssText = `
+        background:#2b2b2b; border:1px solid #555; border-radius:4px;
+        padding:18px 20px; min-width:320px; max-width:460px;
+        font-family:sans-serif; color:#ccc; font-size:13px;
+        display:flex; flex-direction:column; gap:10px;
+        box-shadow:0 4px 24px rgba(0,0,0,0.6);
+    `;
+  box.innerHTML = content_html;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  return { overlay, close };
+}
+function show_alert(msg) {
+  return new Promise((resolve) => {
+    const { close } = _modal(`
+            <p style="margin:0;white-space:pre-wrap;">${msg.replace(/</g, "&lt;")}</p>
+            <div style="display:flex;justify-content:flex-end;">
+                <button id="_sw_ok" style="padding:4px 20px;cursor:pointer;">OK</button>
+            </div>
+        `);
+    document.getElementById("_sw_ok").addEventListener("click", () => {
+      close();
+      resolve();
+    });
+  });
+}
+function show_prompt(msg, def = "") {
+  return new Promise((resolve) => {
+    const { close } = _modal(`
+            <p style="margin:0;">${msg.replace(/</g, "&lt;")}</p>
+            <input id="_sw_inp" value="${def.replace(/"/g, "&quot;")}"
+                style="padding:5px 8px;background:#3c3c3c;border:1px solid #555;color:#ddd;font-size:13px;border-radius:3px;outline:none;">
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+                <button id="_sw_ok"     style="padding:4px 20px;cursor:pointer;">OK</button>
+                <button id="_sw_cancel" style="padding:4px 20px;cursor:pointer;">Cancel</button>
+            </div>
+        `);
+    const inp = document.getElementById("_sw_inp");
+    inp.focus();
+    inp.select();
+    const ok = () => {
+      close();
+      resolve(inp.value);
+    };
+    const cancel = () => {
+      close();
+      resolve(null);
+    };
+    document.getElementById("_sw_ok").addEventListener("click", ok);
+    document.getElementById("_sw_cancel").addEventListener("click", cancel);
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") ok();
+      if (e.key === "Escape") cancel();
+    });
+  });
+}
+function show_confirm(msg) {
+  return new Promise((resolve) => {
+    const { close } = _modal(`
+            <p style="margin:0;white-space:pre-wrap;">${msg.replace(/</g, "&lt;")}</p>
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+                <button id="_sw_ok"     style="padding:4px 20px;cursor:pointer;">OK</button>
+                <button id="_sw_cancel" style="padding:4px 20px;cursor:pointer;">Cancel</button>
+            </div>
+        `);
+    document.getElementById("_sw_ok").addEventListener("click", () => {
+      close();
+      resolve(true);
+    });
+    document.getElementById("_sw_cancel").addEventListener("click", () => {
+      close();
+      resolve(false);
+    });
+  });
+}
 
 // packages/ide/src/editors/sprite_editor.ts
 var _open_editors2 = /* @__PURE__ */ new Map();
@@ -2195,6 +2669,50 @@ var sprite_editor_window = class {
     this._anim_timer = null;
     this._anim_frame = 0;
     this._on_closed_cb = null;
+    this._zoom = 1;
+    this._dragging = null;
+    this._drag_offset = { x: 0, y: 0 };
+    // ── Canvas interaction ─────────────────────────────────────────────────
+    this._on_canvas_mousedown = (e) => {
+      const rect = this._canvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) / this._zoom);
+      const y = Math.floor((e.clientY - rect.top) / this._zoom);
+      const origin_dist = Math.sqrt(Math.pow(x - this._data.origin_x, 2) + Math.pow(y - this._data.origin_y, 2));
+      if (origin_dist < 5 / this._zoom + 3) {
+        this._dragging = "origin";
+        this._drag_offset = { x: x - this._data.origin_x, y: y - this._data.origin_y };
+        return;
+      }
+      const mx = this._data.mask_x;
+      const my = this._data.mask_y;
+      const mw = this._data.mask_w;
+      const mh = this._data.mask_h;
+      if (x >= mx && x <= mx + mw && y >= my && y <= my + mh) {
+        this._dragging = "mask";
+        this._drag_offset = { x: x - mx, y: y - my };
+        return;
+      }
+    };
+    this._on_canvas_mousemove = (e) => {
+      if (!this._dragging) return;
+      const rect = this._canvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) / this._zoom);
+      const y = Math.floor((e.clientY - rect.top) / this._zoom);
+      if (this._dragging === "origin") {
+        this._data.origin_x = Math.max(0, Math.min(this._data.width, x - this._drag_offset.x));
+        this._data.origin_y = Math.max(0, Math.min(this._data.height, y - this._drag_offset.y));
+        this._redraw();
+        this._save_meta();
+      } else if (this._dragging === "mask") {
+        this._data.mask_x = Math.max(0, Math.min(this._data.width - this._data.mask_w, x - this._drag_offset.x));
+        this._data.mask_y = Math.max(0, Math.min(this._data.height - this._data.mask_h, y - this._drag_offset.y));
+        this._redraw();
+        this._save_meta();
+      }
+    };
+    this._on_canvas_mouseup = () => {
+      this._dragging = null;
+    };
     this._sprite_name = sprite_name;
     this._project = project_name;
     const off = _next_offset++ % 8 * 24;
@@ -2238,9 +2756,10 @@ var sprite_editor_window = class {
     body.style.cssText = "display:flex; flex-direction:column; overflow:hidden;";
     const toolbar = document.createElement("div");
     toolbar.className = "sw-editor-toolbar";
+    const btn_new_frame = _tool_btn("New Frame", () => this._create_new_frame());
     const btn_import = _tool_btn("Import Frames", () => this._import_frames());
     const btn_clear = _tool_btn("Clear All", () => this._clear_frames());
-    toolbar.append(btn_import, btn_clear);
+    toolbar.append(btn_new_frame, btn_import, btn_clear);
     body.appendChild(toolbar);
     const main = document.createElement("div");
     main.style.cssText = "display:flex; flex:1; overflow:hidden;";
@@ -2251,12 +2770,44 @@ var sprite_editor_window = class {
     main.appendChild(left);
     const center = document.createElement("div");
     center.className = "sw-sprite-preview-area";
+    center.style.cssText = "flex:1; display:flex; flex-direction:column; overflow:hidden; background:var(--sw-chrome1);";
+    const zoom_bar = document.createElement("div");
+    zoom_bar.style.cssText = "display:flex; align-items:center; gap:8px; padding:4px 8px; background:var(--sw-chrome2); border-bottom:1px solid var(--sw-border2);";
+    const zoom_out = document.createElement("button");
+    zoom_out.textContent = "\u2212";
+    zoom_out.title = "Zoom Out";
+    zoom_out.style.cssText = "width:24px; height:24px; cursor:pointer; background:var(--sw-chrome2); border:1px solid var(--sw-border2); color:var(--sw-text);";
+    zoom_out.addEventListener("click", () => this._adjust_zoom(-1));
+    const zoom_label = document.createElement("span");
+    zoom_label.id = "zoom-label";
+    zoom_label.textContent = "1x";
+    zoom_label.style.cssText = "font-size:11px; color:var(--sw-text); min-width:30px; text-align:center;";
+    const zoom_in = document.createElement("button");
+    zoom_in.textContent = "+";
+    zoom_in.title = "Zoom In";
+    zoom_in.style.cssText = "width:24px; height:24px; cursor:pointer; background:var(--sw-chrome2); border:1px solid var(--sw-border2); color:var(--sw-text);";
+    zoom_in.addEventListener("click", () => this._adjust_zoom(1));
+    const zoom_fit = document.createElement("button");
+    zoom_fit.textContent = "Fit";
+    zoom_fit.title = "Fit to View";
+    zoom_fit.style.cssText = "padding:4px 8px; cursor:pointer; background:var(--sw-chrome2); border:1px solid var(--sw-border2); color:var(--sw-text); font-size:11px;";
+    zoom_fit.addEventListener("click", () => this._fit_zoom());
+    zoom_bar.append(zoom_out, zoom_label, zoom_in, zoom_fit);
+    center.appendChild(zoom_bar);
+    const canvas_container = document.createElement("div");
+    canvas_container.style.cssText = "flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; background:#2a2a2a;";
     this._canvas = document.createElement("canvas");
     this._canvas.width = 192;
     this._canvas.height = 192;
     this._canvas.className = "sw-sprite-canvas";
+    this._canvas.style.cssText = "image-rendering:pixelated; cursor:crosshair;";
     this._ctx = this._canvas.getContext("2d");
-    center.appendChild(this._canvas);
+    this._canvas.addEventListener("mousedown", this._on_canvas_mousedown);
+    this._canvas.addEventListener("mousemove", this._on_canvas_mousemove);
+    this._canvas.addEventListener("mouseup", this._on_canvas_mouseup);
+    this._canvas.addEventListener("mouseleave", this._on_canvas_mouseup);
+    canvas_container.appendChild(this._canvas);
+    center.appendChild(canvas_container);
     main.appendChild(center);
     const right = document.createElement("div");
     right.className = "sw-sprite-props";
@@ -2350,6 +2901,64 @@ var sprite_editor_window = class {
     return el;
   }
   // ── Frame management ───────────────────────────────────────────────────
+  async _create_new_frame() {
+    if (this._data.frames.length === 0) {
+      const w = await show_prompt("Frame width (pixels):", "32");
+      if (!w) return;
+      const h = await show_prompt("Frame height (pixels):", "32");
+      if (!h) return;
+      const width = Math.max(1, parseInt(w) || 32);
+      const height = Math.max(1, parseInt(h) || 32);
+      this._data.width = width;
+      this._data.height = height;
+      this._data.mask_w = width;
+      this._data.mask_h = height;
+      this._canvas.width = Math.min(192, width);
+      this._canvas.height = Math.min(192, height);
+    }
+    pixel_editor_open(
+      this._win.body.parentElement,
+      this._data.width,
+      this._data.height,
+      null,
+      (data_url) => this._save_new_frame(data_url)
+    );
+  }
+  _edit_frame(index) {
+    const frame = this._data.frames[index];
+    if (!frame) return;
+    pixel_editor_open(
+      this._win.body.parentElement,
+      this._data.width,
+      this._data.height,
+      frame.data_url,
+      (data_url) => this._update_frame(index, data_url)
+    );
+  }
+  async _save_new_frame(data_url) {
+    const frame_name = `${this._sprite_name}_${this._data.frames.length}.png`;
+    this._data.frames.push({ name: frame_name, data_url });
+    try {
+      const blob = await fetch(data_url).then((r) => r.blob());
+      await project_write_binary(`sprites/${this._sprite_name}/${frame_name}`, blob);
+    } catch {
+    }
+    this._rebuild_frame_list();
+    this._restart_anim();
+    this._save_meta();
+  }
+  async _update_frame(index, data_url) {
+    const frame = this._data.frames[index];
+    if (!frame) return;
+    frame.data_url = data_url;
+    try {
+      const blob = await fetch(data_url).then((r) => r.blob());
+      await project_write_binary(`sprites/${this._sprite_name}/${frame.name}`, blob);
+    } catch {
+    }
+    this._rebuild_frame_list();
+    this._restart_anim();
+  }
   async _import_frames() {
     const input = document.createElement("input");
     input.type = "file";
@@ -2434,6 +3043,14 @@ var sprite_editor_window = class {
       const label = document.createElement("span");
       label.textContent = `#${i}`;
       label.style.cssText = "font-size:11px; flex:1;";
+      const edit_btn = document.createElement("button");
+      edit_btn.textContent = "\u270E";
+      edit_btn.title = "Edit frame";
+      edit_btn.style.cssText = "width:20px; height:20px; font-size:10px; flex-shrink:0; cursor:pointer; background:var(--sw-chrome2); border:1px solid var(--sw-border2);";
+      edit_btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._edit_frame(i);
+      });
       const del_btn = document.createElement("button");
       del_btn.textContent = "\u2715";
       del_btn.className = "sw-window-btn close";
@@ -2468,7 +3085,7 @@ var sprite_editor_window = class {
         this._rebuild_frame_list();
         this._save_meta();
       });
-      row.append(thumb, label, del_btn);
+      row.append(thumb, label, edit_btn, del_btn);
       this._frame_list.appendChild(row);
     });
   }
@@ -2505,6 +3122,7 @@ var sprite_editor_window = class {
       const ch = this._canvas.height;
       ctx.clearRect(0, 0, cw, ch);
       _draw_checkerboard(ctx, cw, ch);
+      ctx.imageSmoothingEnabled = false;
       ctx.drawImage(img, 0, 0, cw, ch);
       this._draw_origin(ctx);
       this._draw_mask(ctx);
@@ -2518,39 +3136,69 @@ var sprite_editor_window = class {
     ctx.clearRect(0, 0, cw, ch);
     _draw_checkerboard(ctx, cw, ch);
   }
+  // ── Zoom controls ──────────────────────────────────────────────────────
+  _adjust_zoom(delta) {
+    const zoom_levels = [1, 2, 4, 8, 16, 32];
+    const current_idx = zoom_levels.indexOf(this._zoom);
+    let new_idx = current_idx + delta;
+    if (new_idx < 0) new_idx = 0;
+    if (new_idx >= zoom_levels.length) new_idx = zoom_levels.length - 1;
+    this._zoom = zoom_levels[new_idx];
+    this._update_canvas_size();
+    this._redraw();
+    const label = document.getElementById("zoom-label");
+    if (label) label.textContent = `${this._zoom}x`;
+  }
+  _fit_zoom() {
+    if (this._data.width === 0 || this._data.height === 0) return;
+    const container_width = 400;
+    const container_height = 300;
+    const zoom_x = Math.floor(container_width / this._data.width);
+    const zoom_y = Math.floor(container_height / this._data.height);
+    const fit_zoom = Math.max(1, Math.min(zoom_x, zoom_y, 32));
+    this._zoom = fit_zoom;
+    this._update_canvas_size();
+    this._redraw();
+    const label = document.getElementById("zoom-label");
+    if (label) label.textContent = `${this._zoom}x`;
+  }
+  _update_canvas_size() {
+    if (this._data.width > 0 && this._data.height > 0) {
+      this._canvas.width = this._data.width * this._zoom;
+      this._canvas.height = this._data.height * this._zoom;
+    }
+  }
   _draw_origin(ctx) {
-    const cw = this._canvas.width;
-    const ch = this._canvas.height;
-    const fw = this._data.width || cw;
-    const fh = this._data.height || ch;
-    const sx = this._data.origin_x / fw * cw;
-    const sy = this._data.origin_y / fh * ch;
+    const ox = this._data.origin_x * this._zoom;
+    const oy = this._data.origin_y * this._zoom;
+    const size = 8;
     ctx.save();
+    ctx.fillStyle = "#ff4444";
+    ctx.beginPath();
+    ctx.arc(ox, oy, 3, 0, Math.PI * 2);
+    ctx.fill();
     ctx.strokeStyle = "#ff4444";
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(sx - 6, sy);
-    ctx.lineTo(sx + 6, sy);
+    ctx.moveTo(ox - size, oy);
+    ctx.lineTo(ox + size, oy);
+    ctx.moveTo(ox, oy - size);
+    ctx.lineTo(ox, oy + size);
     ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(sx, sy - 6);
-    ctx.lineTo(sx, sy + 6);
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1;
     ctx.stroke();
     ctx.restore();
   }
   _draw_mask(ctx) {
-    const cw = this._canvas.width;
-    const ch = this._canvas.height;
-    const fw = this._data.width || cw;
-    const fh = this._data.height || ch;
-    const sx = this._data.mask_x / fw * cw;
-    const sy = this._data.mask_y / fh * ch;
-    const sw = this._data.mask_w / fw * cw;
-    const sh = this._data.mask_h / fh * ch;
+    const sx = this._data.mask_x * this._zoom;
+    const sy = this._data.mask_y * this._zoom;
+    const sw = this._data.mask_w * this._zoom;
+    const sh = this._data.mask_h * this._zoom;
     ctx.save();
-    ctx.strokeStyle = "rgba(0,200,255,0.8)";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 2]);
+    ctx.strokeStyle = "#00c8ff";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
     switch (this._data.mask_type) {
       case "rectangle":
         ctx.strokeRect(sx, sy, sw, sh);
@@ -2570,7 +3218,7 @@ var sprite_editor_window = class {
         ctx.stroke();
         break;
       case "precise":
-        ctx.strokeRect(0, 0, cw, ch);
+        ctx.strokeRect(0, 0, this._canvas.width, this._canvas.height);
         break;
     }
     ctx.restore();
@@ -2602,8 +3250,7 @@ var sprite_editor_window = class {
       }
     } catch {
     }
-    if (this._data.width > 0) this._canvas.width = Math.min(192, this._data.width);
-    if (this._data.height > 0) this._canvas.height = Math.min(192, this._data.height);
+    this._fit_zoom();
     this._rebuild_frame_list();
     this._restart_anim();
   }
@@ -4156,7 +4803,11 @@ var background_editor_window = class {
     body.style.cssText = "display:flex;flex-direction:column;overflow:hidden;";
     const toolbar = document.createElement("div");
     toolbar.className = "sw-editor-toolbar";
+    toolbar.appendChild(this._make_btn("Create Image\u2026", () => this._create_image()));
     toolbar.appendChild(this._make_btn("Import Image\u2026", () => this._import_image()));
+    if (this._data.file_name) {
+      toolbar.appendChild(this._make_btn("Edit", () => this._edit_image()));
+    }
     body.appendChild(toolbar);
     const layout = document.createElement("div");
     layout.style.cssText = "display:flex;flex:1;overflow:hidden;";
@@ -4270,11 +4921,91 @@ var background_editor_window = class {
     img.src = data_url;
   }
   // -----------------------------------------------------------------------
+  // Create & Edit
+  // -----------------------------------------------------------------------
+  async _create_image() {
+    if (!project_has_folder()) {
+      await show_alert("Open a project folder first (File \u2192 Open\u2026).");
+      return;
+    }
+    const w = await show_prompt("Image width (pixels):", "256");
+    if (!w) return;
+    const h = await show_prompt("Image height (pixels):", "256");
+    if (!h) return;
+    const width = Math.max(1, parseInt(w) || 256);
+    const height = Math.max(1, parseInt(h) || 256);
+    let workspace = this._win.el.parentElement;
+    if (!workspace) {
+      console.error("[Background Editor] No parent element found for pixel editor");
+      await show_alert("Error: Could not open pixel editor");
+      return;
+    }
+    pixel_editor_open(
+      workspace,
+      width,
+      height,
+      null,
+      (data_url) => this._save_created_image(data_url, width, height)
+    );
+  }
+  async _edit_image() {
+    if (!project_has_folder()) {
+      await show_alert("Open a project folder first (File \u2192 Open\u2026).");
+      return;
+    }
+    if (!this._data.file_name) return;
+    let workspace = this._win.el.parentElement;
+    if (!workspace) {
+      console.error("[Background Editor] No parent element found for pixel editor");
+      await show_alert("Error: Could not open pixel editor");
+      return;
+    }
+    try {
+      const img_url = await this._load_binary_url(`backgrounds/${this._name}/${this._data.file_name}`);
+      pixel_editor_open(
+        workspace,
+        this._data.width,
+        this._data.height,
+        img_url,
+        (data_url) => this._save_edited_image(data_url)
+      );
+    } catch (err) {
+      console.error("Failed to load background for editing:", err);
+      await show_alert("Failed to load image for editing");
+    }
+  }
+  async _save_created_image(data_url, width, height) {
+    const fname = `${this._name}.png`;
+    const blob = await fetch(data_url).then((r) => r.blob());
+    const arr = await blob.arrayBuffer();
+    await project_write_binary(`backgrounds/${this._name}/${fname}`, new Uint8Array(arr));
+    this._data.file_name = fname;
+    this._data.width = width;
+    this._data.height = height;
+    this._update_info();
+    this._draw_image(data_url);
+    this._save();
+    this._win.body.innerHTML = "";
+    this._build_ui();
+    this._update_info();
+    this._draw_image(data_url);
+  }
+  async _save_edited_image(data_url) {
+    if (!this._data.file_name) return;
+    const blob = await fetch(data_url).then((r) => r.blob());
+    const arr = await blob.arrayBuffer();
+    await project_write_binary(`backgrounds/${this._name}/${this._data.file_name}`, new Uint8Array(arr));
+    this._draw_image(data_url);
+  }
+  async _load_binary_url(path) {
+    return await project_read_binary_url(path);
+  }
+  // -----------------------------------------------------------------------
   // Import
   // -----------------------------------------------------------------------
-  _import_image() {
+  async _import_image() {
     if (!project_has_folder()) {
-      alert("Open a project folder first (File \u2192 Open\u2026).");
+      await show_alert("Open a project folder first (File \u2192 Open\u2026).");
       return;
     }
     const inp = document.createElement("input");
@@ -4318,14 +5049,24 @@ var background_editor_window = class {
   // Persistence
   // -----------------------------------------------------------------------
   async _load_data() {
+    const meta_path = `backgrounds/${this._name}/meta.json`;
+    const exists = await project_file_exists(meta_path);
+    if (!exists) return;
     try {
-      const raw = await project_read_file(`backgrounds/${this._name}/meta.json`);
+      const raw = await project_read_file(meta_path);
       if (!raw) return;
       const parsed = JSON.parse(raw);
       Object.assign(this._data, parsed);
       this._win.body.innerHTML = "";
       this._build_ui();
       this._update_info();
+      if (this._data.file_name) {
+        try {
+          const img_url = await project_read_binary_url(`backgrounds/${this._name}/${this._data.file_name}`);
+          this._draw_image(img_url);
+        } catch {
+        }
+      }
     } catch {
     }
   }
@@ -5425,7 +6166,7 @@ var _entries = [];
 var _filter = /* @__PURE__ */ new Set(["log", "warn", "error", "info", "system"]);
 var _listener_attached2 = false;
 var MAX_ENTRIES = 500;
-function console_open(workspace) {
+function console_open(workspace, minimized = false) {
   if (_win3) {
     _win3.bring_to_front();
     return;
@@ -5442,8 +6183,18 @@ function console_open(workspace) {
   });
   _build_ui3();
   _win3.mount(workspace);
+  if (minimized) {
+    _win3.toggle_minimize();
+  }
   _render_all();
   _ensure_listener2();
+}
+function console_toggle(workspace) {
+  if (!_win3) {
+    console_open(workspace, false);
+  } else {
+    _win3.toggle_minimize();
+  }
 }
 function console_write(level, text) {
   _push({ level, text, time: _timestamp() });
@@ -5817,90 +6568,9 @@ function _ensure_listener4() {
 }
 
 // packages/ide/src/index.ts
-function _modal(content_html) {
-  const overlay = document.createElement("div");
-  overlay.style.cssText = `
-        position:fixed; inset:0; z-index:9999;
-        background:rgba(0,0,0,0.55);
-        display:flex; align-items:center; justify-content:center;
-    `;
-  const box = document.createElement("div");
-  box.style.cssText = `
-        background:#2b2b2b; border:1px solid #555; border-radius:4px;
-        padding:18px 20px; min-width:320px; max-width:460px;
-        font-family:sans-serif; color:#ccc; font-size:13px;
-        display:flex; flex-direction:column; gap:10px;
-        box-shadow:0 4px 24px rgba(0,0,0,0.6);
-    `;
-  box.innerHTML = content_html;
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-  const close = () => overlay.remove();
-  return { overlay, close };
-}
-function _alert(msg) {
-  return new Promise((resolve) => {
-    const { close } = _modal(`
-            <p style="margin:0;white-space:pre-wrap;">${msg.replace(/</g, "&lt;")}</p>
-            <div style="display:flex;justify-content:flex-end;">
-                <button id="_sw_ok" style="padding:4px 20px;cursor:pointer;">OK</button>
-            </div>
-        `);
-    document.getElementById("_sw_ok").addEventListener("click", () => {
-      close();
-      resolve();
-    });
-  });
-}
-function _prompt(msg, def = "") {
-  return new Promise((resolve) => {
-    const { close } = _modal(`
-            <p style="margin:0;">${msg.replace(/</g, "&lt;")}</p>
-            <input id="_sw_inp" value="${def.replace(/"/g, "&quot;")}"
-                style="padding:5px 8px;background:#3c3c3c;border:1px solid #555;color:#ddd;font-size:13px;border-radius:3px;outline:none;">
-            <div style="display:flex;justify-content:flex-end;gap:8px;">
-                <button id="_sw_ok"     style="padding:4px 20px;cursor:pointer;">OK</button>
-                <button id="_sw_cancel" style="padding:4px 20px;cursor:pointer;">Cancel</button>
-            </div>
-        `);
-    const inp = document.getElementById("_sw_inp");
-    inp.focus();
-    inp.select();
-    const ok = () => {
-      close();
-      resolve(inp.value);
-    };
-    const cancel = () => {
-      close();
-      resolve(null);
-    };
-    document.getElementById("_sw_ok").addEventListener("click", ok);
-    document.getElementById("_sw_cancel").addEventListener("click", cancel);
-    inp.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") ok();
-      if (e.key === "Escape") cancel();
-    });
-  });
-}
-function _confirm(msg) {
-  return new Promise((resolve) => {
-    const { close } = _modal(`
-            <p style="margin:0;white-space:pre-wrap;">${msg.replace(/</g, "&lt;")}</p>
-            <div style="display:flex;justify-content:flex-end;gap:8px;">
-                <button id="_sw_ok"     style="padding:4px 20px;cursor:pointer;">OK</button>
-                <button id="_sw_cancel" style="padding:4px 20px;cursor:pointer;">Cancel</button>
-            </div>
-        `);
-    document.getElementById("_sw_ok").addEventListener("click", () => {
-      close();
-      resolve(true);
-    });
-    document.getElementById("_sw_cancel").addEventListener("click", () => {
-      close();
-      resolve(false);
-    });
-  });
-}
+var _alert = show_alert;
+var _prompt = show_prompt;
+var _confirm = show_confirm;
 var _project = null;
 var _tree;
 var _workspace;
@@ -5986,10 +6656,6 @@ function boot() {
       e.preventDefault();
       profiler_open(_workspace);
     }
-    if (e.key === "F11") {
-      e.preventDefault();
-      preview_open(_workspace);
-    }
     if (e.ctrlKey && e.key === "r") {
       e.preventDefault();
       _tree.show();
@@ -6006,10 +6672,21 @@ function boot() {
   project_open_last().then((result) => {
     if (result) {
       _set_project(result.state, null);
-      console_open(_workspace);
+      console_open(_workspace, false);
       console_write("system", `[IDE] Reopened: ${result.state.name}`);
     } else {
       _set_project(project_new(), null);
+    }
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "F11") {
+      e.preventDefault();
+      console_toggle(_workspace);
+    }
+  });
+  window.addEventListener("message", (e) => {
+    if (e.data && e.data.type === "console") {
+      console_write(e.data.level, `[Game] ${e.data.message}`);
     }
   });
 }
@@ -6225,6 +6902,7 @@ function _set_project(state, _dir) {
   _tree.load(state);
   document.title = `${state.name} \u2014 Silkweaver IDE`;
   undo_clear();
+  inject_project_types(state);
 }
 function _mark_unsaved() {
   status_set_unsaved(true);

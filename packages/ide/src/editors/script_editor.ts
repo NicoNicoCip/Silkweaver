@@ -57,6 +57,9 @@ function _load_monaco(): Promise<Monaco> {
 
 /** Ambient declarations for the Silkweaver engine API, injected as an extra lib. */
 const SW_TYPES = `
+// ── Context ──────────────────────────────────────────────────────────────
+declare var this: gm_object;
+
 declare const enum EVENT_TYPE {
     CREATE = 'create', DESTROY = 'destroy',
     STEP = 'step', STEP_BEGIN = 'step_begin', STEP_END = 'step_end',
@@ -70,11 +73,19 @@ declare class gm_object {
     x: number; y: number; z: number;
     speed: number; direction: number;
     hspeed: number; vspeed: number;
-    sprite_index: string; image_index: number; image_speed: number;
+    sprite_index: number; image_index: number; image_speed: number;
+    image_xscale: number; image_yscale: number; image_angle: number;
     image_alpha: number; image_blend: number;
     visible: boolean; solid: boolean; persistent: boolean; depth: number;
     id: number; object_index: string;
     bbox_left: number; bbox_right: number; bbox_top: number; bbox_bottom: number;
+    mask_index: number;
+    gravity: number; gravity_direction: number; friction: number;
+    xprevious: number; yprevious: number;
+    move_direction: number;  // Custom property example
+    [key: string]: any;  // Allow any custom properties
+
+    // Lifecycle methods
     create(): void;
     destroy(): void;
     step(): void;
@@ -82,6 +93,15 @@ declare class gm_object {
     step_end(): void;
     draw(): void;
     draw_gui(): void;
+
+    // Instance methods
+    place_meeting(x: number, y: number, obj: any): boolean;
+    place_free(x: number, y: number): boolean;
+    instance_place(x: number, y: number, obj: any): any;
+    instance_destroy(): void;
+    draw_self(): void;
+
+    // Event registration
     on(event: EVENT_TYPE, callback: () => void): void;
     timer_create(name: string, steps: number, repeat: boolean, callback: () => void): void;
     timer_destroy(name: string): void;
@@ -108,20 +128,33 @@ declare const fa_top: number; declare const fa_middle: number; declare const fa_
 declare const c_white: number; declare const c_black: number; declare const c_red: number;
 declare const c_green: number; declare const c_blue: number; declare const c_yellow: number;
 declare const c_orange: number; declare const c_purple: number; declare const c_aqua: number;
+declare const c_gray: number; declare const c_silver: number; declare const c_ltgray: number;
+declare const c_dkgray: number; declare const c_lime: number; declare const c_maroon: number;
+declare const c_navy: number; declare const c_olive: number; declare const c_teal: number;
+declare const c_fuchsia: number;
 declare function make_color_rgb(r: number, g: number, b: number): number;
 declare function color_get_red(col: number): number;
 declare function color_get_green(col: number): number;
 declare function color_get_blue(col: number): number;
 
 // ── Instances ─────────────────────────────────────────────────────────────
-declare function instance_create(x: number, y: number, obj: string): number;
+declare class instance {
+    static instance_create(x: number, y: number, obj: any): any;
+    static instance_nearest(x: number, y: number, obj: any): any;
+    static instance_destroy_id(id: number): void;
+    instance_destroy(): void;
+    place_meeting(x: number, y: number, obj: any): boolean;
+    place_free(x: number, y: number): boolean;
+    instance_place(x: number, y: number, obj: any): any;
+}
+declare function instance_create(x: number, y: number, obj: any): number;
 declare function instance_destroy(id?: number): void;
 declare function instance_exists(id: number): boolean;
-declare function instance_number(obj: string): number;
-declare function instance_find(obj: string, n: number): number;
-declare function instance_nearest(x: number, y: number, obj: string): number;
-declare function with_object(obj: string | number, fn: (inst: gm_object) => void): void;
-declare function place_meeting(x: number, y: number, obj: string): boolean;
+declare function instance_number(obj: any): number;
+declare function instance_find(obj: any, n: number): number;
+declare function instance_nearest(x: number, y: number, obj: any): any;
+declare function with_object(obj: any, fn: (inst: gm_object) => void): void;
+declare function place_meeting(x: number, y: number, obj: any): boolean;
 declare function place_free(x: number, y: number): boolean;
 declare function move_contact(dir: number, maxdist: number, solid: boolean): void;
 declare function move_towards_point(x: number, y: number, sp: number): void;
@@ -251,8 +284,9 @@ function _setup_monaco(monaco: Monaco): void {
     monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
         target: monaco.languages.typescript.ScriptTarget.ES2020,
         module: monaco.languages.typescript.ModuleKind.ESNext,
-        strict: true,
-        noImplicitAny: true,
+        strict: false,
+        noImplicitAny: false,
+        noImplicitThis: false,
         lib: ['es2020', 'dom'],
         allowNonTsExtensions: true,
     })
@@ -342,6 +376,7 @@ export class ScriptEditor {
             tabSize:     4,
             insertSpaces: true,
             glyphMargin: true,
+            fixedOverflowWidgets: true,
         })
 
         // Register with breakpoint manager so it can paint decorations
@@ -416,6 +451,7 @@ export class ScriptEditor {
             tabSize:     4,
             insertSpaces: true,
             glyphMargin: true,
+            fixedOverflowWidgets: true,
         })
 
         bp_register_editor(this._file_key, this._editor)
@@ -459,6 +495,7 @@ export class ScriptEditor {
             minimap:  { enabled: false },
             automaticLayout: true,
             scrollBeyondLastLine: false,
+            fixedOverflowWidgets: true,
         })
 
         this._editor.onDidChangeModelContent(() => {
@@ -612,4 +649,35 @@ export async function script_editor_open_smart(
     }
     const handle = await get_handle()
     return script_editor_open(parent, handle, rel_path)
+}
+
+/**
+ * Injects project-specific object class declarations into Monaco.
+ * Called when a project is loaded to make object names like o_wall, o_player known to TypeScript.
+ */
+let _project_types_disposable: any = null
+export function inject_project_types(state: any): void {
+    _load_monaco().then(monaco => {
+        // Remove previous project types if they exist
+        if (_project_types_disposable) {
+            _project_types_disposable.dispose()
+        }
+
+        // Generate declarations for all objects in the project
+        const object_names = Object.keys(state.resources?.objects || {})
+        const declarations = object_names.map(name =>
+            `declare const ${name}: typeof gm_object;`
+        ).join('\n')
+
+        const project_types = `
+// Project-specific object classes
+${declarations}
+`
+
+        // Add as an extra lib
+        _project_types_disposable = monaco.languages.typescript.typescriptDefaults.addExtraLib(
+            project_types,
+            'ts:silkweaver/project-objects.d.ts'
+        )
+    })
 }

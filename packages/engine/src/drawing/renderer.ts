@@ -398,6 +398,105 @@ export class renderer {
         this.batch.add_quad(x, y, w, h, 0, 0, 1, 1, r, g, b, this.draw_alpha, frame.texture.texture)
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // Background drawing
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Draws a background at the given position.
+     * @param bg - Background resource
+     * @param x - X position
+     * @param y - Y position
+     */
+    public static draw_background(bg: any, x: number, y: number): void {
+        if (!bg || !bg.texture) return
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color)
+        this.batch.add_quad(
+            x, y,
+            bg.width, bg.height,
+            0, 0, 1, 1,
+            r, g, b, this.draw_alpha,
+            bg.texture.texture
+        )
+    }
+
+    /**
+     * Draws a background with extended transforms (scale, rotation, blend color, alpha).
+     * @param bg - Background resource
+     * @param x - X position
+     * @param y - Y position
+     * @param xscale - Horizontal scale factor
+     * @param yscale - Vertical scale factor
+     * @param rot - Rotation in degrees (counter-clockwise)
+     * @param color - Blend color as BGR integer
+     * @param alpha - Alpha transparency (0–1)
+     */
+    public static draw_background_ext(
+        bg: any,
+        x: number, y: number,
+        xscale: number, yscale: number,
+        rot: number, color: number, alpha: number
+    ): void {
+        if (!bg || !bg.texture) return
+        const w = bg.width * xscale
+        const h = bg.height * yscale
+        const [r, g, b] = color_to_rgb_normalized(color)
+        this.batch.add_quad_rotated(x, y, w, h, rot, 0, 0, 1, 1, r, g, b, alpha, bg.texture.texture)
+    }
+
+    /**
+     * Draws a background stretched to fill a specified region.
+     * @param bg - Background resource
+     * @param x - X position
+     * @param y - Y position
+     * @param w - Width
+     * @param h - Height
+     */
+    public static draw_background_stretched(bg: any, x: number, y: number, w: number, h: number): void {
+        if (!bg || !bg.texture) return
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color)
+        this.batch.add_quad(x, y, w, h, 0, 0, 1, 1, r, g, b, this.draw_alpha, bg.texture.texture)
+    }
+
+    /**
+     * Draws a background tiled to fill the current view.
+     * @param bg - Background resource
+     * @param x - X offset
+     * @param y - Y offset
+     * @param tile_x - X tile offset
+     * @param tile_y - Y tile offset
+     */
+    public static draw_background_tiled(bg: any, x: number, y: number, tile_x: number, tile_y: number): void {
+        if (!bg || !bg.texture) return
+        // For tiled backgrounds, we need to repeat the texture across the view
+        // This is a simplified version - full tiling would need to account for view bounds
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color)
+        const view_w = this.canvas_width
+        const view_h = this.canvas_height
+
+        // Calculate number of tiles needed
+        const tiles_x = Math.ceil(view_w / bg.width) + 1
+        const tiles_y = Math.ceil(view_h / bg.height) + 1
+
+        // Offset for scrolling
+        const start_x = x - (tile_x % bg.width)
+        const start_y = y - (tile_y % bg.height)
+
+        for (let ty = 0; ty < tiles_y; ty++) {
+            for (let tx = 0; tx < tiles_x; tx++) {
+                const draw_x = start_x + tx * bg.width
+                const draw_y = start_y + ty * bg.height
+                this.batch.add_quad(
+                    draw_x, draw_y,
+                    bg.width, bg.height,
+                    0, 0, 1, 1,
+                    r, g, b, this.draw_alpha,
+                    bg.texture.texture
+                )
+            }
+        }
+    }
+
     /**
      * Draws a surface as if it were a sprite.
      * @param surf - Surface to draw

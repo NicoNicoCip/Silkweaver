@@ -6,7 +6,7 @@
 
 import { FloatingWindow } from './window_manager.js'
 import type { project_state } from './services/project.js'
-import { project_read_binary_url } from './services/project.js'
+import { project_read_binary_url, project_read_file } from './services/project.js'
 
 // =========================================================================
 // Types
@@ -264,35 +264,69 @@ export class ResourceTree {
             canvas.height = 16
             canvas.style.cssText = 'width:16px;height:16px;flex-shrink:0;image-rendering:pixelated;'
 
-            // Try to load the first frame image as a thumbnail
-            const sprite = this._state.resources['sprites'][name] as any
-            const frames = sprite?.frames as Array<{ name: string; data_url?: string }> | undefined
-            if (frames && frames.length > 0) {
-                const frame = frames[0]
-                const src = frame.data_url ?? null
+            // Load sprite meta.json to get frame information
+            const load_thumbnail = async () => {
+                try {
+                    const meta_text = await project_read_file(`sprites/${name}/meta.json`)
+                    const meta = JSON.parse(meta_text) as { frames?: Array<{ name: string } | string> }
 
-                const draw = (url: string) => {
-                    const img = new Image()
-                    img.onload = () => {
-                        const ctx = canvas.getContext('2d')!
-                        ctx.clearRect(0, 0, 16, 16)
-                        ctx.drawImage(img, 0, 0, 16, 16)
+                    if (meta.frames && meta.frames.length > 0) {
+                        const first_frame = meta.frames[0]
+                        const frame_name = typeof first_frame === 'string' ? first_frame : first_frame.name
+                        const img_url = await project_read_binary_url(`sprites/${name}/${frame_name}`)
+
+                        const img = new Image()
+                        img.onload = () => {
+                            const ctx = canvas.getContext('2d')!
+                            ctx.clearRect(0, 0, 16, 16)
+                            ctx.drawImage(img, 0, 0, 16, 16)
+                        }
+                        img.src = img_url
+                    } else {
+                        _draw_placeholder(canvas)
                     }
-                    img.src = url
+                } catch {
+                    // No meta.json or frames — draw placeholder
+                    _draw_placeholder(canvas)
                 }
-
-                if (src) {
-                    draw(src)
-                } else if (frame.name) {
-                    // Load from disk (Electron / FSAPI)
-                    const rel = `sprites/${name}/${frame.name}`
-                    project_read_binary_url(rel).then(draw).catch(() => {})
-                }
-            } else {
-                // No frames — draw a placeholder checkered square
-                _draw_placeholder(canvas)
             }
 
+            load_thumbnail()
+            return canvas
+        }
+
+        if (cat_id === 'backgrounds' && this._state) {
+            const canvas = document.createElement('canvas')
+            canvas.width  = 16
+            canvas.height = 16
+            canvas.style.cssText = 'width:16px;height:16px;flex-shrink:0;image-rendering:pixelated;'
+
+            // Load background meta.json to get image file
+            const load_thumbnail = async () => {
+                try {
+                    const meta_text = await project_read_file(`backgrounds/${name}/meta.json`)
+                    const meta = JSON.parse(meta_text) as { file_name?: string }
+
+                    if (meta.file_name) {
+                        const img_url = await project_read_binary_url(`backgrounds/${name}/${meta.file_name}`)
+
+                        const img = new Image()
+                        img.onload = () => {
+                            const ctx = canvas.getContext('2d')!
+                            ctx.clearRect(0, 0, 16, 16)
+                            ctx.drawImage(img, 0, 0, 16, 16)
+                        }
+                        img.src = img_url
+                    } else {
+                        _draw_placeholder(canvas)
+                    }
+                } catch {
+                    // No meta.json or image — draw placeholder
+                    _draw_placeholder(canvas)
+                }
+            }
+
+            load_thumbnail()
             return canvas
         }
 

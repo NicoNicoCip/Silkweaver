@@ -47,6 +47,7 @@ export { MASK_RECT, MASK_CIRCLE, MASK_ELLIPSE, get_bbox, update_bbox, instances_
 export { renderer } from './drawing/renderer.js'
 export type { surface } from './drawing/renderer.js'
 export { sprite, sprite_get_width, sprite_get_height, sprite_get_xoffset, sprite_get_yoffset, sprite_get_number } from './drawing/sprite.js'
+export { background, background_get_width, background_get_height } from './drawing/background.js'
 export { font_resource } from './drawing/font.js'
 export { texture_manager } from './drawing/texture_manager.js'
 export type { texture_entry } from './drawing/texture_manager.js'
@@ -76,6 +77,7 @@ export {
     draw_clear,
     draw_set_blend_mode,
     draw_sprite, draw_sprite_ext, draw_sprite_part, draw_sprite_stretched,
+    draw_background, draw_background_ext, draw_background_stretched, draw_background_tiled,
     draw_point, draw_line, draw_line_width,
     draw_rectangle, draw_circle, draw_ellipse, draw_triangle,
     draw_text, draw_set_font, draw_set_halign, draw_set_valign,

@@ -295,8 +295,8 @@ var room = class _room extends resource {
    * @param depth - Drawing depth of the tile
    * @returns The unique ID of the created tile
    */
-  room_tile_add(x, y, background, left, top, width, height, depth) {
-    return this.tile_add(background, left, top, width, height, x, y, depth);
+  room_tile_add(x, y, background2, left, top, width, height, depth) {
+    return this.tile_add(background2, left, top, width, height, x, y, depth);
   }
   /**
    * Adds a tile to the room at design time, with extended options.
@@ -313,13 +313,13 @@ var room = class _room extends resource {
    * @param alpha - Transparency (0-1)
    * @returns The unique ID of the created tile
    */
-  room_tile_add_ext(x, y, background, left, top, width, height, depth, xscale, yscale, alpha) {
+  room_tile_add_ext(x, y, background2, left, top, width, height, depth, xscale, yscale, alpha) {
     const id = _room.next_tile_id++;
     this.tiles.push({
       id,
       x,
       y,
-      background,
+      background: background2,
       left,
       top,
       width,
@@ -357,13 +357,13 @@ var room = class _room extends resource {
    * @param depth - Drawing depth
    * @returns The unique ID of the created tile
    */
-  tile_add(background, left, top, width, height, x, y, depth) {
+  tile_add(background2, left, top, width, height, x, y, depth) {
     const id = _room.next_tile_id++;
     this.tiles.push({
       id,
       x,
       y,
-      background,
+      background: background2,
       left,
       top,
       width,
@@ -489,10 +489,10 @@ var room = class _room extends resource {
    * @param width - Width of the tile region
    * @param height - Height of the tile region
    */
-  tile_set_background(id, background, left, top, width, height) {
+  tile_set_background(id, background2, left, top, width, height) {
     const tile = this.tiles.find((t) => t.id === id);
     if (tile) {
-      tile.background = background;
+      tile.background = background2;
       tile.left = left;
       tile.top = top;
       tile.width = width;
@@ -547,10 +547,10 @@ var room = class _room extends resource {
    * @param hspeed - Horizontal scroll speed
    * @param vspeed - Vertical scroll speed
    */
-  room_set_background(index, visible, foreground, background, x, y, htiled, vtiled, hspeed, vspeed) {
+  room_set_background(index, visible, foreground, background2, x, y, htiled, vtiled, hspeed, vspeed) {
     this.background_visible[index] = visible;
     this.background_foreground[index] = foreground;
-    this.background_index[index] = background;
+    this.background_index[index] = background2;
     this.background_x[index] = x;
     this.background_y[index] = y;
     this.background_htiled[index] = htiled;
@@ -3737,6 +3737,104 @@ var renderer = class {
     const [r, g, b] = color_to_rgb_normalized(this.draw_color);
     this.batch.add_quad(x, y, w, h, 0, 0, 1, 1, r, g, b, this.draw_alpha, frame.texture.texture);
   }
+  // ═══════════════════════════════════════════════════════════════════════
+  // Background drawing
+  // ═══════════════════════════════════════════════════════════════════════
+  /**
+   * Draws a background at the given position.
+   * @param bg - Background resource
+   * @param x - X position
+   * @param y - Y position
+   */
+  static draw_background(bg, x, y) {
+    if (!bg || !bg.texture) return;
+    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+    this.batch.add_quad(
+      x,
+      y,
+      bg.width,
+      bg.height,
+      0,
+      0,
+      1,
+      1,
+      r,
+      g,
+      b,
+      this.draw_alpha,
+      bg.texture.texture
+    );
+  }
+  /**
+   * Draws a background with extended transforms (scale, rotation, blend color, alpha).
+   * @param bg - Background resource
+   * @param x - X position
+   * @param y - Y position
+   * @param xscale - Horizontal scale factor
+   * @param yscale - Vertical scale factor
+   * @param rot - Rotation in degrees (counter-clockwise)
+   * @param color - Blend color as BGR integer
+   * @param alpha - Alpha transparency (0–1)
+   */
+  static draw_background_ext(bg, x, y, xscale, yscale, rot, color, alpha) {
+    if (!bg || !bg.texture) return;
+    const w = bg.width * xscale;
+    const h = bg.height * yscale;
+    const [r, g, b] = color_to_rgb_normalized(color);
+    this.batch.add_quad_rotated(x, y, w, h, rot, 0, 0, 1, 1, r, g, b, alpha, bg.texture.texture);
+  }
+  /**
+   * Draws a background stretched to fill a specified region.
+   * @param bg - Background resource
+   * @param x - X position
+   * @param y - Y position
+   * @param w - Width
+   * @param h - Height
+   */
+  static draw_background_stretched(bg, x, y, w, h) {
+    if (!bg || !bg.texture) return;
+    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+    this.batch.add_quad(x, y, w, h, 0, 0, 1, 1, r, g, b, this.draw_alpha, bg.texture.texture);
+  }
+  /**
+   * Draws a background tiled to fill the current view.
+   * @param bg - Background resource
+   * @param x - X offset
+   * @param y - Y offset
+   * @param tile_x - X tile offset
+   * @param tile_y - Y tile offset
+   */
+  static draw_background_tiled(bg, x, y, tile_x, tile_y) {
+    if (!bg || !bg.texture) return;
+    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+    const view_w = this.canvas_width;
+    const view_h = this.canvas_height;
+    const tiles_x = Math.ceil(view_w / bg.width) + 1;
+    const tiles_y = Math.ceil(view_h / bg.height) + 1;
+    const start_x = x - tile_x % bg.width;
+    const start_y = y - tile_y % bg.height;
+    for (let ty = 0; ty < tiles_y; ty++) {
+      for (let tx = 0; tx < tiles_x; tx++) {
+        const draw_x = start_x + tx * bg.width;
+        const draw_y = start_y + ty * bg.height;
+        this.batch.add_quad(
+          draw_x,
+          draw_y,
+          bg.width,
+          bg.height,
+          0,
+          0,
+          1,
+          1,
+          r,
+          g,
+          b,
+          this.draw_alpha,
+          bg.texture.texture
+        );
+      }
+    }
+  }
   /**
    * Draws a surface as if it were a sprite.
    * @param surf - Surface to draw
@@ -4124,6 +4222,40 @@ function sprite_get_number(spr) {
   return spr.get_number();
 }
 
+// packages/engine/src/drawing/background.ts
+var background = class extends resource {
+  // Use smooth filtering
+  constructor() {
+    super();
+    this.texture = null;
+    // GPU texture for this background
+    this.width = 0;
+    // Background width in pixels
+    this.height = 0;
+    // Background height in pixels
+    this.tile_h = false;
+    // Tile horizontally
+    this.tile_v = false;
+    // Tile vertically
+    this.smooth = false;
+  }
+  /**
+   * Sets the texture for this background.
+   * @param texture - The texture entry to use
+   */
+  set_texture(texture) {
+    this.texture = texture;
+    this.width = texture.width;
+    this.height = texture.height;
+  }
+};
+function background_get_width(bg) {
+  return bg.width;
+}
+function background_get_height(bg) {
+  return bg.height;
+}
+
 // packages/engine/src/drawing/shader_system.ts
 var user_shader = class {
   // Compiled program
@@ -4300,6 +4432,18 @@ function draw_sprite_part(spr, subimg, left, top, width, height, x, y) {
 }
 function draw_sprite_stretched(spr, subimg, x, y, w, h) {
   renderer.draw_sprite_stretched(spr, subimg, x, y, w, h);
+}
+function draw_background(bg, x, y) {
+  renderer.draw_background(bg, x, y);
+}
+function draw_background_ext(bg, x, y, xscale, yscale, rot, color, alpha) {
+  renderer.draw_background_ext(bg, x, y, xscale, yscale, rot, color, alpha);
+}
+function draw_background_stretched(bg, x, y, w, h) {
+  renderer.draw_background_stretched(bg, x, y, w, h);
+}
+function draw_background_tiled(bg, x, y, tile_x, tile_y) {
+  renderer.draw_background_tiled(bg, x, y, tile_x, tile_y);
 }
 function draw_point(x, y) {
   renderer.draw_point(x, y);
@@ -7816,6 +7960,9 @@ export {
   audio_stop_all,
   audio_stop_sound,
   audio_system,
+  background,
+  background_get_height,
+  background_get_width,
   between,
   bm_add,
   bm_max,
@@ -7928,6 +8075,10 @@ export {
   device_mouse_y,
   dot2,
   dot3,
+  draw_background,
+  draw_background_ext,
+  draw_background_stretched,
+  draw_background_tiled,
   draw_circle,
   draw_clear,
   draw_ellipse,

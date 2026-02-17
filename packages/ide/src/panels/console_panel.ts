@@ -41,7 +41,7 @@ const MAX_ENTRIES = 500
  * Opens (or focuses) the console panel.
  * @param workspace - IDE workspace element
  */
-export function console_open(workspace: HTMLElement): void {
+export function console_open(workspace: HTMLElement, minimized = false): void {
     if (_win) { _win.bring_to_front(); return }
     _win = new FloatingWindow(
         'sw-console', 'Output', 'icons/script.svg',
@@ -50,8 +50,22 @@ export function console_open(workspace: HTMLElement): void {
     _win.on_close(() => { _win = null; _list_el = null })
     _build_ui()
     _win.mount(workspace)
+    if (minimized) {
+        _win.toggle_minimize()
+    }
     _render_all()
     _ensure_listener()
+}
+
+/**
+ * Toggle console visibility (open if closed, minimize if open, restore if minimized).
+ */
+export function console_toggle(workspace: HTMLElement): void {
+    if (!_win) {
+        console_open(workspace, false)
+    } else {
+        _win.toggle_minimize()
+    }
 }
 
 /**

@@ -111,7 +111,7 @@ Development organized **by feature area**, starting with engine core.
 - [x] Sound, Background, Font editors
 - [x] Path, Timeline editors
 
-## Phase 20: IDE Features                   !!!
+## Phase 20: IDE Features
 - [x] Game preview (embedded)
 - [x] Hot reload
 - [x] Console/output

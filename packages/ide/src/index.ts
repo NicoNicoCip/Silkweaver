@@ -11,7 +11,7 @@ import type { open_resource_event, resource_category }               from './res
 import { project_new, project_open, project_open_last, project_save, project_set_dir, project_set_folder, project_get_dir, project_has_folder, project_get_folder_path, project_get_last_folder }  from './services/project.js'
 import type { project_state }                                         from './services/project.js'
 import { undo_push, undo_undo, undo_redo, undo_clear }               from './services/undo.js'
-import { script_editor_open, script_editor_open_smart } from './editors/script_editor.js'
+import { script_editor_open, script_editor_open_smart, inject_project_types } from './editors/script_editor.js'
 import { sprite_editor_open }      from './editors/sprite_editor.js'
 import { object_editor_open }      from './editors/object_editor.js'
 import { room_editor_open }        from './editors/room_editor.js'
@@ -22,83 +22,16 @@ import { path_editor_open }        from './editors/path_editor.js'
 import { timeline_editor_open }    from './editors/timeline_editor.js'
 import { settings_editor_open }   from './editors/settings_editor.js'
 import { preview_open, preview_play, preview_stop, preview_reload }  from './panels/game_preview.js'
-import { console_open, console_write }                               from './panels/console_panel.js'
+import { console_open, console_write, console_toggle }               from './panels/console_panel.js'
 import { debugger_open, debugger_show_hit }                          from './panels/debugger_panel.js'
 import { profiler_open }                                             from './panels/profiler_panel.js'
 import { bp_resume, bp_on_hit }                                      from './panels/breakpoint_manager.js'
+import { show_alert, show_prompt, show_confirm }                     from './services/dialogs.js'
 
-// =========================================================================
-// In-renderer modal dialogs (work in Electron and browser alike)
-// =========================================================================
-
-function _modal(content_html: string): { overlay: HTMLElement, close: () => void } {
-    const overlay = document.createElement('div')
-    overlay.style.cssText = `
-        position:fixed; inset:0; z-index:9999;
-        background:rgba(0,0,0,0.55);
-        display:flex; align-items:center; justify-content:center;
-    `
-    const box = document.createElement('div')
-    box.style.cssText = `
-        background:#2b2b2b; border:1px solid #555; border-radius:4px;
-        padding:18px 20px; min-width:320px; max-width:460px;
-        font-family:sans-serif; color:#ccc; font-size:13px;
-        display:flex; flex-direction:column; gap:10px;
-        box-shadow:0 4px 24px rgba(0,0,0,0.6);
-    `
-    box.innerHTML = content_html
-    overlay.appendChild(box)
-    document.body.appendChild(overlay)
-    const close = () => overlay.remove()
-    return { overlay, close }
-}
-
-function _alert(msg: string): Promise<void> {
-    return new Promise(resolve => {
-        const { close } = _modal(`
-            <p style="margin:0;white-space:pre-wrap;">${msg.replace(/</g,'&lt;')}</p>
-            <div style="display:flex;justify-content:flex-end;">
-                <button id="_sw_ok" style="padding:4px 20px;cursor:pointer;">OK</button>
-            </div>
-        `)
-        document.getElementById('_sw_ok')!.addEventListener('click', () => { close(); resolve() })
-    })
-}
-
-function _prompt(msg: string, def = ''): Promise<string | null> {
-    return new Promise(resolve => {
-        const { close } = _modal(`
-            <p style="margin:0;">${msg.replace(/</g,'&lt;')}</p>
-            <input id="_sw_inp" value="${def.replace(/"/g,'&quot;')}"
-                style="padding:5px 8px;background:#3c3c3c;border:1px solid #555;color:#ddd;font-size:13px;border-radius:3px;outline:none;">
-            <div style="display:flex;justify-content:flex-end;gap:8px;">
-                <button id="_sw_ok"     style="padding:4px 20px;cursor:pointer;">OK</button>
-                <button id="_sw_cancel" style="padding:4px 20px;cursor:pointer;">Cancel</button>
-            </div>
-        `)
-        const inp = document.getElementById('_sw_inp') as HTMLInputElement
-        inp.focus(); inp.select()
-        const ok     = () => { close(); resolve(inp.value) }
-        const cancel = () => { close(); resolve(null) }
-        document.getElementById('_sw_ok')!    .addEventListener('click', ok)
-        document.getElementById('_sw_cancel')!.addEventListener('click', cancel)
-        inp.addEventListener('keydown', e => { if (e.key === 'Enter') ok(); if (e.key === 'Escape') cancel() })
-    })
-}
-
-function _confirm(msg: string): Promise<boolean> {
-    return new Promise(resolve => {
-        const { close } = _modal(`
-            <p style="margin:0;white-space:pre-wrap;">${msg.replace(/</g,'&lt;')}</p>
-            <div style="display:flex;justify-content:flex-end;gap:8px;">
-                <button id="_sw_ok"     style="padding:4px 20px;cursor:pointer;">OK</button>
-                <button id="_sw_cancel" style="padding:4px 20px;cursor:pointer;">Cancel</button>
-            </div>
-        `)
-        document.getElementById('_sw_ok')!    .addEventListener('click', () => { close(); resolve(true) })
-        document.getElementById('_sw_cancel')!.addEventListener('click', () => { close(); resolve(false) })
-    })
-}
+// Alias dialog functions for local use
+const _alert   = show_alert
+const _prompt  = show_prompt
+const _confirm = show_confirm
 
 // =========================================================================
 // State
@@ -176,7 +109,7 @@ function boot(): void {
         if (e.key === 'F8')               { e.preventDefault(); bp_resume(); console_write('system', '[IDE] Resumed.') }
         if (e.key === 'F9')               { e.preventDefault(); debugger_open(_workspace) }
         if (e.key === 'F10')              { e.preventDefault(); profiler_open(_workspace) }
-        if (e.key === 'F11')              { e.preventDefault(); preview_open(_workspace) }
+        // F11 now toggles output console (see below)
         if (e.ctrlKey && e.key === 'r')   { e.preventDefault(); _tree.show() }
         if (e.ctrlKey && e.shiftKey && e.key === 'P') { e.preventDefault(); on_edit_game_settings() }
     })
@@ -191,10 +124,27 @@ function boot(): void {
     project_open_last().then(result => {
         if (result) {
             _set_project(result.state, null)
-            console_open(_workspace)
+            console_open(_workspace, false)  // Start expanded
             console_write('system', `[IDE] Reopened: ${result.state.name}`)
         } else {
             _set_project(project_new(), null)
+        }
+    })
+
+    // 10. Key bindings for panels
+    window.addEventListener('keydown', (e) => {
+        // F11 to toggle output console
+        if (e.key === 'F11') {
+            e.preventDefault()
+            console_toggle(_workspace)
+        }
+        // F12 is handled by Electron for DevTools
+    })
+
+    // 11. Listen for console messages from game preview iframe
+    window.addEventListener('message', (e) => {
+        if (e.data && e.data.type === 'console') {
+            console_write(e.data.level, `[Game] ${e.data.message}`)
         }
     })
 }
@@ -425,6 +375,9 @@ function _set_project(state: project_state, _dir: FileSystemDirectoryHandle | nu
     _tree.load(state)
     document.title = `${state.name} — Silkweaver IDE`
     undo_clear()
+
+    // Inject project-specific object type declarations into Monaco
+    inject_project_types(state)
 }
 
 function _mark_unsaved(): void {

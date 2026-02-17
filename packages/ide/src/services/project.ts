@@ -213,6 +213,32 @@ export async function project_read_binary_url(rel_path: string): Promise<string>
  * Reads a text file relative to the project folder.
  * @param rel_path - e.g. 'scripts/player.ts'
  */
+/**
+ * Checks if a file exists relative to the project folder.
+ * @param rel_path - e.g. 'sprites/spr_player/meta.json'
+ * @returns true if file exists, false otherwise
+ */
+export async function project_file_exists(rel_path: string): Promise<boolean> {
+    try {
+        if (_has_electron()) {
+            const fs = _el()!
+            if (!_folder_path) return false
+            return await fs.exists(fs.join(_folder_path, ...rel_path.split('/')))
+        }
+        const dir = _dir_handle
+        if (!dir) return false
+        const parts = rel_path.split('/')
+        let current: FileSystemDirectoryHandle = dir
+        for (let i = 0; i < parts.length - 1; i++) {
+            current = await current.getDirectoryHandle(parts[i]!, { create: false })
+        }
+        await current.getFileHandle(parts[parts.length - 1]!)
+        return true
+    } catch {
+        return false
+    }
+}
+
 export async function project_read_file(rel_path: string): Promise<string> {
     if (_has_electron()) {
         const fs = _el()!
