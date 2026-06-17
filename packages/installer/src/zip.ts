@@ -46,7 +46,7 @@ const _crc_table: Uint32Array = (() => {
 function _crc32(data: Uint8Array): number {
     let crc = 0xFFFFFFFF
     for (let i = 0; i < data.length; i++) {
-        crc = _crc_table[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8)
+        crc = _crc_table[(crc ^ data[i]!) & 0xFF]! ^ (crc >>> 8)
     }
     return (crc ^ 0xFFFFFFFF) >>> 0
 }
@@ -153,7 +153,7 @@ export function zip_to_bytes(zip: zip_archive): Uint8Array {
  */
 export async function zip_save(zip: zip_archive, filename: string): Promise<void> {
     const bytes = zip_to_bytes(zip)
-    const blob  = new Blob([bytes], { type: 'application/zip' })
+    const blob  = new Blob([bytes as BlobPart], { type: 'application/zip' })
     const url   = URL.createObjectURL(blob)
     const a     = document.createElement('a')
     a.href      = url

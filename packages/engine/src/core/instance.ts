@@ -2,8 +2,16 @@ import { EVENT_TYPE } from "./game_event.js"
 import { game_loop } from "./game_loop.js"
 import { resource } from "./resource.js"
 import type { room } from "./room.js"
-import { instances_collide, update_bbox, point_in_instance } from "../collision/collision.js"
+import { instances_collide, update_bbox, point_in_instance, rect_in_instance, circle_in_instance, line_in_instance } from "../collision/collision.js"
 import type { sprite } from "../drawing/sprite.js"
+import { keyboard_check, keyboard_check_pressed, keyboard_check_released, vk_anykey } from "../input/keyboard.js"
+import {
+    window_mouse_get_x, window_mouse_get_y,
+    mouse_check_button_pressed, mouse_check_button_released, mb_left, mb_right,
+} from "../input/mouse.js"
+
+/** Number of alarm slots per instance (matches GMS alarm[0..11]). */
+const ALARM_COUNT = 12
 
 /**
  * A draw_sprite_ext function reference injected at engine startup to avoid
@@ -31,6 +39,11 @@ export function set_draw_sprite_ext(fn: typeof _renderer_draw_sprite_ext): void 
  * Instances exist within rooms and can have events, properties, and behaviors.
  */
 export class instance extends resource {
+    // GMS-style dynamic instance variables: user code can read/write arbitrary
+    // properties (e.g. `this.score = 0`) without a cast. Declared properties below
+    // keep their precise types; only unknown keys resolve to `any`.
+    [key: string]: any
+
     public room: room       // The room this instance belongs to
 
     // =========================================================================
@@ -77,11 +90,25 @@ export class instance extends resource {
     public persistent: boolean = false  // Whether the instance persists across rooms
     public active: boolean = true       // Whether the instance participates in logic and collision
 
+    /** Countdown timers (GMS alarm[0..11]). -1 = inactive; set to N to fire on_alarm(i) after N steps. */
+    public alarm: number[] = new Array(ALARM_COUNT).fill(-1)
+    /** Set once instance_destroy() runs, so the rest of the current step is skipped. */
+    private _destroyed: boolean = false
+
     // Cached bounding box — updated each step before collision checks
     public bbox_left:   number = 0      // Left edge of collision bounding box
     public bbox_top:    number = 0      // Top edge of collision bounding box
     public bbox_right:  number = 0      // Right edge of collision bounding box
     public bbox_bottom: number = 0      // Bottom edge of collision bounding box
+
+    // Manual collision mask (offsets from the instance origin). When mask_manual
+    // is true, the collision system uses these instead of the sprite-derived bbox
+    // — required for spriteless objects. Set via mask_set_rectangle/mask_set_size.
+    public mask_manual:     boolean = false
+    public mask_off_left:   number = 0
+    public mask_off_top:    number = 0
+    public mask_off_right:  number = 0
+    public mask_off_bottom: number = 0
 
     // Bound event handlers — stored so unregister() can match the exact same function reference
     private _bound_step_begin: Function = () => {}
@@ -155,6 +182,8 @@ export class instance extends resource {
      * Queues the destroy event to run at the end of the current step.
      */
     public instance_destroy(): void {
+        if (this._destroyed) return
+        this._destroyed = true
         game_loop.register(EVENT_TYPE.destroy, this.on_destroy.bind(this))
         this.unregister_events()
         this.room.instance_remove(this.id)
@@ -193,13 +222,22 @@ export class instance extends resource {
     }
 
     /**
-     * Internal step: physics, animation, bbox update, then calls on_step().
+     * Internal step: alarms, input events, physics, animation, bbox, collision
+     * events, then on_step(). Bails out early if an event destroys the instance.
      */
     private internal_step(): void {
-        if (!this.active) return
+        if (!this.active || this._destroyed) return
 
         this.xprevious = this.x
         this.yprevious = this.y
+
+        // Countdown alarms → on_alarm()
+        this._process_alarms()
+        if (this._destroyed) return
+
+        // Keyboard / mouse-over-instance events
+        this._process_input_events()
+        if (this._destroyed) return
 
         // Apply gravity
         if (this.gravity !== 0) {
@@ -229,20 +267,70 @@ export class instance extends resource {
         this.x += this.hspeed
         this.y += this.vspeed
 
-        // Advance animation and wrap around the sprite's frame count
-        if (this.image_speed !== 0 && this.sprite_index >= 0) {
-            const spr = resource.findByID(this.sprite_index)
-            const frame_count = (spr && 'frames' in spr) ? (spr as any).frames.length : 1
-            if (frame_count > 0) {
-                this.image_index = (this.image_index + this.image_speed) % frame_count
-                if (this.image_index < 0) this.image_index += frame_count
-            }
-        }
-
-        // Update cached bounding box
+        // Advance animation (fires on_animation_end on loop) and update bbox
+        this._advance_animation()
         update_bbox(this)
 
+        // Collision events (only scanned for objects with a collision event)
+        this._process_collisions()
+        if (this._destroyed) return
+
         this.on_step()
+    }
+
+    /** Decrements active alarms; fires on_alarm(i) when one reaches zero. */
+    private _process_alarms(): void {
+        for (let i = 0; i < ALARM_COUNT; i++) {
+            const a = this.alarm[i] ?? -1
+            if (a > 0) {
+                const next = a - 1
+                this.alarm[i] = next
+                if (next === 0) { this.alarm[i] = -1; this.on_alarm(i) }
+                if (this._destroyed) return
+            }
+        }
+    }
+
+    /** Fires keyboard and mouse-over-instance events for this step. */
+    private _process_input_events(): void {
+        // Keyboard (generic: fires on any-key transitions; check specific keys inside)
+        if (keyboard_check_pressed(vk_anykey))  { this.on_key_press();   if (this._destroyed) return }
+        if (keyboard_check_released(vk_anykey)) { this.on_key_release(); if (this._destroyed) return }
+        if (keyboard_check(vk_anykey))          { this.on_key_held();    if (this._destroyed) return }
+
+        // Mouse (fires only while the pointer is over this instance)
+        const mx = window_mouse_get_x()
+        const my = window_mouse_get_y()
+        if (point_in_instance(mx, my, this)) {
+            if (mouse_check_button_pressed(mb_left))  { this.on_mouse_left_press();   if (this._destroyed) return }
+            if (mouse_check_button_released(mb_left)) { this.on_mouse_left_release(); if (this._destroyed) return }
+            if (mouse_check_button_pressed(mb_right)) { this.on_mouse_right_press() }
+        }
+    }
+
+    /** Advances the sprite animation, firing on_animation_end() on each loop. */
+    private _advance_animation(): void {
+        if (this.image_speed === 0 || this.sprite_index < 0) return
+        const spr = resource.findByID(this.sprite_index)
+        const frame_count = (spr && 'frames' in spr) ? (spr as any).frames.length : 1
+        if (frame_count <= 0) return
+        const prev = this.image_index
+        this.image_index = (this.image_index + this.image_speed) % frame_count
+        if (this.image_index < 0) this.image_index += frame_count
+        const looped = this.image_speed > 0 ? this.image_index < prev : this.image_index > prev
+        if (looped) this.on_animation_end()
+    }
+
+    /** Fires on_collision(other) for each instance this one overlaps (collision-event objects only). */
+    private _process_collisions(): void {
+        if (this.on_collision === instance.prototype.on_collision) return
+        for (const other of this.room.instance_get_all()) {
+            if (other === this || !other.active) continue
+            if (instances_collide(this, this.x, this.y, other)) {
+                this.on_collision(other)
+                if (this._destroyed) return
+            }
+        }
     }
 
     /**
@@ -492,6 +580,60 @@ export class instance extends resource {
     }
 
     /**
+     * Like place_meeting, but returns the first instance collided with at (x, y),
+     * or undefined if none.
+     * @param x - X position to test
+     * @param y - Y position to test
+     * @param obj - Object class to check against (pass the base `instance` for "all")
+     */
+    public instance_place(x: number, y: number, obj: typeof instance): instance | undefined {
+        const rm = game_loop.room
+        if (!rm) return undefined
+        for (const other of rm.instance_get_all()) {
+            if (other === this || !other.active) continue
+            if (!(other instanceof obj)) continue
+            if (instances_collide(this, x, y, other)) return other
+        }
+        return undefined
+    }
+
+    // =========================================================================
+    // Collision mask (manual)
+    // =========================================================================
+
+    /**
+     * Sets a manual rectangular collision mask, as offsets from the instance
+     * origin (x, y). Use this for spriteless objects so collision functions work.
+     * @param left - Left offset from x
+     * @param top - Top offset from y
+     * @param right - Right offset from x
+     * @param bottom - Bottom offset from y
+     */
+    public mask_set_rectangle(left: number, top: number, right: number, bottom: number): void {
+        this.mask_manual     = true
+        this.mask_off_left   = left
+        this.mask_off_top    = top
+        this.mask_off_right  = right
+        this.mask_off_bottom = bottom
+        update_bbox(this)
+    }
+
+    /**
+     * Convenience: sets a manual width×height mask with its top-left at the origin.
+     * @param width - Mask width
+     * @param height - Mask height
+     */
+    public mask_set_size(width: number, height: number): void {
+        this.mask_set_rectangle(0, 0, width, height)
+    }
+
+    /** Removes the manual mask, reverting to the sprite/mask_index-derived bbox. */
+    public mask_clear(): void {
+        this.mask_manual = false
+        update_bbox(this)
+    }
+
+    /**
      * Moves the instance by the given amount, stopping when it hits a solid.
      * @param hspd - Horizontal movement
      * @param vspd - Vertical movement
@@ -670,6 +812,46 @@ export class instance extends resource {
 
     /** Called every frame to draw GUI elements (fixed to the screen, not the room). */
     public on_draw_gui(): void {}
+
+    // ── Alarm ────────────────────────────────────────────────────────────────
+    /** Called when alarm[index] counts down to zero. */
+    public on_alarm(_index: number): void {}
+
+    // ── Keyboard (generic — check specific keys with keyboard_check* inside) ──
+    /** Called the step any key is pressed. */
+    public on_key_press(): void {}
+    /** Called the step any key is released. */
+    public on_key_release(): void {}
+    /** Called every step any key is held down. */
+    public on_key_held(): void {}
+
+    // ── Mouse (fired only while the pointer is over this instance) ────────────
+    /** Called when the left mouse button is pressed over this instance. */
+    public on_mouse_left_press(): void {}
+    /** Called when the left mouse button is released over this instance. */
+    public on_mouse_left_release(): void {}
+    /** Called when the right mouse button is pressed over this instance. */
+    public on_mouse_right_press(): void {}
+
+    // ── Collision ─────────────────────────────────────────────────────────────
+    /** Called for each other instance this one overlaps this step. */
+    public on_collision(_other: instance): void {}
+
+    // ── Room / Game lifecycle ────────────────────────────────────────────────
+    /** Called when the room this instance is in starts. */
+    public on_room_start(): void {}
+    /** Called when the room this instance is in ends (before leaving it). */
+    public on_room_end(): void {}
+    /** Called once when the game starts, for instances present in the first room. */
+    public on_game_start(): void {}
+    /** Called once when the game ends. */
+    public on_game_end(): void {}
+
+    // ── Other ─────────────────────────────────────────────────────────────────
+    /** Called when the sprite animation completes a loop. */
+    public on_animation_end(): void {}
+    /** Called when path following ends (requires path_start; not yet wired). */
+    public on_path_end(): void {}
 }
 
 // =========================================================================
@@ -700,4 +882,63 @@ export function with_object<T extends instance>(
             callback(inst as T)
         }
     }
+}
+
+// =========================================================================
+// Collision query functions (GMS-style free functions)
+// =========================================================================
+// For all of these, pass the base `instance` class as `obj` to match "all".
+
+/** Returns the first instance of obj whose mask contains the point (x, y), or undefined. */
+export function collision_point(x: number, y: number, obj: typeof instance): instance | undefined {
+    const rm = game_loop.room
+    if (!rm) return undefined
+    for (const inst of rm.instance_get_all()) {
+        if (inst instanceof obj && inst.active && point_in_instance(x, y, inst)) return inst
+    }
+    return undefined
+}
+
+/** True if any instance of obj has its mask at the point (x, y). */
+export function position_meeting(x: number, y: number, obj: typeof instance): boolean {
+    return collision_point(x, y, obj) !== undefined
+}
+
+/** Destroys every instance whose mask contains the point (x, y). */
+export function position_destroy(x: number, y: number): void {
+    const rm = game_loop.room
+    if (!rm) return
+    for (const inst of rm.instance_get_all()) {
+        if (inst.active && point_in_instance(x, y, inst)) inst.instance_destroy()
+    }
+}
+
+/** Returns the first instance of obj overlapping the rectangle (x1,y1)-(x2,y2), or undefined. */
+export function collision_rectangle(x1: number, y1: number, x2: number, y2: number, obj: typeof instance): instance | undefined {
+    const rm = game_loop.room
+    if (!rm) return undefined
+    for (const inst of rm.instance_get_all()) {
+        if (inst instanceof obj && inst.active && rect_in_instance(x1, y1, x2, y2, inst)) return inst
+    }
+    return undefined
+}
+
+/** Returns the first instance of obj overlapping the circle at (x, y) with the given radius, or undefined. */
+export function collision_circle(x: number, y: number, radius: number, obj: typeof instance): instance | undefined {
+    const rm = game_loop.room
+    if (!rm) return undefined
+    for (const inst of rm.instance_get_all()) {
+        if (inst instanceof obj && inst.active && circle_in_instance(x, y, radius, inst)) return inst
+    }
+    return undefined
+}
+
+/** Returns the first instance of obj whose mask the line segment (x1,y1)-(x2,y2) crosses, or undefined. */
+export function collision_line(x1: number, y1: number, x2: number, y2: number, obj: typeof instance): instance | undefined {
+    const rm = game_loop.room
+    if (!rm) return undefined
+    for (const inst of rm.instance_get_all()) {
+        if (inst instanceof obj && inst.active && line_in_instance(x1, y1, x2, y2, inst)) return inst
+    }
+    return undefined
 }

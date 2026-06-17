@@ -175,9 +175,9 @@ export function file_text_read_string(handle: number): string {
     const fh = _handles.get(handle)
     if (!fh || fh.mode !== FILE_MODE_READ) return ''
     // Skip leading whitespace
-    while (fh.pos < fh.content.length && /\s/.test(fh.content[fh.pos])) fh.pos++
+    while (fh.pos < fh.content.length && /\s/.test(fh.content[fh.pos]!)) fh.pos++
     const start = fh.pos
-    while (fh.pos < fh.content.length && !/\s/.test(fh.content[fh.pos])) fh.pos++
+    while (fh.pos < fh.content.length && !/\s/.test(fh.content[fh.pos]!)) fh.pos++
     return fh.content.slice(start, fh.pos)
 }
 

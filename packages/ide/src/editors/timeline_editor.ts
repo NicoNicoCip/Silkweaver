@@ -159,7 +159,7 @@ class timeline_editor_window {
             name_inp.value = m.name
             name_inp.placeholder = 'label…'
             name_inp.addEventListener('change', () => {
-                this._data.moments[data_idx].name = name_inp.value
+                m.name = name_inp.value
                 this._save()
             })
             // Prevent row click from stealing focus on input click
@@ -174,7 +174,7 @@ class timeline_editor_window {
             step_inp.addEventListener('change', () => {
                 const v = parseInt(step_inp.value)
                 if (!isNaN(v) && v >= 0) {
-                    this._data.moments[data_idx].step = v
+                    m.step = v
                     this._render_list()
                     this._save()
                 }
@@ -212,6 +212,7 @@ class timeline_editor_window {
     private async _edit_selected_code(): Promise<void> {
         if (this._sel_idx < 0) { alert('Select a moment first.'); return }
         const moment = this._data.moments[this._sel_idx]
+        if (!moment) { alert('Select a moment first.'); return }
         const rel = `timelines/${this._name}/step_${moment.step}.ts`
         try {
             await script_editor_open_smart(this._workspace, rel, async () => {

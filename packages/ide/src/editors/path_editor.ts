@@ -227,30 +227,30 @@ class path_editor_window {
         ctx.lineWidth = 2
 
         if (this._data.kind === 'smooth' && pts.length >= 2) {
-            const s = to_screen(pts[0])
+            const s = to_screen(pts[0]!)
             ctx.moveTo(s.sx, s.sy)
             for (let i = 1; i < pts.length; i++) {
-                const prev  = to_screen(pts[i - 1])
-                const cur   = to_screen(pts[i])
+                const prev  = to_screen(pts[i - 1]!)
+                const cur   = to_screen(pts[i]!)
                 const cpx   = (prev.sx + cur.sx) / 2
                 const cpy   = (prev.sy + cur.sy) / 2
                 ctx.quadraticCurveTo(prev.sx, prev.sy, cpx, cpy)
             }
-            const last = to_screen(pts[pts.length - 1])
+            const last = to_screen(pts[pts.length - 1]!)
             ctx.lineTo(last.sx, last.sy)
             if (this._data.closed) {
-                const first = to_screen(pts[0])
+                const first = to_screen(pts[0]!)
                 ctx.lineTo(first.sx, first.sy)
             }
         } else {
-            const s = to_screen(pts[0])
+            const s = to_screen(pts[0]!)
             ctx.moveTo(s.sx, s.sy)
             for (let i = 1; i < pts.length; i++) {
-                const p = to_screen(pts[i])
+                const p = to_screen(pts[i]!)
                 ctx.lineTo(p.sx, p.sy)
             }
             if (this._data.closed && pts.length > 1) {
-                const first = to_screen(pts[0])
+                const first = to_screen(pts[0]!)
                 ctx.lineTo(first.sx, first.sy)
             }
         }
@@ -282,7 +282,7 @@ class path_editor_window {
 
     private _hit_point(cx: number, cy: number): number {
         for (let i = 0; i < this._data.points.length; i++) {
-            const pt  = this._data.points[i]
+            const pt  = this._data.points[i]!
             const sx  = this._pan_x + pt.x * this._zoom
             const sy  = this._pan_y + pt.y * this._zoom
             const dx  = cx - sx
@@ -338,8 +338,9 @@ class path_editor_window {
         }
         if (this._drag_idx >= 0) {
             const w = this._canvas_to_world(e.offsetX, e.offsetY)
-            this._data.points[this._drag_idx].x = Math.round(w.x / GRID) * GRID
-            this._data.points[this._drag_idx].y = Math.round(w.y / GRID) * GRID
+            const pt = this._data.points[this._drag_idx]!
+            pt.x = Math.round(w.x / GRID) * GRID
+            pt.y = Math.round(w.y / GRID) * GRID
             this._draw()
         }
     }

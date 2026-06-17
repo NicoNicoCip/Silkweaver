@@ -787,7 +787,12 @@ function menubar_default(actions) {
         { label: "Play", shortcut: "F5", action: actions.run_play },
         { label: "Stop", shortcut: "Shift+F5", action: actions.run_stop },
         { separator: true },
-        { label: "Build Game\u2026", action: actions.run_build }
+        { label: "Build Game\u2026", action: actions.run_build },
+        { label: "Export HTML5\u2026", action: actions.run_export_html5 },
+        { separator: true },
+        { label: "Export Windows (.exe)\u2026", action: actions.run_export_win },
+        { label: "Export macOS (.app)\u2026", action: actions.run_export_mac },
+        { label: "Export Linux\u2026", action: actions.run_export_linux }
       ]
     },
     {
@@ -1243,11 +1248,11 @@ async function project_write_file(rel_path, content) {
   await writable.write(content);
   await writable.close();
 }
-async function project_write_binary(dest_path, file) {
+async function project_write_binary(dest_path, data) {
+  const buf = data instanceof Uint8Array ? new Uint8Array(data).buffer : await data.arrayBuffer();
   if (_has_electron()) {
     const fs = _el();
     if (!_folder_path) throw new Error("No project folder open");
-    const buf = await file.arrayBuffer();
     return fs.write_binary(fs.join(_folder_path, ...dest_path.split("/")), buf);
   }
   const dir = _dir_handle;
@@ -1259,7 +1264,7 @@ async function project_write_binary(dest_path, file) {
   }
   const fh = await current.getFileHandle(parts[parts.length - 1], { create: true });
   const writable = await fh.createWritable();
-  await writable.write(await file.arrayBuffer());
+  await writable.write(buf);
   await writable.close();
 }
 function project_get_dir() {
@@ -1739,6 +1744,5604 @@ function _ensure_listener() {
   });
 }
 
+// packages/ide/src/generated/engine_types.ts
+var ENGINE_DTS = `/**
+ * 3D lighting system.
+ *
+ * Mirrors the GMS d3d_light_* API.
+ * Supports up to 8 directional and point lights, plus ambient light.
+ *
+ * Light data is uploaded as uniforms to 3D shader programs via
+ * d3d_light_get_uniforms(), which returns a flat uniform block
+ * for use with shader_set_uniform_*.
+ */
+declare const d3d_lighttype_directional = 0;
+declare const d3d_lighttype_point = 1;
+declare const MAX_LIGHTS = 8;
+interface light_def {
+    enabled: boolean;
+    type: number;
+    x: number;
+    y: number;
+    z: number;
+    r: number;
+    g: number;
+    b: number;
+    range: number;
+}
+/**
+ * Enables or disables a light slot.
+ * @param light_index - Light index (0\u20137)
+ * @param enabled - True to enable
+ */
+declare function d3d_light_enable(light_index: number, enabled: boolean): void;
+/**
+ * Defines a directional light.
+ * @param light_index - Light index (0\u20137)
+ * @param dx - Direction X (world space)
+ * @param dy - Direction Y
+ * @param dz - Direction Z
+ * @param col - BGR colour integer
+ */
+declare function d3d_light_define_direction(light_index: number, dx: number, dy: number, dz: number, col: number): void;
+/**
+ * Defines a point light.
+ * @param light_index - Light index (0\u20137)
+ * @param x - Position X
+ * @param y - Position Y
+ * @param z - Position Z
+ * @param range - Falloff range in world units
+ * @param col - BGR colour integer
+ */
+declare function d3d_light_define_point(light_index: number, x: number, y: number, z: number, range: number, col: number): void;
+/**
+ * Sets the ambient light colour.
+ * @param col - BGR colour integer
+ */
+declare function d3d_light_set_ambient(col: number): void;
+/**
+ * Returns a flat object of uniform values for uploading to a 3D shader.
+ * The shader is expected to declare:
+ *   uniform vec3  u_ambient;
+ *   uniform int   u_light_count;
+ *   uniform int   u_light_types[8];
+ *   uniform vec3  u_light_pos[8];   // direction for directional lights
+ *   uniform vec3  u_light_color[8];
+ *   uniform float u_light_range[8];
+ */
+declare function d3d_light_get_uniforms(): {
+    ambient: Float32Array;
+    count: number;
+    types: Int32Array;
+    positions: Float32Array;
+    colors: Float32Array;
+    ranges: Float32Array;
+};
+/** Returns the raw light definition array for advanced use. */
+declare function d3d_light_get_all(): Readonly<light_def>[];
+
+//# sourceMappingURL=lighting_3d.d.ts.map
+/**
+ * 3D model system \u2014 vertex buffers for WebGL 2.
+ *
+ * Mirrors the GMS d3d_model_* API:
+ *   d3d_model_create, d3d_model_destroy, d3d_model_draw
+ *   d3d_model_primitive_begin, d3d_model_primitive_end
+ *   d3d_model_vertex, d3d_model_vertex_normal, d3d_model_vertex_texture
+ *   d3d_model_block, d3d_model_cylinder, d3d_model_sphere, d3d_model_cone
+ *
+ * Vertex format: [x, y, z, nx, ny, nz, u, v] (32 bytes per vertex)
+ * Primitive types match WebGL draw modes.
+ */
+declare const pr_pointlist = 0;
+declare const pr_linelist = 1;
+declare const pr_linestrip = 2;
+declare const pr_trianglelist = 4;
+declare const pr_trianglestrip = 5;
+declare const pr_trianglefan = 6;
+interface model_mesh {
+    primitive: number;
+    vertices: Float32Array;
+    vbo: WebGLBuffer | null;
+    dirty: boolean;
+}
+interface model_def {
+    meshes: model_mesh[];
+    building: boolean;
+    build_prim: number;
+    build_verts: number[];
+}
+/** Returns the raw model state for internal use by model_loader.ts. */
+declare function _get_model_raw(model_id: number): model_def | undefined;
+/** Creates a new empty 3D model and returns its ID. */
+declare function d3d_model_create(): number;
+/** Destroys a model and frees its GPU resources. */
+declare function d3d_model_destroy(model_id: number): void;
+/** Returns true if the model ID is valid. */
+declare function d3d_model_exists(model_id: number): boolean;
+/** Clears all meshes from a model. */
+declare function d3d_model_clear(model_id: number): void;
+/**
+ * Begins recording vertices for a primitive.
+ * @param model_id - Model ID
+ * @param kind - pr_* primitive type
+ */
+declare function d3d_model_primitive_begin(model_id: number, kind: number): void;
+/**
+ * Finishes recording vertices and adds the mesh to the model.
+ * @param model_id - Model ID
+ */
+declare function d3d_model_primitive_end(model_id: number): void;
+/**
+ * Adds a vertex at (x, y, z) using the current normal and UV.
+ */
+declare function d3d_model_vertex(model_id: number, x: number, y: number, z: number): void;
+/**
+ * Adds a vertex with an explicit normal.
+ */
+declare function d3d_model_vertex_normal(model_id: number, x: number, y: number, z: number, nx: number, ny: number, nz: number): void;
+/**
+ * Adds a vertex with UV texture coordinates and explicit normal.
+ */
+declare function d3d_model_vertex_texture(model_id: number, x: number, y: number, z: number, u: number, v: number): void;
+/**
+ * Sets the normal to use for subsequent vertices.
+ */
+declare function d3d_model_set_normal(nx: number, ny: number, nz: number): void;
+/**
+ * Sets the UV to use for subsequent vertices.
+ */
+declare function d3d_model_set_uv(u: number, v: number): void;
+/** Adds a box (cuboid) mesh to the model. */
+declare function d3d_model_block(model_id: number, x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, hrepeat?: number, vrepeat?: number): void;
+/**
+ * Adds a sphere mesh.
+ * @param model_id - Model ID
+ * @param x, y, z - Centre position
+ * @param r - Radius
+ * @param hsteps - Horizontal subdivisions (\u22653)
+ * @param vsteps - Vertical subdivisions (\u22652)
+ */
+declare function d3d_model_sphere(model_id: number, x: number, y: number, z: number, r: number, hsteps?: number, vsteps?: number): void;
+/**
+ * Draws a model using the currently active shader and transform.
+ * The caller is responsible for setting up a 3D shader with the
+ * u_model, u_view, u_projection uniforms before calling this.
+ * @param model_id - Model ID
+ * @param x, y, z - World position offset
+ */
+declare function d3d_model_draw(model_id: number, x?: number, y?: number, z?: number): void;
+
+//# sourceMappingURL=model.d.ts.map
+/**
+ * 3D model loader \u2014 loads OBJ files into d3d models.
+ *
+ * Supports Wavefront OBJ format (vertices, normals, texture coordinates,
+ * triangulated faces).  Does not support materials (MTL files).
+ *
+ * Usage:
+ *   const model_id = model_load_obj(obj_source_string)
+ *   d3d_model_draw(model_id, x, y, z)
+ *
+ * glTF loading is intentionally deferred \u2014 OBJ covers the common simple-model
+ * use case and has no external dependencies.
+ */
+/**
+ * Creates a d3d model from an OBJ source string.
+ * @param obj_src - Contents of the .obj file
+ * @returns Model ID
+ */
+declare function model_load_obj(obj_src: string): number;
+/**
+ * Fetches an OBJ file from a URL and returns a model ID.
+ * @param url - URL of the .obj file
+ * @returns Promise resolving to model ID, or -1 on failure
+ */
+declare function model_load_obj_url(url: string): Promise<number>;
+//# sourceMappingURL=model_loader.d.ts.map
+/**
+ * 3D transform matrix stack.
+ *
+ * Mirrors the GMS d3d_transform_* API.
+ * Matrices are column-major Float32Array (matches WebGL layout).
+ *
+ * The transform stack is used when drawing 3D models.
+ * The current transform (top of stack) is applied as a model matrix.
+ */
+type mat4 = Float32Array;
+/** Returns a 4\xD74 identity matrix. */
+declare function mat4_identity(): mat4;
+/** Multiplies two 4\xD74 column-major matrices: result = a * b. */
+declare function mat4_mul(a: mat4, b: mat4): mat4;
+/** Returns a translation matrix. */
+declare function mat4_translate(tx: number, ty: number, tz: number): mat4;
+/** Returns a uniform scale matrix. */
+declare function mat4_scale(sx: number, sy: number, sz: number): mat4;
+/** Returns a rotation matrix around the X axis (angle in degrees). */
+declare function mat4_rotate_x(deg: number): mat4;
+/** Returns a rotation matrix around the Y axis (angle in degrees). */
+declare function mat4_rotate_y(deg: number): mat4;
+/** Returns a rotation matrix around the Z axis (angle in degrees). */
+declare function mat4_rotate_z(deg: number): mat4;
+/** Returns a perspective projection matrix. */
+declare function mat4_perspective(fov_deg: number, aspect: number, near: number, far: number): mat4;
+/** Returns a look-at view matrix. */
+declare function mat4_look_at(ex: number, ey: number, ez: number, tx: number, ty: number, tz: number, ux: number, uy: number, uz: number): mat4;
+/** Returns an orthographic projection matrix. */
+declare function mat4_ortho(left: number, right: number, bottom: number, top: number, near: number, far: number): mat4;
+/** Returns the current model matrix (top of stack). */
+declare function d3d_transform_get(): mat4;
+/** Resets the current transform to identity. */
+declare function d3d_transform_set_identity(): void;
+/**
+ * Sets the transform to a translation.
+ * @param x - X translation
+ * @param y - Y translation
+ * @param z - Z translation
+ */
+declare function d3d_transform_set_translation(x: number, y: number, z: number): void;
+/**
+ * Sets the transform to a scale.
+ * @param sx - X scale
+ * @param sy - Y scale
+ * @param sz - Z scale
+ */
+declare function d3d_transform_set_scaling(sx: number, sy: number, sz: number): void;
+/**
+ * Sets the transform to a rotation around an axis.
+ * @param xa - X component of rotation axis
+ * @param ya - Y component of rotation axis
+ * @param za - Z component of rotation axis
+ * @param deg - Angle in degrees
+ */
+declare function d3d_transform_set_rotation(xa: number, ya: number, _za: number, deg: number): void;
+/** Adds a translation to the current transform. */
+declare function d3d_transform_add_translation(x: number, y: number, z: number): void;
+/** Adds a scaling to the current transform. */
+declare function d3d_transform_add_scaling(sx: number, sy: number, sz: number): void;
+/** Adds a rotation around the X axis. */
+declare function d3d_transform_add_rotation_x(deg: number): void;
+/** Adds a rotation around the Y axis. */
+declare function d3d_transform_add_rotation_y(deg: number): void;
+/** Adds a rotation around the Z axis. */
+declare function d3d_transform_add_rotation_z(deg: number): void;
+/** Pushes the current transform onto the stack (save state). */
+declare function d3d_transform_stack_push(): void;
+/** Pops the transform stack (restore state). */
+declare function d3d_transform_stack_pop(): void;
+/** Clears the stack back to a single identity matrix. */
+declare function d3d_transform_stack_clear(): void;
+//# sourceMappingURL=transform_3d.d.ts.map
+/**
+ * 3D / spatial audio utilities.
+ *
+ * Wraps the Web Audio API PannerNode for positional audio.
+ * Uses a simple 2D model: listener sits at (lx, ly, 0), sounds at (sx, sy, 0).
+ * Distance-based attenuation follows the inverse-distance rolloff model.
+ *
+ * Usage:
+ *   audio_set_listener_position(view_x + view_w/2, view_y + view_h/2)
+ *   const inst = audio_play_sound_at(asset, x, y)
+ */
+
+/**
+ * A sound_instance with an attached PannerNode for 3D positioning.
+ */
+declare class spatial_sound_instance {
+    readonly instance: sound_instance;
+    private _panner;
+    constructor(panner: PannerNode, inst: sound_instance);
+    /**
+     * Updates the world-space position of this sound source.
+     * @param x - World X position
+     * @param y - World Y position
+     */
+    set_position(x: number, y: number): void;
+    /** Stops playback. */
+    stop(): void;
+    /** Returns true if currently playing. */
+    get is_playing(): boolean;
+}
+/**
+ * Sets the listener position in world space.
+ * Should be updated each step to match the camera/view centre.
+ * @param x - World X of the listener
+ * @param y - World Y of the listener
+ */
+declare function audio_set_listener_position(x: number, y: number): void;
+/**
+ * Plays a sound with 3D positional audio at a world-space location.
+ * @param asset - Sound asset to play
+ * @param x - World X position of the sound source
+ * @param y - World Y position of the sound source
+ * @param ref_distance - Distance at which volume starts attenuating (default 100)
+ * @param max_distance - Distance at which volume reaches minimum (default 1000)
+ * @param loop - Whether to loop
+ * @returns spatial_sound_instance handle
+ */
+declare function audio_play_sound_at(asset: sound_asset, x: number, y: number, ref_distance?: number, max_distance?: number, loop?: boolean): spatial_sound_instance;
+/**
+ * Updates an existing spatial sound instance's world position.
+ * Call each step if the sound source is moving.
+ * @param inst - The spatial_sound_instance to update
+ * @param x - New world X
+ * @param y - New world Y
+ */
+declare function audio_set_sound_position(inst: spatial_sound_instance, x: number, y: number): void;
+/** Returns the current listener X position. */
+declare function audio_get_listener_x(): number;
+/** Returns the current listener Y position. */
+declare function audio_get_listener_y(): number;
+//# sourceMappingURL=audio_3d.d.ts.map
+/**
+ * Audio groups \u2014 named gain buses that sounds can be assigned to.
+ *
+ * Each group has its own GainNode that sits between sound sources
+ * and the master gain node:
+ *   source \u2192 group gain \u2192 master gain \u2192 destination
+ *
+ * Groups are created on first use and never destroyed.
+ */
+
+/**
+ * A named audio bus with an independent gain level.
+ */
+declare class audio_group extends resource {
+    readonly group_name: string;
+    private _gain_node;
+    /**
+     * @param group_name - Unique name for this audio group
+     */
+    constructor(group_name: string);
+    /**
+     * Returns the GainNode for this group, creating it if necessary.
+     * Lazily initialised so it can be constructed before audio_system.init().
+     */
+    get gain_node(): GainNode;
+    /**
+     * Sets the gain (volume) for this group.
+     * @param gain - Volume level (0 = silent, 1 = full)
+     */
+    set_gain(gain: number): void;
+    /** Returns the current gain for this group. */
+    get_gain(): number;
+    /**
+     * Stops all sounds in this group by disconnecting and reconnecting
+     * the gain node. Individual sound tracking is handled by sound_instance.
+     * This is a volume-only group; stopping is done via the sound registry.
+     */
+    stop_all(): void;
+}
+/**
+ * Registers the callback used by audio_group.stop_all() to stop live instances.
+ * Called once by sound.ts after module initialisation.
+ * @param cb - Function that stops all instances in a named group
+ */
+declare function set_stop_group_callback(cb: (group_name: string) => void): void;
+/**
+ * Returns or creates an audio group with the given name.
+ * @param name - Group name
+ */
+declare function get_or_create_group(name: string): audio_group;
+/**
+ * Sets the gain for a named audio group.
+ * @param group_name - Group name
+ * @param gain - Volume level (0\u20131)
+ */
+declare function audio_group_set_gain(group_name: string, gain: number): void;
+/**
+ * Returns the current gain for a named audio group.
+ * @param group_name - Group name
+ */
+declare function audio_group_get_gain(group_name: string): number;
+/**
+ * Stops all sounds in a named audio group.
+ * @param group_name - Group name
+ */
+declare function audio_group_stop(group_name: string): void;
+//# sourceMappingURL=audio_group.d.ts.map
+/**
+ * Core Web Audio API context and graph management.
+ *
+ * All audio passes through:
+ *   source \u2192 group gain \u2192 master gain \u2192 AudioContext.destination
+ *
+ * Call audio_system.init() once before playing any sounds.
+ * The context starts suspended on many browsers until a user gesture;
+ * audio_system.resume() should be called in any user-input handler.
+ */
+/**
+ * Central audio context and master gain node.
+ */
+declare class audio_system {
+    private static _ctx;
+    private static _master;
+    /**
+     * Initialises the Web Audio context and master gain node.
+     * Safe to call multiple times \u2014 only initialises once.
+     */
+    static init(): void;
+    /**
+     * Resumes the AudioContext after a user gesture.
+     * Browsers suspend audio until user interaction occurs.
+     */
+    static resume(): Promise<void>;
+    /**
+     * Returns the shared AudioContext.
+     * Throws if init() has not been called.
+     */
+    static get ctx(): AudioContext;
+    /**
+     * Returns the master GainNode.
+     * Throws if init() has not been called.
+     */
+    static get master(): GainNode;
+    /** Returns true if the audio system has been initialised. */
+    static get is_ready(): boolean;
+    /**
+     * Sets the master gain (volume) for all audio.
+     * @param gain - Volume level (0 = silent, 1 = full)
+     */
+    static set_master_gain(gain: number): void;
+    /** Returns the current master gain level. */
+    static get_master_gain(): number;
+    /**
+     * Returns the current AudioContext time in seconds.
+     * Used for precise scheduling.
+     */
+    static get current_time(): number;
+}
+//# sourceMappingURL=audio_system.d.ts.map
+/**
+ * Sound resource and playback management.
+ *
+ * A \`sound_asset\` holds a decoded AudioBuffer (loaded from a URL or ArrayBuffer).
+ * Playing a sound creates a \`sound_instance\` (AudioBufferSourceNode + GainNode).
+ *
+ * Sound instances are fire-and-forget by default. Retaining the returned
+ * instance ID allows stopping, pausing, or changing volume mid-play.
+ *
+ * Routing: source \u2192 instance gain \u2192 group gain \u2192 master gain \u2192 destination
+ */
+
+/**
+ * A decoded audio asset that can be played one or more times.
+ */
+declare class sound_asset extends resource {
+    buffer: AudioBuffer | null;
+    loop: boolean;
+    group_name: string;
+    /**
+     * Loads a sound from a URL, decoding it into an AudioBuffer.
+     * @param url - URL to an audio file (mp3, ogg, wav, etc.)
+     * @param group_name - Audio group to assign this sound to
+     * @param loop - Whether to loop by default
+     * @returns Promise that resolves when decoding is complete
+     */
+    load_url(url: string, group_name?: string, loop?: boolean): Promise<void>;
+    /**
+     * Loads a sound from a pre-fetched ArrayBuffer.
+     * @param array_buf - Raw audio data
+     * @param group_name - Audio group
+     * @param loop - Whether to loop by default
+     */
+    load_buffer(array_buf: ArrayBuffer, group_name?: string, loop?: boolean): Promise<void>;
+}
+/**
+ * A live playback of a sound_asset.
+ * Returned by audio_play_sound(); pass the ID to stop/query.
+ */
+declare class sound_instance {
+    readonly instance_id: number;
+    private _source;
+    private _gain;
+    private _playing;
+    private _on_ended;
+    constructor(source: AudioBufferSourceNode, gain: GainNode);
+    /** Stops playback immediately. */
+    stop(): void;
+    /**
+     * Sets the gain for this specific playback instance.
+     * @param gain - Volume level (0\u20131)
+     */
+    set_gain(gain: number): void;
+    /** Returns the current instance gain. */
+    get_gain(): number;
+    /**
+     * Sets the playback pitch as a speed multiplier.
+     * 1.0 = normal, 2.0 = one octave up, 0.5 = one octave down.
+     * @param pitch - Playback rate multiplier
+     */
+    set_pitch(pitch: number): void;
+    /** Returns true if this instance is still playing. */
+    get is_playing(): boolean;
+    /**
+     * Registers a callback invoked when the sound ends naturally (not on stop()).
+     * @param cb - Callback function
+     */
+    on_ended(cb: () => void): void;
+}
+/**
+ * Registers a sound_instance in the global instance registry.
+ * Used by external modules (e.g. audio_3d) that construct instances directly.
+ * @param inst - The instance to register
+ * @param group_name - The audio group this instance belongs to
+ */
+declare function register_instance(inst: sound_instance, group_name?: string): void;
+/**
+ * Plays a sound asset and returns a sound_instance for control.
+ * @param asset - The sound asset to play
+ * @param loop - Override loop setting (defaults to asset.loop)
+ * @param gain - Initial volume (0\u20131, defaults to 1)
+ * @param pitch - Playback rate multiplier (defaults to 1)
+ * @returns The live sound_instance handle
+ */
+declare function play_sound(asset: sound_asset, loop?: boolean, gain?: number, pitch?: number): sound_instance;
+/**
+ * Plays a sound asset.
+ * @param asset - Sound to play
+ * @param loop - Whether to loop
+ * @param priority - Ignored (GMS API parity only)
+ * @returns sound_instance handle
+ */
+declare function audio_play_sound(asset: sound_asset, loop?: boolean, priority?: number): sound_instance;
+/**
+ * Stops a specific sound instance.
+ * @param inst - The sound_instance returned by audio_play_sound
+ */
+declare function audio_stop_sound(inst: sound_instance): void;
+/**
+ * Stops all currently playing sounds.
+ */
+declare function audio_stop_all(): void;
+/**
+ * Returns true if the given sound instance is currently playing.
+ * @param inst - The sound_instance to query
+ */
+declare function audio_is_playing(inst: sound_instance): boolean;
+/**
+ * Sets the gain for a specific sound instance.
+ * @param inst - The sound_instance
+ * @param gain - Volume level (0\u20131)
+ */
+declare function audio_sound_gain(inst: sound_instance, gain: number): void;
+/**
+ * Sets the pitch for a specific sound instance.
+ * @param inst - The sound_instance
+ * @param pitch - Playback rate multiplier (1 = normal)
+ */
+declare function audio_sound_pitch(inst: sound_instance, pitch: number): void;
+/**
+ * Sets the master gain for all audio.
+ * @param gain - Volume level (0\u20131)
+ */
+declare function audio_set_master_gain(gain: number): void;
+/**
+ * Returns the current master gain.
+ */
+declare function audio_get_master_gain(): number;
+//# sourceMappingURL=sound.d.ts.map
+/**
+ * Collision detection system.
+ *
+ * Supports two mask types:
+ *   - Rectangle (AABB) \u2014 axis-aligned bounding box
+ *   - Circle  \u2014 circle based on bbox dimensions
+ *
+ * All functions operate on instance objects directly.
+ * "Precise" (per-pixel) collision is deferred to a later phase.
+ */
+
+declare const MASK_RECT = 0;
+declare const MASK_CIRCLE = 1;
+declare const MASK_ELLIPSE = 2;
+/**
+ * Returns the axis-aligned bounding box for an instance at a given position.
+ * Uses the instance's sprite dimensions and origin, or falls back to a 1\xD71 box.
+ *
+ * @param inst - The instance
+ * @param x - Override X position (defaults to inst.x)
+ * @param y - Override Y position (defaults to inst.y)
+ * @returns { left, top, right, bottom }
+ */
+declare function get_bbox(inst: instance, x?: number, y?: number): {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+};
+/**
+ * Updates the cached bbox_* properties on an instance.
+ * Called internally by the collision system and by internal_step.
+ * @param inst - The instance to update
+ */
+declare function update_bbox(inst: instance): void;
+declare function bbox_overlap(a_left: number, a_top: number, a_right: number, a_bottom: number, b_left: number, b_top: number, b_right: number, b_bottom: number): boolean;
+declare function circles_overlap(ax: number, ay: number, ar: number, bx: number, by: number, br: number): boolean;
+/**
+ * Returns true if instance a overlaps instance b at the given position for a.
+ * @param a - The querying instance
+ * @param ax - Override X for a
+ * @param ay - Override Y for a
+ * @param b - The target instance
+ * @returns True if the instances overlap
+ */
+declare function instances_collide(a: instance, ax: number, ay: number, b: instance): boolean;
+/**
+ * Returns true if a point overlaps instance b's bounding box.
+ * @param px - Point X
+ * @param py - Point Y
+ * @param b - Target instance
+ * @returns True if the point is inside b's bounding box
+ */
+declare function point_in_instance(px: number, py: number, b: instance): boolean;
+/**
+ * Returns true if a rectangle overlaps instance b's bounding box.
+ * @param rx1 - Rectangle left
+ * @param ry1 - Rectangle top
+ * @param rx2 - Rectangle right
+ * @param ry2 - Rectangle bottom
+ * @param b - Target instance
+ * @returns True if the rectangle overlaps b
+ */
+declare function rect_in_instance(rx1: number, ry1: number, rx2: number, ry2: number, b: instance): boolean;
+/**
+ * Returns true if a circle overlaps instance b's bounding box (uses AABB approximation).
+ * @param cx - Circle center X
+ * @param cy - Circle center Y
+ * @param cr - Circle radius
+ * @param b - Target instance
+ * @returns True if they overlap
+ */
+declare function circle_in_instance(cx: number, cy: number, cr: number, b: instance): boolean;
+/**
+ * Returns true if a line segment crosses instance b's bounding box.
+ * @param x1 - Segment start X
+ * @param y1 - Segment start Y
+ * @param x2 - Segment end X
+ * @param y2 - Segment end Y
+ * @param b - Target instance
+ */
+declare function line_in_instance(x1: number, y1: number, x2: number, y2: number, b: instance): boolean;
+
+//# sourceMappingURL=collision.d.ts.map
+/**
+ * Enum of all supported event types in the game loop.
+ */
+declare enum EVENT_TYPE {
+    none = "NONE",// Default/unset event type
+    create = "CREATE",// Runs once when instance is created
+    destroy = "DESTROY",// Runs once when instance is destroyed
+    step_begin = "STEP_BEGIN",// Runs at the start of each step
+    step = "STEP",// Main step event, runs every frame
+    step_end = "STEP_END",// Runs at the end of each step
+    collision = "COLLISION",// Runs when collision is detected
+    keyboard = "KEYBOARD",// Runs on keyboard input
+    mouse = "MOUSE",// Runs on mouse input
+    other = "OTHER",// Miscellaneous events (room start/end, etc.)
+    async = "ASYNC",// Async callback events (HTTP, networking)
+    draw = "DRAW",// Main draw event
+    draw_gui = "DRAW_GUI"
+}
+/**
+ * Wrapper class for an event function and its type.
+ */
+declare class game_event {
+    event: Function;
+    type: EVENT_TYPE;
+    /**
+     * Creates a new game event.
+     * @param event - The function to call when the event fires
+     * @param type - The event type category
+     */
+    constructor(event?: Function, type?: EVENT_TYPE);
+    /**
+     * Executes the event function.
+     */
+    run(): void;
+}
+//# sourceMappingURL=game_event.d.ts.map
+
+/**
+ * Registers frame begin/end callbacks from the renderer.
+ * Must be called from renderer.init() before the loop starts.
+ */
+declare function set_frame_hooks(begin: () => void, end: () => void): void;
+/**
+ * Core game loop that handles update and draw cycles.
+ * Uses a fixed timestep for updates and runs drawing once per frame.
+ */
+declare abstract class game_loop {
+    private static room_speed;
+    private static room_delta;
+    private static last_delta;
+    private static accumulator;
+    static room: room;
+    static room_first: number;
+    static room_last: number;
+    private static _canvas;
+    private static _pending_game_start;
+    private static _pending_room_start;
+    private static _stopped;
+    private static update_events;
+    private static draw_events;
+    /**
+     * Attaches input systems to the given canvas.
+     * Must be called before start() if mouse or touch input is needed.
+     * @param canvas - The game canvas element
+     */
+    static init_input(canvas: HTMLCanvasElement): void;
+    /**
+     * Starts the game loop.
+     * Initializes timing values and begins the requestAnimationFrame cycle.
+     */
+    static start(room?: room): void;
+    /**
+     * Main loop tick called every frame by requestAnimationFrame.
+     * Handles timing, runs fixed timestep updates, and draws once per frame.
+     * @param current - The current timestamp provided by requestAnimationFrame
+     */
+    private static tick;
+    /**
+     * Runs all update events in GMS order.
+     * Create and destroy events run once and are cleared after execution.
+     * Input polling happens before events; end_step clears edge-trigger state after.
+     */
+    private static update;
+    /**
+     * Runs all draw events in GMS order.
+     * Called once per frame after all updates have completed.
+     * begin_frame clears the canvas; end_frame flushes the batch.
+     */
+    private static draw;
+    /**
+     * Registers a function to be called for a specific event type.
+     * @param event - The event type to register for
+     * @param func - The function to call when the event fires
+     */
+    static register(event: EVENT_TYPE, func: Function): void;
+    /**
+     * Unregisters a function from a specific event type.
+     * @param event - The event type to unregister from
+     * @param func - The function to remove
+     */
+    static unregister(event: EVENT_TYPE, func: Function): void;
+    /**
+     * Transitions to a new room, clearing current events and loading the new room's state.
+     * @param room - The room to transition to
+     */
+    static change_room(room: room): void;
+    /**
+     * Ends the game: fires the Game End event for all instances, then halts the loop.
+     */
+    static end(): void;
+    /**
+     * Restarts the game by returning to the first room.
+     */
+    static restart(): void;
+    /**
+     * Calls a lifecycle event method on every active instance in the current room.
+     * @param method - Name of the lifecycle method to invoke
+     */
+    private static _dispatch_lifecycle;
+}
+/** Ends the game: fires Game End events, then stops the loop. */
+declare function game_end(): void;
+/** Restarts the game from the first room. */
+declare function game_restart(): void;
+//# sourceMappingURL=game_loop.d.ts.map
+/**
+ * GMObject \u2014 base class for all game object definitions.
+ *
+ * A GMObject is a *blueprint* (like a class definition). It is not placed
+ * in a room directly \u2014 the engine creates instances of it via instance_create().
+ * Developers subclass GMObject to define their game objects and override
+ * lifecycle methods (on_create, on_step, on_draw, etc.) from the instance class.
+ *
+ * Relationship:
+ *   GMObject subclass  \u2192  instance_create()  \u2192  instance (lives in a room)
+ *
+ * The instance class already implements all instance behaviour. GMObject adds
+ * the object-level metadata (default sprite, parent, name) that is shared
+ * across all instances of a type.
+ */
+
+/**
+ * Base class for all game objects.
+ * Extend this to define a new object type. Override lifecycle methods as needed.
+ */
+declare abstract class gm_object extends instance {
+    /** Default sprite for instances of this object (can be overridden per-instance). */
+    static default_sprite: sprite | null;
+    /** Parent object class for inheritance queries (null = no parent). */
+    static parent: typeof gm_object | null;
+    /** Human-readable object name. Defaults to the class name. */
+    static object_name: string;
+    static solid: boolean;
+    static visible: boolean;
+    static persistent: boolean;
+    static depth: number;
+    static sprite: string | null;
+    /**
+     * Applies this object's static metadata defaults to the new instance.
+     * @param room - The room this instance belongs to
+     */
+    constructor(room: room);
+    /**
+     * Returns the object name. Falls back to the constructor name if not set.
+     */
+    static get_name(): string;
+    /**
+     * Checks whether this object type is an ancestor (direct or indirect) of another.
+     * @param child - The object type to test
+     * @returns True if this class is somewhere in child's prototype chain
+     */
+    static is_ancestor_of(child: typeof gm_object): boolean;
+    /**
+     * Called once when the instance is created. Override in subclasses.
+     */
+    on_create(): void;
+}
+/**
+ * Checks whether the given object class has been defined (is non-null).
+ * In this engine, all imported object classes exist; this is a compatibility stub.
+ * @param obj - Object class to check
+ * @returns Always true for a valid class reference
+ */
+declare function object_exists(obj: typeof gm_object | null | undefined): boolean;
+/**
+ * Returns the name of an object class.
+ * @param obj - Object class
+ * @returns The object's name string
+ */
+declare function object_get_name(obj: typeof gm_object): string;
+/**
+ * Returns the default sprite of an object class, or null if none.
+ * @param obj - Object class
+ * @returns Default sprite or null
+ */
+declare function object_get_sprite(obj: typeof gm_object): sprite | null;
+/**
+ * Returns the parent class of an object, or null if it has no parent.
+ * @param obj - Object class
+ * @returns Parent class or null
+ */
+declare function object_get_parent(obj: typeof gm_object): typeof gm_object | null;
+/**
+ * Checks whether obj is a descendant of parent (i.e., parent is an ancestor of obj).
+ * @param obj - Object to test
+ * @param parent - Potential ancestor
+ * @returns True if parent is an ancestor of obj
+ */
+declare function object_is_ancestor(obj: typeof gm_object, parent: typeof gm_object): boolean;
+//# sourceMappingURL=gm_object.d.ts.map
+
+/**
+ * A draw_sprite_ext function reference injected at engine startup to avoid
+ * circular imports between instance.ts (core) and renderer.ts (drawing).
+ * Set by calling set_draw_sprite_ext() from renderer.init().
+ */
+declare let _renderer_draw_sprite_ext: ((spr: sprite, subimg: number, x: number, y: number, xscale: number, yscale: number, rot: number, color: number, alpha: number) => void) | null;
+/**
+ * Called by renderer.init() to register the draw_sprite_ext function.
+ * Must be called before the game loop starts for draw_self() to work.
+ * @param fn - The renderer's draw_sprite_ext method
+ */
+declare function set_draw_sprite_ext(fn: typeof _renderer_draw_sprite_ext): void;
+/**
+ * Base class for all game object instances.
+ * Instances exist within rooms and can have events, properties, and behaviors.
+ */
+declare class instance extends resource {
+    [key: string]: any;
+    room: room;
+    x: number;
+    y: number;
+    xprevious: number;
+    yprevious: number;
+    xstart: number;
+    ystart: number;
+    hspeed: number;
+    vspeed: number;
+    speed: number;
+    direction: number;
+    friction: number;
+    gravity: number;
+    gravity_direction: number;
+    sprite_index: number;
+    image_index: number;
+    image_speed: number;
+    image_xscale: number;
+    image_yscale: number;
+    image_angle: number;
+    image_alpha: number;
+    image_blend: number;
+    depth: number;
+    visible: boolean;
+    mask_index: number;
+    solid: boolean;
+    persistent: boolean;
+    active: boolean;
+    /** Countdown timers (GMS alarm[0..11]). -1 = inactive; set to N to fire on_alarm(i) after N steps. */
+    alarm: number[];
+    /** Set once instance_destroy() runs, so the rest of the current step is skipped. */
+    private _destroyed;
+    bbox_left: number;
+    bbox_top: number;
+    bbox_right: number;
+    bbox_bottom: number;
+    mask_manual: boolean;
+    mask_off_left: number;
+    mask_off_top: number;
+    mask_off_right: number;
+    mask_off_bottom: number;
+    private _bound_step_begin;
+    private _bound_step;
+    private _bound_step_end;
+    private _bound_draw;
+    private _bound_draw_gui;
+    /**
+     * Creates a new instance in the specified room.
+     * @param room - The room this instance will belong to
+     */
+    constructor(room: room);
+    /**
+     * Creates a new instance of an object at the specified position.
+     * @param x - X position for the new instance
+     * @param y - Y position for the new instance
+     * @param obj - The object class to instantiate
+     * @returns The newly created instance
+     */
+    static instance_create(x: number, y: number, obj: typeof instance): instance;
+    /**
+     * Creates a new instance at the specified position with an explicit depth.
+     * @param x - X position
+     * @param y - Y position
+     * @param depth - Drawing depth
+     * @param obj - The object class to instantiate
+     * @returns The newly created instance
+     */
+    static instance_create_depth(x: number, y: number, depth: number, obj: typeof instance): instance;
+    /**
+     * Destroys this instance, removing it from the room.
+     * Queues the destroy event to run at the end of the current step.
+     */
+    instance_destroy(): void;
+    /**
+     * Destroys an instance by its numeric ID.
+     * @param id - ID of the instance to destroy
+     */
+    static instance_destroy_id(id: number): void;
+    /**
+     * Registers this instance's event handlers with the game loop.
+     */
+    register_events(): void;
+    /**
+     * Unregisters this instance's event handlers from the game loop.
+     */
+    private unregister_events;
+    /**
+     * Internal step: alarms, input events, physics, animation, bbox, collision
+     * events, then on_step(). Bails out early if an event destroys the instance.
+     */
+    private internal_step;
+    /** Decrements active alarms; fires on_alarm(i) when one reaches zero. */
+    private _process_alarms;
+    /** Fires keyboard and mouse-over-instance events for this step. */
+    private _process_input_events;
+    /** Advances the sprite animation, firing on_animation_end() on each loop. */
+    private _advance_animation;
+    /** Fires on_collision(other) for each instance this one overlaps (collision-event objects only). */
+    private _process_collisions;
+    /**
+     * Internal draw: skips hidden instances, then calls on_draw().
+     * If on_draw() has not been overridden, draws the current sprite automatically.
+     */
+    private internal_draw;
+    /**
+     * Checks if an instance with the given ID exists.
+     * @param id - The instance ID to check
+     * @returns True if the instance exists
+     */
+    static instance_exists(id: number): boolean;
+    /**
+     * Finds an instance by its ID.
+     * @param id - The instance ID to find
+     * @returns The instance, or undefined if not found
+     */
+    static instance_find(id: number): instance | undefined;
+    /**
+     * Returns the number of active instances of a given object class in the current room.
+     * @param obj - Object class to count
+     * @returns Instance count
+     */
+    static instance_number(obj: typeof instance): number;
+    /**
+     * Finds the nth instance of a given object class in the current room (0-indexed).
+     * @param obj - Object class to search for
+     * @param n - Zero-based index
+     * @returns The instance, or undefined if not found
+     */
+    static instance_find_nth(obj: typeof instance, n: number): instance | undefined;
+    /**
+     * Finds the first instance of a given object class at a specific position.
+     * @param x - X position to test
+     * @param y - Y position to test
+     * @param obj - Object class to check
+     * @returns The instance at that position, or undefined
+     */
+    static instance_position(x: number, y: number, obj: typeof instance): instance | undefined;
+    /**
+     * Returns the nearest instance of obj to a given point.
+     * @param x - Reference X
+     * @param y - Reference Y
+     * @param obj - Object class to search
+     * @returns Nearest instance, or undefined if none exist
+     */
+    static instance_nearest(x: number, y: number, obj: typeof instance): instance | undefined;
+    /**
+     * Returns the furthest instance of obj from a given point.
+     * @param x - Reference X
+     * @param y - Reference Y
+     * @param obj - Object class to search
+     * @returns Furthest instance, or undefined if none exist
+     */
+    static instance_furthest(x: number, y: number, obj: typeof instance): instance | undefined;
+    /**
+     * Deactivates all instances (optionally excluding self).
+     * Deactivated instances are skipped in step and draw.
+     * @param not_me - If true, this instance is excluded from deactivation
+     */
+    instance_deactivate_all(not_me?: boolean): void;
+    /**
+     * Deactivates all instances of a specific object class.
+     * @param obj - Object class to deactivate
+     */
+    static instance_deactivate_object(obj: typeof instance): void;
+    /**
+     * Activates all instances in the current room.
+     */
+    static instance_activate_all(): void;
+    /**
+     * Activates all instances of a specific object class.
+     * @param obj - Object class to activate
+     */
+    static instance_activate_object(obj: typeof instance): void;
+    /**
+     * Checks if this instance would collide with any instance of obj at position (x, y).
+     * Does not move the instance.
+     * @param x - X position to test
+     * @param y - Y position to test
+     * @param obj - Object class to check against
+     * @returns True if a collision would occur
+     */
+    place_meeting(x: number, y: number, obj: typeof instance): boolean;
+    /**
+     * Checks if position (x, y) is free of solid instances.
+     * @param x - X position to test
+     * @param y - Y position to test
+     * @returns True if no solid instances occupy that position
+     */
+    place_free(x: number, y: number): boolean;
+    /**
+     * Checks if position (x, y) is completely empty (no instances of any kind).
+     * @param x - X position to test
+     * @param y - Y position to test
+     * @returns True if no instances occupy that position
+     */
+    place_empty(x: number, y: number): boolean;
+    /**
+     * Like place_meeting, but returns the first instance collided with at (x, y),
+     * or undefined if none.
+     * @param x - X position to test
+     * @param y - Y position to test
+     * @param obj - Object class to check against (pass the base \`instance\` for "all")
+     */
+    instance_place(x: number, y: number, obj: typeof instance): instance | undefined;
+    /**
+     * Sets a manual rectangular collision mask, as offsets from the instance
+     * origin (x, y). Use this for spriteless objects so collision functions work.
+     * @param left - Left offset from x
+     * @param top - Top offset from y
+     * @param right - Right offset from x
+     * @param bottom - Bottom offset from y
+     */
+    mask_set_rectangle(left: number, top: number, right: number, bottom: number): void;
+    /**
+     * Convenience: sets a manual width\xD7height mask with its top-left at the origin.
+     * @param width - Mask width
+     * @param height - Mask height
+     */
+    mask_set_size(width: number, height: number): void;
+    /** Removes the manual mask, reverting to the sprite/mask_index-derived bbox. */
+    mask_clear(): void;
+    /**
+     * Moves the instance by the given amount, stopping when it hits a solid.
+     * @param hspd - Horizontal movement
+     * @param vspd - Vertical movement
+     * @returns True if the movement was blocked by a solid
+     */
+    move_contact_solid(hspd: number, vspd: number): boolean;
+    /**
+     * Wraps the instance around the room edges.
+     * @param hor - Wrap horizontally
+     * @param vert - Wrap vertically
+     * @param margin - Extra margin (pixels outside room edge before wrapping)
+     */
+    move_wrap(hor: boolean, vert: boolean, margin?: number): void;
+    /**
+     * Returns the shortest distance from this instance to any instance of obj.
+     * @param obj - Object class to measure distance to
+     * @returns Distance in pixels, or Infinity if no instance found
+     */
+    distance_to_object(obj: typeof instance): number;
+    /**
+     * Sets the instance's motion using speed and direction.
+     * @param dir - Direction in degrees (0 = right, counter-clockwise)
+     * @param spd - Speed in pixels per step
+     */
+    motion_set(dir: number, spd: number): void;
+    /**
+     * Adds motion to the instance's current movement.
+     * @param dir - Direction in degrees
+     * @param spd - Speed to add
+     */
+    motion_add(dir: number, spd: number): void;
+    /**
+     * Moves the instance toward a point at the given speed.
+     * @param x - Target X position
+     * @param y - Target Y position
+     * @param spd - Speed to move at
+     */
+    move_towards_point(x: number, y: number, spd: number): void;
+    /**
+     * Calculates the distance to a point.
+     * @param x - Target X position
+     * @param y - Target Y position
+     * @returns Distance in pixels
+     */
+    point_distance(x: number, y: number): number;
+    /**
+     * Calculates the direction toward a point.
+     * @param x - Target X position
+     * @param y - Target Y position
+     * @returns Direction in degrees (0 = right, counter-clockwise)
+     */
+    point_direction(x: number, y: number): number;
+    /**
+     * Draws this instance's current sprite at its position with all image_ properties.
+     * Call this from on_draw() or it will be called automatically if on_draw() is not overridden.
+     */
+    draw_self(): void;
+    /** Called once when the instance is created. */
+    on_create(): void;
+    /** Called once when the instance is destroyed. */
+    on_destroy(): void;
+    /** Called at the start of each step. */
+    on_step_begin(): void;
+    /** Called every step (main update logic). Override this in subclasses. */
+    on_step(): void;
+    /** Called at the end of each step. */
+    on_step_end(): void;
+    /**
+     * Called every frame to draw the instance.
+     * Default implementation calls draw_self() to draw sprite_index at (x, y).
+     * Override to customize drawing behaviour.
+     */
+    on_draw(): void;
+    /** Called every frame to draw GUI elements (fixed to the screen, not the room). */
+    on_draw_gui(): void;
+    /** Called when alarm[index] counts down to zero. */
+    on_alarm(_index: number): void;
+    /** Called the step any key is pressed. */
+    on_key_press(): void;
+    /** Called the step any key is released. */
+    on_key_release(): void;
+    /** Called every step any key is held down. */
+    on_key_held(): void;
+    /** Called when the left mouse button is pressed over this instance. */
+    on_mouse_left_press(): void;
+    /** Called when the left mouse button is released over this instance. */
+    on_mouse_left_release(): void;
+    /** Called when the right mouse button is pressed over this instance. */
+    on_mouse_right_press(): void;
+    /** Called for each other instance this one overlaps this step. */
+    on_collision(_other: instance): void;
+    /** Called when the room this instance is in starts. */
+    on_room_start(): void;
+    /** Called when the room this instance is in ends (before leaving it). */
+    on_room_end(): void;
+    /** Called once when the game starts, for instances present in the first room. */
+    on_game_start(): void;
+    /** Called once when the game ends. */
+    on_game_end(): void;
+    /** Called when the sprite animation completes a loop. */
+    on_animation_end(): void;
+    /** Called when path following ends (requires path_start; not yet wired). */
+    on_path_end(): void;
+}
+/**
+ * Iterates over all active instances of a given object class and runs a callback.
+ * The callback receives each instance as \`self\`.
+ *
+ * @param obj - Object class to iterate, or an array of instances
+ * @param callback - Function called for each matching instance
+ */
+declare function with_object<T extends instance>(obj: typeof instance | T[], callback: (self: T) => void): void;
+/** Returns the first instance of obj whose mask contains the point (x, y), or undefined. */
+declare function collision_point(x: number, y: number, obj: typeof instance): instance | undefined;
+/** True if any instance of obj has its mask at the point (x, y). */
+declare function position_meeting(x: number, y: number, obj: typeof instance): boolean;
+/** Destroys every instance whose mask contains the point (x, y). */
+declare function position_destroy(x: number, y: number): void;
+/** Returns the first instance of obj overlapping the rectangle (x1,y1)-(x2,y2), or undefined. */
+declare function collision_rectangle(x1: number, y1: number, x2: number, y2: number, obj: typeof instance): instance | undefined;
+/** Returns the first instance of obj overlapping the circle at (x, y) with the given radius, or undefined. */
+declare function collision_circle(x: number, y: number, radius: number, obj: typeof instance): instance | undefined;
+/** Returns the first instance of obj whose mask the line segment (x1,y1)-(x2,y2) crosses, or undefined. */
+declare function collision_line(x1: number, y1: number, x2: number, y2: number, obj: typeof instance): instance | undefined;
+
+//# sourceMappingURL=instance.d.ts.map
+/**
+ * Path system \u2014 smooth curves through a series of points.
+ *
+ * Mirrors the GMS path API:
+ *   path_create, path_delete, path_add_point, path_get_x, path_get_y,
+ *   path_get_speed, path_get_length, path_get_number,
+ *   path_set_closed, path_set_kind, path_flip, path_mirror,
+ *   path_exists, path_clear_points
+ *
+ * Two kinds of path:
+ *   path_kind_linear  (0) \u2014 straight line segments between points
+ *   path_kind_smooth  (1) \u2014 Catmull-Rom spline through points
+ *
+ * Position is queried via a normalised parameter t \u2208 [0, 1].
+ */
+declare const path_kind_linear = 0;
+declare const path_kind_smooth = 1;
+/**
+ * Creates a new empty path.
+ * @returns Path ID
+ */
+declare function path_create(): number;
+/**
+ * Destroys a path.
+ * @param path_id - Path ID
+ */
+declare function path_delete(path_id: number): void;
+/**
+ * Returns true if the path ID is valid.
+ * @param path_id - Path ID
+ */
+declare function path_exists(path_id: number): boolean;
+/**
+ * Adds a control point to a path.
+ * @param path_id - Path ID
+ * @param x - Point X
+ * @param y - Point Y
+ * @param speed - Speed factor at this point (default 1)
+ */
+declare function path_add_point(path_id: number, x: number, y: number, speed?: number): void;
+/**
+ * Removes all control points from a path.
+ * @param path_id - Path ID
+ */
+declare function path_clear_points(path_id: number): void;
+/**
+ * Returns the number of control points on a path.
+ * @param path_id - Path ID
+ */
+declare function path_get_number(path_id: number): number;
+/**
+ * Returns the X position on a path at normalised position t (0\u20131).
+ * @param path_id - Path ID
+ * @param t - Position along path (0 = start, 1 = end)
+ */
+declare function path_get_x(path_id: number, t: number): number;
+/**
+ * Returns the Y position on a path at normalised position t (0\u20131).
+ * @param path_id - Path ID
+ * @param t - Position along path
+ */
+declare function path_get_y(path_id: number, t: number): number;
+/**
+ * Returns the speed factor on a path at normalised position t.
+ * @param path_id - Path ID
+ * @param t - Position along path
+ */
+declare function path_get_speed(path_id: number, t: number): number;
+/**
+ * Returns the approximate total length of a path in pixels.
+ * @param path_id - Path ID
+ */
+declare function path_get_length(path_id: number): number;
+/**
+ * Returns the X coordinate of the nth control point (0-based).
+ * @param path_id - Path ID
+ * @param n - Point index
+ */
+declare function path_get_point_x(path_id: number, n: number): number;
+/**
+ * Returns the Y coordinate of the nth control point (0-based).
+ * @param path_id - Path ID
+ * @param n - Point index
+ */
+declare function path_get_point_y(path_id: number, n: number): number;
+/**
+ * Returns the speed of the nth control point (0-based).
+ * @param path_id - Path ID
+ * @param n - Point index
+ */
+declare function path_get_point_speed(path_id: number, n: number): number;
+/**
+ * Sets whether the path is closed (loops back to the start).
+ * @param path_id - Path ID
+ * @param closed - True to close the path
+ */
+declare function path_set_closed(path_id: number, closed: boolean): void;
+/**
+ * Sets the interpolation kind for a path.
+ * @param path_id - Path ID
+ * @param kind - path_kind_linear | path_kind_smooth
+ */
+declare function path_set_kind(path_id: number, kind: number): void;
+/**
+ * Sets the spline precision (number of subdivisions per segment).
+ * Higher values improve length accuracy for smooth paths.
+ * @param path_id - Path ID
+ * @param precision - Steps per segment (default 8)
+ */
+declare function path_set_precision(path_id: number, precision: number): void;
+/**
+ * Flips the path horizontally around the centre of its bounding box.
+ * @param path_id - Path ID
+ */
+declare function path_flip(path_id: number): void;
+/**
+ * Mirrors the path vertically around the centre of its bounding box.
+ * @param path_id - Path ID
+ */
+declare function path_mirror(path_id: number): void;
+/**
+ * Reverses the order of points on a path.
+ * @param path_id - Path ID
+ */
+declare function path_reverse(path_id: number): void;
+//# sourceMappingURL=path.d.ts.map
+/**
+ * Abstract base class for all game resources.
+ * Provides auto-incrementing unique ID and name for each resource instance.
+ */
+declare abstract class resource {
+    private static gid;
+    private static all;
+    readonly id: number;
+    readonly name: string;
+    /**
+     * Increments and returns the next available resource ID.
+     * @returns The next unique resource ID
+     */
+    private incrementID;
+    constructor();
+    protected static removeByID(id: number): void;
+    static findByID(id: number): resource | undefined;
+}
+//# sourceMappingURL=resource.d.ts.map
+
+/**
+ * Represents a game room containing instances, backgrounds, and views.
+ * Rooms define the playable spaces where game logic executes.
+ */
+declare class room extends resource {
+    room_width: number;
+    room_height: number;
+    room_caption: string;
+    room_speed: number;
+    room_persistent: boolean;
+    room_previous: number;
+    room_next: number;
+    background_visible: boolean[];
+    background_foreground: boolean[];
+    background_index: number[];
+    background_x: number[];
+    background_y: number[];
+    background_htiled: boolean[];
+    background_vtiled: boolean[];
+    background_hspeed: number[];
+    background_vspeed: number[];
+    background_color: number[];
+    view_enabled: boolean;
+    view_current: number;
+    view_visible: boolean[];
+    view_xview: number[];
+    view_yview: number[];
+    view_wview: number[];
+    view_hview: number[];
+    view_xport: number[];
+    view_yport: number[];
+    view_wport: number[];
+    view_hport: number[];
+    view_hborder: number[];
+    view_vborder: number[];
+    view_hspeed: number[];
+    view_vspeed: number[];
+    view_object: number[];
+    private tiles;
+    private all;
+    constructor();
+    /**
+     * Transitions to the specified room.
+     * @param target - The room to go to (ID or room reference)
+     */
+    room_goto(target: number | room): void;
+    /**
+     * Transitions to the previous room in the room order.
+     */
+    room_goto_previous(): void;
+    /**
+     * Transitions to the next room in the room order.
+     */
+    room_goto_next(): void;
+    /**
+     * Restarts the current room, resetting all non-persistent instances.
+     */
+    room_restart(): void;
+    /**
+     * Checks if a room with the given ID exists.
+     * @param id - The room ID to check
+     * @returns True if the room exists
+     */
+    room_exists(id: number): boolean;
+    /**
+     * Adds an instance to the room at design time (before room starts).
+     * @param x - X position for the instance
+     * @param y - Y position for the instance
+     * @param obj - The instance to add
+     */
+    room_instance_add(x: number, y: number, obj: instance): void;
+    /**
+     * Adds an instance to this room at runtime.
+     * @param inst - The instance to add
+     */
+    instance_add(inst: instance): void;
+    /**
+     * Removes an instance from this room by ID.
+     * @param id - The instance ID to remove
+     * @returns True if the instance was found and removed
+     */
+    instance_remove(id: number): boolean;
+    /**
+     * Gets an instance from this room by ID.
+     * @param id - The instance ID to find
+     * @returns The instance, or undefined if not found
+     */
+    instance_get(id: number): instance | undefined;
+    /**
+     * Gets all instances in this room.
+     * @returns Array of all instances
+     */
+    instance_get_all(): instance[];
+    /**
+     * Gets the number of instances in this room.
+     * @returns The instance count
+     */
+    instance_count(): number;
+    /**
+     * Removes all instances from the room's design-time instance list.
+     */
+    room_instance_clear(): void;
+    /**
+     * Registers all instances in this room with the game loop.
+     * Called when entering a room to set up event handlers.
+     */
+    register_all_instances(): void;
+    /**
+     * Adds a tile to the room at design time.
+     * @param x - X position for the tile
+     * @param y - Y position for the tile
+     * @param background - Background resource containing the tile
+     * @param left - Left offset in the background
+     * @param top - Top offset in the background
+     * @param width - Width of the tile
+     * @param height - Height of the tile
+     * @param depth - Drawing depth of the tile
+     * @returns The unique ID of the created tile
+     */
+    room_tile_add(x: number, y: number, background: number, left: number, top: number, width: number, height: number, depth: number): number;
+    /**
+     * Adds a tile to the room at design time, with extended options.
+     * @param x - X position for the tile
+     * @param y - Y position for the tile
+     * @param background - Background resource containing the tile
+     * @param left - Left offset in the background
+     * @param top - Top offset in the background
+     * @param width - Width of the tile
+     * @param height - Height of the tile
+     * @param depth - Drawing depth of the tile
+     * @param xscale - Horizontal scale factor
+     * @param yscale - Vertical scale factor
+     * @param alpha - Transparency (0-1)
+     * @returns The unique ID of the created tile
+     */
+    room_tile_add_ext(x: number, y: number, background: number, left: number, top: number, width: number, height: number, depth: number, xscale: number, yscale: number, alpha: number): number;
+    /**
+     * Removes all tiles from the room's design-time tile list.
+     */
+    room_tile_clear(): void;
+    private static next_tile_id;
+    /**
+     * Adds a tile at runtime and returns its unique ID.
+     * @param background - Background resource containing the tile
+     * @param left - Left offset in the background
+     * @param top - Top offset in the background
+     * @param width - Width of the tile
+     * @param height - Height of the tile
+     * @param x - X position in the room
+     * @param y - Y position in the room
+     * @param depth - Drawing depth
+     * @returns The unique ID of the created tile
+     */
+    tile_add(background: number, left: number, top: number, width: number, height: number, x: number, y: number, depth: number): number;
+    /**
+     * Deletes a tile by its ID.
+     * @param id - The tile ID to delete
+     * @returns True if the tile was found and deleted
+     */
+    tile_delete(id: number): boolean;
+    /**
+     * Checks if a tile with the given ID exists.
+     * @param id - The tile ID to check
+     * @returns True if the tile exists
+     */
+    tile_exists(id: number): boolean;
+    /**
+     * Gets the X position of a tile.
+     * @param id - The tile ID
+     * @returns The X position, or 0 if not found
+     */
+    tile_get_x(id: number): number;
+    /**
+     * Gets the Y position of a tile.
+     * @param id - The tile ID
+     * @returns The Y position, or 0 if not found
+     */
+    tile_get_y(id: number): number;
+    /**
+     * Gets the depth of a tile.
+     * @param id - The tile ID
+     * @returns The depth, or 0 if not found
+     */
+    tile_get_depth(id: number): number;
+    /**
+     * Gets the visibility of a tile.
+     * @param id - The tile ID
+     * @returns True if visible, false if not found or hidden
+     */
+    tile_get_visible(id: number): boolean;
+    /**
+     * Sets the position of a tile.
+     * @param id - The tile ID
+     * @param x - New X position
+     * @param y - New Y position
+     */
+    tile_set_position(id: number, x: number, y: number): void;
+    /**
+     * Sets the depth of a tile.
+     * @param id - The tile ID
+     * @param depth - New depth value
+     */
+    tile_set_depth(id: number, depth: number): void;
+    /**
+     * Sets the visibility of a tile.
+     * @param id - The tile ID
+     * @param visible - Whether the tile should be visible
+     */
+    tile_set_visible(id: number, visible: boolean): void;
+    /**
+     * Sets the scale of a tile.
+     * @param id - The tile ID
+     * @param xscale - Horizontal scale factor
+     * @param yscale - Vertical scale factor
+     */
+    tile_set_scale(id: number, xscale: number, yscale: number): void;
+    /**
+     * Sets the alpha (transparency) of a tile.
+     * @param id - The tile ID
+     * @param alpha - Alpha value (0-1)
+     */
+    tile_set_alpha(id: number, alpha: number): void;
+    /**
+     * Sets the background region of a tile.
+     * @param id - The tile ID
+     * @param background - Background resource ID
+     * @param left - Left offset in the background
+     * @param top - Top offset in the background
+     * @param width - Width of the tile region
+     * @param height - Height of the tile region
+     */
+    tile_set_background(id: number, background: number, left: number, top: number, width: number, height: number): void;
+    /**
+     * Deletes all tiles at a specific depth.
+     * @param depth - The depth to clear
+     */
+    tile_layer_delete(depth: number): void;
+    /**
+     * Shifts all tiles at a specific depth by the given amount.
+     * @param depth - The depth layer to shift
+     * @param x - Horizontal shift amount
+     * @param y - Vertical shift amount
+     */
+    tile_layer_shift(depth: number, x: number, y: number): void;
+    /**
+     * Finds a tile at the given position and depth.
+     * @param x - X position to check
+     * @param y - Y position to check
+     * @param depth - Depth to check
+     * @returns The tile ID, or -1 if not found
+     */
+    tile_layer_find(x: number, y: number, depth: number): number;
+    /**
+     * Sets the background for a specific layer in this room.
+     * @param index - Background layer index (0-7)
+     * @param visible - Whether the background is visible
+     * @param foreground - Whether it draws in front of instances
+     * @param background - Background resource ID
+     * @param x - X offset
+     * @param y - Y offset
+     * @param htiled - Whether to tile horizontally
+     * @param vtiled - Whether to tile vertically
+     * @param hspeed - Horizontal scroll speed
+     * @param vspeed - Vertical scroll speed
+     */
+    room_set_background(index: number, visible: boolean, foreground: boolean, background: number, x: number, y: number, htiled: boolean, vtiled: boolean, hspeed: number, vspeed: number): void;
+    /**
+     * Sets the background color for a specific layer.
+     * @param index - Background layer index
+     * @param color - The color value
+     */
+    room_set_background_color(index: number, color: number): void;
+    /**
+     * Configures a view for this room (design-time).
+     * @param index - View index
+     * @param visible - Whether the view is enabled
+     * @param xview - X position of the view in the room
+     * @param yview - Y position of the view in the room
+     * @param wview - Width of the view in the room
+     * @param hview - Height of the view in the room
+     * @param xport - X position of the viewport on screen
+     * @param yport - Y position of the viewport on screen
+     * @param wport - Width of the viewport on screen
+     * @param hport - Height of the viewport on screen
+     * @param hborder - Horizontal border for object following
+     * @param vborder - Vertical border for object following
+     * @param hspeed - Max horizontal speed when following
+     * @param vspeed - Max vertical speed when following
+     * @param target - Object instance to follow (-1 for none)
+     */
+    room_set_view(index: number, visible: boolean, xview: number, yview: number, wview: number, hview: number, xport: number, yport: number, wport: number, hport: number, hborder: number, vborder: number, hspeed: number, vspeed: number, target: number): void;
+    /**
+     * Enables or disables the view system for this room.
+     * @param enabled - Whether views are enabled
+     */
+    room_set_view_enabled(enabled: boolean): void;
+    /**
+     * Gets the X position of a view in room coordinates.
+     * @param index - View index
+     * @returns The X position of the view
+     */
+    view_get_xview(index: number): number;
+    /**
+     * Gets the Y position of a view in room coordinates.
+     * @param index - View index
+     * @returns The Y position of the view
+     */
+    view_get_yview(index: number): number;
+    /**
+     * Gets the width of a view.
+     * @param index - View index
+     * @returns The width of the view
+     */
+    view_get_wview(index: number): number;
+    /**
+     * Gets the height of a view.
+     * @param index - View index
+     * @returns The height of the view
+     */
+    view_get_hview(index: number): number;
+    /**
+     * Sets the position of a view at runtime.
+     * @param index - View index
+     * @param x - New X position
+     * @param y - New Y position
+     */
+    view_set_position(index: number, x: number, y: number): void;
+    /**
+     * Sets the size of a view at runtime.
+     * @param index - View index
+     * @param w - New width
+     * @param h - New height
+     */
+    view_set_size(index: number, w: number, h: number): void;
+    /**
+     * Sets the viewport position on screen.
+     * @param index - View index
+     * @param x - X position on screen
+     * @param y - Y position on screen
+     */
+    view_set_port_position(index: number, x: number, y: number): void;
+    /**
+     * Sets the viewport size on screen.
+     * @param index - View index
+     * @param w - Width on screen
+     * @param h - Height on screen
+     */
+    view_set_port_size(index: number, w: number, h: number): void;
+    /**
+     * Sets the object for a view to follow.
+     * @param index - View index
+     * @param obj - Instance ID to follow (-1 for none)
+     */
+    view_set_object(index: number, obj: number): void;
+    /**
+     * Sets the border area for view following.
+     * @param index - View index
+     * @param hborder - Horizontal border in pixels
+     * @param vborder - Vertical border in pixels
+     */
+    view_set_border(index: number, hborder: number, vborder: number): void;
+    /**
+     * Sets the maximum speed for view following.
+     * @param index - View index
+     * @param hspeed - Max horizontal speed
+     * @param vspeed - Max vertical speed
+     */
+    view_set_speed(index: number, hspeed: number, vspeed: number): void;
+    /**
+     * Converts a screen X coordinate to room coordinates for a specific view.
+     * @param index - View index
+     * @param x - Screen X coordinate
+     * @returns Room X coordinate
+     */
+    view_screen_to_room_x(index: number, x: number): number;
+    /**
+     * Converts a screen Y coordinate to room coordinates for a specific view.
+     * @param index - View index
+     * @param y - Screen Y coordinate
+     * @returns Room Y coordinate
+     */
+    view_screen_to_room_y(index: number, y: number): number;
+    /**
+     * Converts a room X coordinate to screen coordinates for a specific view.
+     * @param index - View index
+     * @param x - Room X coordinate
+     * @returns Screen X coordinate
+     */
+    view_room_to_screen_x(index: number, x: number): number;
+    /**
+     * Converts a room Y coordinate to screen coordinates for a specific view.
+     * @param index - View index
+     * @param y - Room Y coordinate
+     * @returns Screen Y coordinate
+     */
+    view_room_to_screen_y(index: number, y: number): number;
+}
+//# sourceMappingURL=room.d.ts.map
+/**
+ * Timeline system \u2014 execute callbacks at specific step moments.
+ *
+ * Mirrors the GMS timeline API:
+ *   timeline_create, timeline_delete, timeline_moment_add,
+ *   timeline_moment_clear, timeline_exists, timeline_get_moment_count
+ *
+ * A timeline is advanced manually by calling timeline_step().
+ * Each registered moment fires its callback when the playhead reaches
+ * or passes that step number.
+ *
+ * GMS timelines are attached to instances; here they are standalone
+ * objects that you advance explicitly, which is simpler and more flexible.
+ */
+/**
+ * Creates a new empty timeline.
+ * @returns Timeline ID
+ */
+declare function timeline_create(): number;
+/**
+ * Destroys a timeline.
+ * @param timeline_id - Timeline ID
+ */
+declare function timeline_delete(timeline_id: number): void;
+/**
+ * Returns true if the timeline ID is valid.
+ * @param timeline_id - Timeline ID
+ */
+declare function timeline_exists(timeline_id: number): boolean;
+/**
+ * Adds a callback to fire at a specific step moment.
+ * Multiple callbacks can share the same step \u2014 they fire in insertion order.
+ * @param timeline_id - Timeline ID
+ * @param step - Step index
+ * @param cb - Callback to execute at that step
+ */
+declare function timeline_moment_add(timeline_id: number, step: number, cb: () => void): void;
+/**
+ * Removes all callbacks registered at a specific step.
+ * @param timeline_id - Timeline ID
+ * @param step - Step index to clear
+ */
+declare function timeline_moment_clear(timeline_id: number, step: number): void;
+/**
+ * Returns the number of moments registered on a timeline.
+ * @param timeline_id - Timeline ID
+ */
+declare function timeline_get_moment_count(timeline_id: number): number;
+/**
+ * Sets the playback speed (steps advanced per timeline_step call).
+ * @param timeline_id - Timeline ID
+ * @param speed - Steps per advance (default 1)
+ */
+declare function timeline_set_speed(timeline_id: number, speed: number): void;
+/**
+ * Sets whether the timeline loops when it reaches the end.
+ * @param timeline_id - Timeline ID
+ * @param loop - True to loop
+ */
+declare function timeline_set_loop(timeline_id: number, loop: boolean): void;
+/**
+ * Starts or resumes playback.
+ * @param timeline_id - Timeline ID
+ */
+declare function timeline_play(timeline_id: number): void;
+/**
+ * Pauses playback without resetting the position.
+ * @param timeline_id - Timeline ID
+ */
+declare function timeline_pause(timeline_id: number): void;
+/**
+ * Stops playback and resets the playhead to position 0.
+ * @param timeline_id - Timeline ID
+ */
+declare function timeline_stop(timeline_id: number): void;
+/**
+ * Jumps the playhead to a specific step position.
+ * @param timeline_id - Timeline ID
+ * @param pos - Step position
+ */
+declare function timeline_set_position(timeline_id: number, pos: number): void;
+/**
+ * Returns the current playhead position.
+ * @param timeline_id - Timeline ID
+ */
+declare function timeline_get_position(timeline_id: number): number;
+/**
+ * Advances a timeline by its speed and fires any moments crossed.
+ * Call this once per game step for each active timeline.
+ * @param timeline_id - Timeline ID
+ * @returns True if the timeline is still playing, false if it has finished (and is not looping)
+ */
+declare function timeline_step(timeline_id: number): boolean;
+/**
+ * Advances all playing timelines by one step.
+ * Convenience function \u2014 call once per game step to update all timelines.
+ */
+declare function timeline_step_all(): void;
+//# sourceMappingURL=timeline.d.ts.map
+/**
+ * DS Grid \u2014 fixed-size 2D array.
+ *
+ * GMS-compatible API: ds_grid_create, ds_grid_destroy, ds_grid_get,
+ * ds_grid_set, ds_grid_add, ds_grid_multiply, ds_grid_clear,
+ * ds_grid_width, ds_grid_height, ds_grid_copy,
+ * ds_grid_region_get, ds_grid_region_set,
+ * ds_grid_get_max, ds_grid_get_min, ds_grid_get_mean, ds_grid_get_sum,
+ * ds_grid_set_region, ds_grid_add_region, ds_grid_multiply_region.
+ */
+/**
+ * Creates a new DS grid filled with zeros.
+ * @param w - Number of columns
+ * @param h - Number of rows
+ * @returns Grid ID
+ */
+declare function ds_grid_create(w: number, h: number): number;
+/**
+ * Destroys a DS grid.
+ * @param id - Grid ID
+ */
+declare function ds_grid_destroy(id: number): void;
+/**
+ * Returns the value at grid cell (x, y).
+ * @param id - Grid ID
+ * @param x - Column (0-based)
+ * @param y - Row (0-based)
+ */
+declare function ds_grid_get(id: number, x: number, y: number): number;
+/**
+ * Sets the value at grid cell (x, y).
+ * @param id - Grid ID
+ * @param x - Column
+ * @param y - Row
+ * @param val - Value to set
+ */
+declare function ds_grid_set(id: number, x: number, y: number, val: number): void;
+/**
+ * Adds a value to the cell at (x, y).
+ * @param id - Grid ID
+ * @param x - Column
+ * @param y - Row
+ * @param val - Amount to add
+ */
+declare function ds_grid_add(id: number, x: number, y: number, val: number): void;
+/**
+ * Multiplies the value at (x, y) by a factor.
+ * @param id - Grid ID
+ * @param x - Column
+ * @param y - Row
+ * @param factor - Multiplier
+ */
+declare function ds_grid_multiply(id: number, x: number, y: number, factor: number): void;
+/**
+ * Sets all cells in the grid to the given value.
+ * @param id - Grid ID
+ * @param val - Value to fill with
+ */
+declare function ds_grid_clear(id: number, val: number): void;
+/** Returns the width (column count) of the grid. */
+declare function ds_grid_width(id: number): number;
+/** Returns the height (row count) of the grid. */
+declare function ds_grid_height(id: number): number;
+/**
+ * Copies one grid into another. Both must have the same dimensions.
+ * @param src - Source grid ID
+ * @param dst - Destination grid ID
+ */
+declare function ds_grid_copy(src: number, dst: number): void;
+/**
+ * Returns values in a rectangular region as a flat array (row-major).
+ * Clamps to grid boundaries; out-of-bounds cells return 0.
+ * @param id - Grid ID
+ * @param x1 - Left column
+ * @param y1 - Top row
+ * @param x2 - Right column (inclusive)
+ * @param y2 - Bottom row (inclusive)
+ */
+declare function ds_grid_region_get(id: number, x1: number, y1: number, x2: number, y2: number): number[];
+/**
+ * Sets all cells in a rectangular region to a value.
+ * @param id - Grid ID
+ * @param x1 - Left
+ * @param y1 - Top
+ * @param x2 - Right (inclusive)
+ * @param y2 - Bottom (inclusive)
+ * @param val - Value to set
+ */
+declare function ds_grid_set_region(id: number, x1: number, y1: number, x2: number, y2: number, val: number): void;
+/**
+ * Adds a value to all cells in a rectangular region.
+ * @param id - Grid ID
+ * @param x1 - Left
+ * @param y1 - Top
+ * @param x2 - Right (inclusive)
+ * @param y2 - Bottom (inclusive)
+ * @param val - Amount to add
+ */
+declare function ds_grid_add_region(id: number, x1: number, y1: number, x2: number, y2: number, val: number): void;
+/**
+ * Multiplies all cells in a rectangular region by a factor.
+ * @param id - Grid ID
+ * @param x1 - Left
+ * @param y1 - Top
+ * @param x2 - Right (inclusive)
+ * @param y2 - Bottom (inclusive)
+ * @param factor - Multiplier
+ */
+declare function ds_grid_multiply_region(id: number, x1: number, y1: number, x2: number, y2: number, factor: number): void;
+/**
+ * Returns the maximum value in a rectangular region.
+ * @param id - Grid ID
+ * @param x1 - Left
+ * @param y1 - Top
+ * @param x2 - Right (inclusive)
+ * @param y2 - Bottom (inclusive)
+ */
+declare function ds_grid_get_max(id: number, x1: number, y1: number, x2: number, y2: number): number;
+/**
+ * Returns the minimum value in a rectangular region.
+ * @param id - Grid ID
+ * @param x1 - Left
+ * @param y1 - Top
+ * @param x2 - Right (inclusive)
+ * @param y2 - Bottom (inclusive)
+ */
+declare function ds_grid_get_min(id: number, x1: number, y1: number, x2: number, y2: number): number;
+/**
+ * Returns the sum of all values in a rectangular region.
+ * @param id - Grid ID
+ * @param x1 - Left
+ * @param y1 - Top
+ * @param x2 - Right (inclusive)
+ * @param y2 - Bottom (inclusive)
+ */
+declare function ds_grid_get_sum(id: number, x1: number, y1: number, x2: number, y2: number): number;
+/**
+ * Returns the mean (average) of all values in a rectangular region.
+ * @param id - Grid ID
+ * @param x1 - Left
+ * @param y1 - Top
+ * @param x2 - Right (inclusive)
+ * @param y2 - Bottom (inclusive)
+ */
+declare function ds_grid_get_mean(id: number, x1: number, y1: number, x2: number, y2: number): number;
+/** Returns true if the grid ID exists. */
+declare function ds_grid_exists(id: number): boolean;
+//# sourceMappingURL=ds_grid.d.ts.map
+/**
+ * DS List \u2014 ordered, resizable array.
+ *
+ * GMS-compatible API: ds_list_create, ds_list_add, ds_list_insert,
+ * ds_list_find_value, ds_list_find_index, ds_list_replace,
+ * ds_list_delete, ds_list_size, ds_list_empty, ds_list_clear,
+ * ds_list_destroy, ds_list_copy.
+ */
+/**
+ * Creates a new empty DS list.
+ * @returns The list ID
+ */
+declare function ds_list_create(): number;
+/**
+ * Destroys a DS list, freeing its memory.
+ * @param id - List ID
+ */
+declare function ds_list_destroy(id: number): void;
+/**
+ * Adds a value to the end of the list.
+ * @param id - List ID
+ * @param val - Value to add
+ */
+declare function ds_list_add(id: number, val: any): void;
+/**
+ * Inserts a value at a specific position (0-based).
+ * @param id - List ID
+ * @param pos - Index to insert at
+ * @param val - Value to insert
+ */
+declare function ds_list_insert(id: number, pos: number, val: any): void;
+/**
+ * Returns the value at a given position.
+ * @param id - List ID
+ * @param pos - Index (0-based)
+ * @returns The value at that position, or undefined if out of range
+ */
+declare function ds_list_find_value(id: number, pos: number): any;
+/**
+ * Returns the index of the first occurrence of a value, or -1 if not found.
+ * @param id - List ID
+ * @param val - Value to search for
+ */
+declare function ds_list_find_index(id: number, val: any): number;
+/**
+ * Replaces the value at a given position.
+ * @param id - List ID
+ * @param pos - Index to replace
+ * @param val - New value
+ */
+declare function ds_list_replace(id: number, pos: number, val: any): void;
+/**
+ * Removes the element at a given position.
+ * @param id - List ID
+ * @param pos - Index to delete
+ */
+declare function ds_list_delete(id: number, pos: number): void;
+/**
+ * Returns the number of elements in the list.
+ * @param id - List ID
+ */
+declare function ds_list_size(id: number): number;
+/**
+ * Returns true if the list has no elements.
+ * @param id - List ID
+ */
+declare function ds_list_empty(id: number): boolean;
+/**
+ * Removes all elements from the list.
+ * @param id - List ID
+ */
+declare function ds_list_clear(id: number): void;
+/**
+ * Copies the contents of one list into another (overwrites destination).
+ * @param src - Source list ID
+ * @param dst - Destination list ID
+ */
+declare function ds_list_copy(src: number, dst: number): void;
+/**
+ * Sorts the list in ascending or descending order.
+ * @param id - List ID
+ * @param ascending - True for ascending, false for descending
+ */
+declare function ds_list_sort(id: number, ascending: boolean): void;
+/**
+ * Shuffles the list in place using Fisher-Yates.
+ * @param id - List ID
+ */
+declare function ds_list_shuffle(id: number): void;
+/** Returns true if the list ID exists. */
+declare function ds_list_exists(id: number): boolean;
+//# sourceMappingURL=ds_list.d.ts.map
+/**
+ * DS Map \u2014 key/value store (string or number keys).
+ *
+ * GMS-compatible API: ds_map_create, ds_map_add, ds_map_set,
+ * ds_map_find_value, ds_map_exists, ds_map_delete, ds_map_size,
+ * ds_map_empty, ds_map_clear, ds_map_destroy, ds_map_copy,
+ * ds_map_find_first, ds_map_find_next, ds_map_find_last, ds_map_find_previous.
+ */
+type ds_map_key = string | number;
+/**
+ * Creates a new empty DS map.
+ * @returns The map ID
+ */
+declare function ds_map_create(): number;
+/**
+ * Destroys a DS map.
+ * @param id - Map ID
+ */
+declare function ds_map_destroy(id: number): void;
+/**
+ * Adds a key/value pair if the key does not already exist.
+ * @param id - Map ID
+ * @param key - Key (string or number)
+ * @param val - Value
+ */
+declare function ds_map_add(id: number, key: ds_map_key, val: any): void;
+/**
+ * Sets a key/value pair, overwriting any existing value.
+ * @param id - Map ID
+ * @param key - Key
+ * @param val - Value
+ */
+declare function ds_map_set(id: number, key: ds_map_key, val: any): void;
+/**
+ * Returns the value for a key, or undefined if not found.
+ * @param id - Map ID
+ * @param key - Key to look up
+ */
+declare function ds_map_find_value(id: number, key: ds_map_key): any;
+/**
+ * Returns true if the key exists in the map.
+ * @param id - Map ID
+ * @param key - Key to check
+ */
+declare function ds_map_exists(id: number, key: ds_map_key): boolean;
+/**
+ * Deletes a key from the map.
+ * @param id - Map ID
+ * @param key - Key to delete
+ */
+declare function ds_map_delete(id: number, key: ds_map_key): void;
+/**
+ * Returns the number of key/value pairs in the map.
+ * @param id - Map ID
+ */
+declare function ds_map_size(id: number): number;
+/**
+ * Returns true if the map has no entries.
+ * @param id - Map ID
+ */
+declare function ds_map_empty(id: number): boolean;
+/**
+ * Removes all entries from the map.
+ * @param id - Map ID
+ */
+declare function ds_map_clear(id: number): void;
+/**
+ * Copies the contents of one map into another (overwrites destination).
+ * @param src - Source map ID
+ * @param dst - Destination map ID
+ */
+declare function ds_map_copy(src: number, dst: number): void;
+/**
+ * Returns the first key in the map (insertion order), or undefined if empty.
+ * @param id - Map ID
+ */
+declare function ds_map_find_first(id: number): ds_map_key | undefined;
+/**
+ * Returns the key that follows \`key\` in insertion order, or undefined.
+ * @param id - Map ID
+ * @param key - Reference key
+ */
+declare function ds_map_find_next(id: number, key: ds_map_key): ds_map_key | undefined;
+/**
+ * Returns the last key in the map, or undefined if empty.
+ * @param id - Map ID
+ */
+declare function ds_map_find_last(id: number): ds_map_key | undefined;
+/**
+ * Returns the key before \`key\` in insertion order, or undefined.
+ * @param id - Map ID
+ * @param key - Reference key
+ */
+declare function ds_map_find_previous(id: number, key: ds_map_key): ds_map_key | undefined;
+/** Returns true if the map ID exists. */
+declare function ds_map_exists_id(id: number): boolean;
+
+//# sourceMappingURL=ds_map.d.ts.map
+/**
+ * DS Priority Queue \u2014 values are retrieved in priority order.
+ *
+ * GMS-compatible API: ds_priority_create, ds_priority_destroy,
+ * ds_priority_add, ds_priority_delete_value, ds_priority_delete_min,
+ * ds_priority_delete_max, ds_priority_find_min, ds_priority_find_max,
+ * ds_priority_find_priority, ds_priority_size, ds_priority_empty,
+ * ds_priority_clear, ds_priority_copy.
+ *
+ * Implemented with a min-heap. Max operations use negated priority.
+ */
+/**
+ * Creates a new empty DS priority queue.
+ * @returns Priority queue ID
+ */
+declare function ds_priority_create(): number;
+/**
+ * Destroys a DS priority queue.
+ * @param id - Priority queue ID
+ */
+declare function ds_priority_destroy(id: number): void;
+/**
+ * Adds a value with a given priority.
+ * Lower priority numbers are retrieved first (min-heap order).
+ * @param id - Priority queue ID
+ * @param val - Value to add
+ * @param priority - Priority number
+ */
+declare function ds_priority_add(id: number, val: any, priority: number): void;
+/**
+ * Removes the first occurrence of a value.
+ * @param id - Priority queue ID
+ * @param val - Value to remove
+ */
+declare function ds_priority_delete_value(id: number, val: any): void;
+/**
+ * Removes and returns the value with the lowest priority number.
+ * @param id - Priority queue ID
+ */
+declare function ds_priority_delete_min(id: number): any;
+/**
+ * Removes and returns the value with the highest priority number.
+ * @param id - Priority queue ID
+ */
+declare function ds_priority_delete_max(id: number): any;
+/**
+ * Returns the value with the lowest priority number without removing it.
+ * @param id - Priority queue ID
+ */
+declare function ds_priority_find_min(id: number): any;
+/**
+ * Returns the value with the highest priority number without removing it.
+ * @param id - Priority queue ID
+ */
+declare function ds_priority_find_max(id: number): any;
+/**
+ * Returns the priority of the given value, or undefined if not found.
+ * @param id - Priority queue ID
+ * @param val - Value to look up
+ */
+declare function ds_priority_find_priority(id: number, val: any): number | undefined;
+/**
+ * Returns the number of items in the priority queue.
+ * @param id - Priority queue ID
+ */
+declare function ds_priority_size(id: number): number;
+/**
+ * Returns true if the priority queue has no items.
+ * @param id - Priority queue ID
+ */
+declare function ds_priority_empty(id: number): boolean;
+/**
+ * Removes all items from the priority queue.
+ * @param id - Priority queue ID
+ */
+declare function ds_priority_clear(id: number): void;
+/**
+ * Copies the contents of src into dst (overwrites destination).
+ * @param src - Source priority queue ID
+ * @param dst - Destination priority queue ID
+ */
+declare function ds_priority_copy(src: number, dst: number): void;
+/** Returns true if the priority queue ID exists. */
+declare function ds_priority_exists(id: number): boolean;
+//# sourceMappingURL=ds_priority.d.ts.map
+/**
+ * DS Queue \u2014 FIFO (first in, first out) data structure.
+ *
+ * GMS-compatible API: ds_queue_create, ds_queue_destroy, ds_queue_enqueue,
+ * ds_queue_dequeue, ds_queue_head, ds_queue_tail, ds_queue_size,
+ * ds_queue_empty, ds_queue_clear, ds_queue_copy.
+ *
+ * Implemented with a circular buffer for O(1) enqueue and dequeue.
+ */
+/**
+ * Creates a new empty DS queue.
+ * @returns Queue ID
+ */
+declare function ds_queue_create(): number;
+/**
+ * Destroys a DS queue.
+ * @param id - Queue ID
+ */
+declare function ds_queue_destroy(id: number): void;
+/**
+ * Adds a value to the back of the queue.
+ * @param id - Queue ID
+ * @param val - Value to enqueue
+ */
+declare function ds_queue_enqueue(id: number, val: any): void;
+/**
+ * Removes and returns the front value. Returns undefined if empty.
+ * @param id - Queue ID
+ */
+declare function ds_queue_dequeue(id: number): any;
+/**
+ * Returns the front value without removing it. Returns undefined if empty.
+ * @param id - Queue ID
+ */
+declare function ds_queue_head(id: number): any;
+/**
+ * Returns the back (last enqueued) value without removing it.
+ * @param id - Queue ID
+ */
+declare function ds_queue_tail(id: number): any;
+/**
+ * Returns the number of items in the queue.
+ * @param id - Queue ID
+ */
+declare function ds_queue_size(id: number): number;
+/**
+ * Returns true if the queue has no items.
+ * @param id - Queue ID
+ */
+declare function ds_queue_empty(id: number): boolean;
+/**
+ * Removes all items from the queue.
+ * @param id - Queue ID
+ */
+declare function ds_queue_clear(id: number): void;
+/**
+ * Copies items from src into dst (overwrites destination).
+ * @param src - Source queue ID
+ * @param dst - Destination queue ID
+ */
+declare function ds_queue_copy(src: number, dst: number): void;
+/** Returns true if the queue ID exists. */
+declare function ds_queue_exists(id: number): boolean;
+//# sourceMappingURL=ds_queue.d.ts.map
+/**
+ * DS Stack \u2014 LIFO (last in, first out) data structure.
+ *
+ * GMS-compatible API: ds_stack_create, ds_stack_destroy, ds_stack_push,
+ * ds_stack_pop, ds_stack_top, ds_stack_size, ds_stack_empty,
+ * ds_stack_clear, ds_stack_copy.
+ */
+/**
+ * Creates a new empty DS stack.
+ * @returns Stack ID
+ */
+declare function ds_stack_create(): number;
+/**
+ * Destroys a DS stack.
+ * @param id - Stack ID
+ */
+declare function ds_stack_destroy(id: number): void;
+/**
+ * Pushes a value onto the top of the stack.
+ * @param id - Stack ID
+ * @param val - Value to push
+ */
+declare function ds_stack_push(id: number, val: any): void;
+/**
+ * Removes and returns the top value. Returns undefined if empty.
+ * @param id - Stack ID
+ */
+declare function ds_stack_pop(id: number): any;
+/**
+ * Returns the top value without removing it. Returns undefined if empty.
+ * @param id - Stack ID
+ */
+declare function ds_stack_top(id: number): any;
+/**
+ * Returns the number of items in the stack.
+ * @param id - Stack ID
+ */
+declare function ds_stack_size(id: number): number;
+/**
+ * Returns true if the stack has no items.
+ * @param id - Stack ID
+ */
+declare function ds_stack_empty(id: number): boolean;
+/**
+ * Removes all items from the stack.
+ * @param id - Stack ID
+ */
+declare function ds_stack_clear(id: number): void;
+/**
+ * Copies all items from src into dst (overwrites destination).
+ * @param src - Source stack ID
+ * @param dst - Destination stack ID
+ */
+declare function ds_stack_copy(src: number, dst: number): void;
+/** Returns true if the stack ID exists. */
+declare function ds_stack_exists(id: number): boolean;
+//# sourceMappingURL=ds_stack.d.ts.map
+/**
+ * Background resource \u2014 holds a single texture for tiling/stretching.
+ * Mirrors GMS background data structure.
+ */
+
+/**
+ * A background resource containing a single texture.
+ */
+declare class background extends resource {
+    texture: texture_entry | null;
+    width: number;
+    height: number;
+    tile_h: boolean;
+    tile_v: boolean;
+    smooth: boolean;
+    constructor();
+    /**
+     * Sets the texture for this background.
+     * @param texture - The texture entry to use
+     */
+    set_texture(texture: texture_entry): void;
+}
+/**
+ * Returns the width of the given background resource.
+ * @param bg - Background instance
+ */
+declare function background_get_width(bg: background): number;
+/**
+ * Returns the height of the given background resource.
+ * @param bg - Background instance
+ */
+declare function background_get_height(bg: background): number;
+//# sourceMappingURL=background.d.ts.map
+/**
+ * Batched quad renderer for WebGL 2.
+ * Collects sprites and shapes into a single vertex buffer and flushes with one draw call.
+ * Automatically flushes when the texture, blend mode, or shader changes,
+ * or when the buffer is full.
+ */
+declare class batch_renderer {
+    private gl;
+    private vao;
+    private vbo;
+    private vertices;
+    private quad_count;
+    private current_texture;
+    constructor(gl: WebGL2RenderingContext);
+    /**
+     * Pushes one axis-aligned quad into the batch.
+     * Flushes the batch if the texture changes or the buffer is full.
+     *
+     * @param x - Left edge
+     * @param y - Top edge
+     * @param w - Width
+     * @param h - Height
+     * @param u0 - Left UV coordinate
+     * @param v0 - Top UV coordinate
+     * @param u1 - Right UV coordinate
+     * @param v1 - Bottom UV coordinate
+     * @param r - Red (0\u20131)
+     * @param g - Green (0\u20131)
+     * @param b - Blue (0\u20131)
+     * @param a - Alpha (0\u20131)
+     * @param texture - WebGL texture to sample
+     */
+    add_quad(x: number, y: number, w: number, h: number, u0: number, v0: number, u1: number, v1: number, r: number, g: number, b: number, a: number, texture: WebGLTexture): void;
+    /**
+     * Pushes a rotated/scaled quad into the batch.
+     * Used for draw_sprite_ext with rotation and scale.
+     *
+     * @param cx - Center X
+     * @param cy - Center Y
+     * @param w - Width before scaling
+     * @param h - Height before scaling
+     * @param ox - Origin X offset from center
+     * @param oy - Origin Y offset from center
+     * @param xscale - Horizontal scale
+     * @param yscale - Vertical scale
+     * @param angle_deg - Rotation in degrees (counter-clockwise)
+     * @param u0 - Left UV
+     * @param v0 - Top UV
+     * @param u1 - Right UV
+     * @param v1 - Bottom UV
+     * @param r - Red (0\u20131)
+     * @param g - Green (0\u20131)
+     * @param b - Blue (0\u20131)
+     * @param a - Alpha (0\u20131)
+     * @param texture - WebGL texture
+     */
+    add_quad_transformed(cx: number, cy: number, w: number, h: number, ox: number, oy: number, xscale: number, yscale: number, angle_deg: number, u0: number, v0: number, u1: number, v1: number, r: number, g: number, b: number, a: number, texture: WebGLTexture): void;
+    /**
+     * Flushes accumulated quads to the GPU with a single draw call.
+     * Resets the batch state after drawing.
+     */
+    flush(): void;
+    /**
+     * Frees the VAO and VBO GPU resources.
+     */
+    destroy(): void;
+}
+//# sourceMappingURL=batch_renderer.d.ts.map
+/**
+ * Color constants, constructors, and component extractors.
+ * Colors are stored as BGR integers (GMS convention) but converted to RGB when needed.
+ *
+ * GMS color format: 0xBBGGRR (blue in high byte, red in low byte)
+ */
+declare const c_aqua = 16776960;
+declare const c_black = 0;
+declare const c_blue = 16711680;
+declare const c_dkgray = 4210752;
+declare const c_fuchsia = 16711935;
+declare const c_gray = 8421504;
+declare const c_green = 32768;
+declare const c_lime = 65280;
+declare const c_ltgray = 12632256;
+declare const c_maroon = 128;
+declare const c_navy = 8388608;
+declare const c_olive = 32896;
+declare const c_orange = 33023;
+declare const c_purple = 8388736;
+declare const c_red = 255;
+declare const c_silver = 12632256;
+declare const c_teal = 8421376;
+declare const c_white = 16777215;
+declare const c_yellow = 65535;
+declare const bm_normal = 0;
+declare const bm_add = 1;
+declare const bm_max = 2;
+declare const bm_subtract = 3;
+declare const fa_left = 0;
+declare const fa_center = 1;
+declare const fa_right = 2;
+declare const fa_top = 0;
+declare const fa_middle = 1;
+declare const fa_bottom = 2;
+/**
+ * Creates a BGR color integer from individual RGB components (0\u2013255).
+ * @param r - Red component (0\u2013255)
+ * @param g - Green component (0\u2013255)
+ * @param b - Blue component (0\u2013255)
+ * @returns BGR integer
+ */
+declare function make_color_rgb(r: number, g: number, b: number): number;
+/**
+ * Creates a BGR color from hue, saturation, value (all 0\u2013255).
+ * @param h - Hue (0\u2013255)
+ * @param s - Saturation (0\u2013255)
+ * @param v - Value/Brightness (0\u2013255)
+ * @returns BGR integer
+ */
+declare function make_color_hsv(h: number, s: number, v: number): number;
+/**
+ * Returns the red component (0\u2013255) of a BGR color.
+ * @param col - BGR integer
+ */
+declare function color_get_red(col: number): number;
+/**
+ * Returns the green component (0\u2013255) of a BGR color.
+ * @param col - BGR integer
+ */
+declare function color_get_green(col: number): number;
+/**
+ * Returns the blue component (0\u2013255) of a BGR color.
+ * @param col - BGR integer
+ */
+declare function color_get_blue(col: number): number;
+/**
+ * Linearly blends two BGR colors.
+ * @param col1 - First BGR color
+ * @param col2 - Second BGR color
+ * @param amount - Blend factor (0 = col1, 1 = col2)
+ * @returns Blended BGR color
+ */
+declare function merge_color(col1: number, col2: number, amount: number): number;
+/**
+ * Converts a BGR integer color to normalized [r, g, b] components (0\u20131 each).
+ * @param col - BGR integer
+ * @returns [r, g, b] normalized
+ */
+declare function color_to_rgb_normalized(col: number): [number, number, number];
+//# sourceMappingURL=color.d.ts.map
+/**
+ * Public GMS-style draw_* API functions.
+ * All functions delegate to the renderer singleton.
+ */
+
+/**
+ * Sets the current draw color.
+ * @param col - BGR integer color (use c_* constants or make_color_rgb)
+ */
+declare function draw_set_color(col: number): void;
+/**
+ * Returns the current draw color as a BGR integer.
+ */
+declare function draw_get_color(): number;
+/**
+ * Sets the current draw alpha (transparency).
+ * @param alpha - Value from 0 (fully transparent) to 1 (fully opaque)
+ */
+declare function draw_set_alpha(alpha: number): void;
+/**
+ * Returns the current draw alpha.
+ */
+declare function draw_get_alpha(): number;
+/**
+ * Clears the screen (or current surface target) with a solid color.
+ * @param col - BGR integer color
+ */
+declare function draw_clear(col: number): void;
+/**
+ * Sets the current blend mode.
+ * Flushes the batch before changing.
+ * @param mode - bm_normal, bm_add, bm_max, or bm_subtract
+ */
+declare function draw_set_blend_mode(mode: number): void;
+/**
+ * Draws a sprite at the given position.
+ * @param spr - Sprite resource
+ * @param subimg - Frame index (float, will be wrapped)
+ * @param x - X position
+ * @param y - Y position
+ */
+declare function draw_sprite(spr: sprite, subimg: number, x: number, y: number): void;
+/**
+ * Draws a sprite with full transform control.
+ * @param spr - Sprite resource
+ * @param subimg - Frame index
+ * @param x - X position
+ * @param y - Y position
+ * @param xscale - Horizontal scale (1 = normal)
+ * @param yscale - Vertical scale (1 = normal)
+ * @param rot - Rotation in degrees (counter-clockwise)
+ * @param color - Tint color as BGR integer
+ * @param alpha - Alpha (0\u20131)
+ */
+declare function draw_sprite_ext(spr: sprite, subimg: number, x: number, y: number, xscale: number, yscale: number, rot: number, color: number, alpha: number): void;
+/**
+ * Draws a sub-region of a sprite frame.
+ * @param spr - Sprite resource
+ * @param subimg - Frame index
+ * @param left - Source region left in pixels
+ * @param top - Source region top in pixels
+ * @param width - Source region width in pixels
+ * @param height - Source region height in pixels
+ * @param x - Destination X
+ * @param y - Destination Y
+ */
+declare function draw_sprite_part(spr: sprite, subimg: number, left: number, top: number, width: number, height: number, x: number, y: number): void;
+/**
+ * Draws a sprite stretched to a specific size.
+ * @param spr - Sprite resource
+ * @param subimg - Frame index
+ * @param x - Destination X (top-left)
+ * @param y - Destination Y (top-left)
+ * @param w - Target width in pixels
+ * @param h - Target height in pixels
+ */
+declare function draw_sprite_stretched(spr: sprite, subimg: number, x: number, y: number, w: number, h: number): void;
+/**
+ * Draws a background at the given position.
+ * @param bg - Background resource
+ * @param x - X position
+ * @param y - Y position
+ */
+declare function draw_background(bg: any, x: number, y: number): void;
+/**
+ * Draws a background with full transform control.
+ * @param bg - Background resource
+ * @param x - X position
+ * @param y - Y position
+ * @param xscale - Horizontal scale (1 = normal)
+ * @param yscale - Vertical scale (1 = normal)
+ * @param rot - Rotation in degrees (counter-clockwise)
+ * @param color - Tint color as BGR integer
+ * @param alpha - Alpha (0\u20131)
+ */
+declare function draw_background_ext(bg: any, x: number, y: number, xscale: number, yscale: number, rot: number, color: number, alpha: number): void;
+/**
+ * Draws a background stretched to fill a region.
+ * @param bg - Background resource
+ * @param x - X position
+ * @param y - Y position
+ * @param w - Width
+ * @param h - Height
+ */
+declare function draw_background_stretched(bg: any, x: number, y: number, w: number, h: number): void;
+/**
+ * Draws a background tiled to fill a region.
+ * @param bg - Background resource
+ * @param x - X position
+ * @param y - Y position
+ * @param tile_x - X offset for tiling
+ * @param tile_y - Y offset for tiling
+ */
+declare function draw_background_tiled(bg: any, x: number, y: number, tile_x: number, tile_y: number): void;
+/**
+ * Draws a single pixel at the given position.
+ * @param x - X position
+ * @param y - Y position
+ */
+declare function draw_point(x: number, y: number): void;
+/**
+ * Draws a line between two points (1 pixel wide).
+ * @param x1 - Start X
+ * @param y1 - Start Y
+ * @param x2 - End X
+ * @param y2 - End Y
+ */
+declare function draw_line(x1: number, y1: number, x2: number, y2: number): void;
+/**
+ * Draws a line with a specified pixel width.
+ * @param x1 - Start X
+ * @param y1 - Start Y
+ * @param x2 - End X
+ * @param y2 - End Y
+ * @param w - Width in pixels
+ */
+declare function draw_line_width(x1: number, y1: number, x2: number, y2: number, w: number): void;
+/**
+ * Draws a filled or outlined axis-aligned rectangle.
+ * @param x1 - Left edge X
+ * @param y1 - Top edge Y
+ * @param x2 - Right edge X
+ * @param y2 - Bottom edge Y
+ * @param outline - True for outline only, false for filled
+ */
+declare function draw_rectangle(x1: number, y1: number, x2: number, y2: number, outline: boolean): void;
+/**
+ * Draws a filled or outlined circle.
+ * @param x - Center X
+ * @param y - Center Y
+ * @param r - Radius in pixels
+ * @param outline - True for outline only, false for filled
+ */
+declare function draw_circle(x: number, y: number, r: number, outline: boolean): void;
+/**
+ * Draws a filled or outlined ellipse.
+ * @param x1 - Bounding box left
+ * @param y1 - Bounding box top
+ * @param x2 - Bounding box right
+ * @param y2 - Bounding box bottom
+ * @param outline - True for outline only, false for filled
+ */
+declare function draw_ellipse(x1: number, y1: number, x2: number, y2: number, outline: boolean): void;
+/**
+ * Draws a filled or outlined triangle.
+ * @param x1 - Vertex 1 X
+ * @param y1 - Vertex 1 Y
+ * @param x2 - Vertex 2 X
+ * @param y2 - Vertex 2 Y
+ * @param x3 - Vertex 3 X
+ * @param y3 - Vertex 3 Y
+ * @param outline - True for outline only, false for filled
+ */
+declare function draw_triangle(x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, outline: boolean): void;
+/**
+ * Draws a text string at the given position.
+ * Uses the current font, color, alpha, halign, and valign settings.
+ * @param x - X position
+ * @param y - Y position
+ * @param text - The string to draw (numbers will be converted to string)
+ */
+declare function draw_text(x: number, y: number, text: string | number): void;
+/**
+ * Sets the active font for text rendering.
+ * @param fnt - font_resource instance
+ */
+declare function draw_set_font(fnt: font_resource): void;
+/**
+ * Sets the horizontal text alignment.
+ * @param halign - fa_left (0), fa_center (1), or fa_right (2)
+ */
+declare function draw_set_halign(halign: number): void;
+/**
+ * Sets the vertical text alignment.
+ * @param valign - fa_top (0), fa_middle (1), or fa_bottom (2)
+ */
+declare function draw_set_valign(valign: number): void;
+/**
+ * Returns the pixel width of a string with the current font.
+ * @param text - The string to measure
+ */
+declare function string_width(text: string): number;
+/**
+ * Returns the pixel height of a string with the current font.
+ */
+declare function string_height(): number;
+/**
+ * Creates a new render-to-texture surface.
+ * @param w - Width in pixels
+ * @param h - Height in pixels
+ * @returns surface object
+ */
+declare function surface_create(w: number, h: number): surface;
+/**
+ * Sets the render target to a surface.
+ * All subsequent draw calls go to this surface until surface_reset_target().
+ * @param surf - Target surface
+ */
+declare function surface_set_target(surf: surface): void;
+/**
+ * Resets the render target back to the screen.
+ */
+declare function surface_reset_target(): void;
+/**
+ * Frees a surface and its GPU resources.
+ * @param surf - Surface to free
+ */
+declare function surface_free(surf: surface): void;
+/**
+ * Checks whether a surface is valid (not yet freed).
+ * @param surf - Surface to check
+ */
+declare function surface_exists(surf: surface): boolean;
+/**
+ * Returns the width of a surface in pixels.
+ * @param surf - Surface to query
+ */
+declare function surface_get_width(surf: surface): number;
+/**
+ * Returns the height of a surface in pixels.
+ * @param surf - Surface to query
+ */
+declare function surface_get_height(surf: surface): number;
+/**
+ * Draws a surface at the given position.
+ * @param surf - Surface to draw
+ * @param x - Destination X
+ * @param y - Destination Y
+ */
+declare function draw_surface(surf: surface, x: number, y: number): void;
+//# sourceMappingURL=draw_functions.d.ts.map
+/**
+ * Text/font rendering via canvas-to-texture.
+ * Renders text to a temporary 2D canvas and uploads it as a WebGL texture.
+ * Caches textures for strings that are drawn repeatedly.
+ */
+
+/**
+ * A font resource defining CSS font properties.
+ */
+declare class font_resource {
+    name: string;
+    size: number;
+    family: string;
+    bold: boolean;
+    italic: boolean;
+    constructor(family?: string, size?: number, bold?: boolean, italic?: boolean);
+    /** Builds the CSS font string. */
+    private build_css;
+}
+/** A cached text texture with associated metrics. */
+interface text_cache_entry {
+    entry: texture_entry;
+    width: number;
+    height: number;
+}
+/**
+ * Manages text rasterization and caching.
+ */
+declare class font_renderer {
+    private tex_manager;
+    private cache;
+    private offscreen;
+    private ctx;
+    constructor(tex_manager: texture_manager);
+    /**
+     * Returns a cached or newly-rendered texture for the given text string.
+     * @param text - Text to render
+     * @param fnt - Font resource to use
+     * @param color_css - CSS color string (e.g. "#FFFFFF")
+     * @returns text_cache_entry containing the texture and dimensions
+     */
+    get_texture(text: string, fnt: font_resource, color_css: string): text_cache_entry;
+    /**
+     * Rasterizes text to a canvas and uploads it to a WebGL texture.
+     */
+    private rasterize;
+    /**
+     * Measures the pixel width of a string with the given font.
+     * @param text - Text to measure
+     * @param fnt - Font resource
+     * @returns Width in pixels
+     */
+    measure_width(text: string, fnt: font_resource): number;
+    /**
+     * Measures the pixel height of a string with the given font.
+     * @param fnt - Font resource
+     * @returns Height in pixels
+     */
+    measure_height(fnt: font_resource): number;
+    /**
+     * Clears the text texture cache and frees GPU memory.
+     */
+    clear_cache(): void;
+}
+
+//# sourceMappingURL=font.d.ts.map
+/**
+ * Core WebGL 2 renderer.
+ * Owns the canvas, GL context, default shader, projection matrix, and batch renderer.
+ * All drawing functions go through this module.
+ */
+
+/** Surface (render-to-texture target). Created by surface_create(). */
+interface surface {
+    fbo: WebGLFramebuffer;
+    texture: WebGLTexture;
+    width: number;
+    height: number;
+    valid: boolean;
+}
+/**
+ * Main renderer singleton.
+ * Initialised once via renderer.init() before the game loop starts.
+ */
+declare class renderer {
+    private static gl;
+    private static canvas;
+    private static program;
+    private static projection_loc;
+    private static active_proj_loc;
+    private static batch;
+    static tex_mgr: texture_manager;
+    private static font_rend;
+    private static draw_color;
+    private static draw_alpha;
+    private static blend_mode;
+    private static current_font;
+    private static halign;
+    private static valign;
+    private static active_surface;
+    /**
+     * Initialises the renderer with an existing canvas or creates a new one.
+     * Must be called before any drawing functions.
+     * @param canvas_or_id - Canvas element or CSS selector string
+     * @param width - Canvas width in pixels
+     * @param height - Canvas height in pixels
+     */
+    static init(canvas_or_id: HTMLCanvasElement | string, width?: number, height?: number): void;
+    /**
+     * Uploads an orthographic projection matrix for pixel-space coordinates.
+     * Origin at top-left, Y increases downward.
+     * @param w - Viewport width
+     * @param h - Viewport height
+     */
+    static upload_projection(w: number, h: number): void;
+    /**
+     * Called at the start of each draw frame.
+     * Clears the color buffer and prepares the render state.
+     * @param r - Clear color red (0\u20131)
+     * @param g - Clear color green (0\u20131)
+     * @param b - Clear color blue (0\u20131)
+     */
+    static begin_frame(r?: number, g?: number, b?: number): void;
+    /**
+     * Called at the end of each draw frame to flush remaining batched quads.
+     */
+    static end_frame(): void;
+    /** Sets the current draw color (BGR integer). */
+    static set_color(col: number): void;
+    /** Returns the current draw color (BGR integer). */
+    static get_color(): number;
+    /** Sets the current draw alpha (0\u20131). */
+    static set_alpha(a: number): void;
+    /** Returns the current draw alpha. */
+    static get_alpha(): number;
+    /** Returns the currently active font resource. */
+    static get_current_font(): font_resource;
+    /** Sets the current font for text rendering. */
+    static set_font(fnt: font_resource): void;
+    /** Sets the horizontal text alignment (fa_left / fa_center / fa_right). */
+    static set_halign(align: number): void;
+    /** Sets the vertical text alignment (fa_top / fa_middle / fa_bottom). */
+    static set_valign(align: number): void;
+    /**
+     * Sets the active blend mode.
+     * Flushes the current batch before changing GL blend state.
+     * @param mode - bm_normal, bm_add, bm_max, or bm_subtract
+     */
+    static set_blend_mode(mode: number): void;
+    private static apply_blend_mode;
+    /**
+     * Creates a new render-to-texture surface.
+     * @param w - Surface width in pixels
+     * @param h - Surface height in pixels
+     * @returns surface object
+     */
+    static surface_create(w: number, h: number): surface;
+    /**
+     * Sets the render target to a surface.
+     * Subsequent draw calls will render into the surface.
+     * @param surf - Target surface
+     */
+    static surface_set_target(surf: surface): void;
+    /**
+     * Resets the render target back to the screen.
+     */
+    static surface_reset_target(): void;
+    /**
+     * Frees a surface's GPU resources.
+     * @param surf - Surface to free
+     */
+    static surface_free(surf: surface): void;
+    /**
+     * Draws a sprite at the given position using the instance's current frame.
+     * @param spr - Sprite resource
+     * @param subimg - Frame index (float; will be floored and wrapped)
+     * @param x - X position (adjusted for sprite origin)
+     * @param y - Y position (adjusted for sprite origin)
+     */
+    static draw_sprite(spr: sprite, subimg: number, x: number, y: number): void;
+    /**
+     * Draws a sprite with extended transforms (scale, rotation, blend color, alpha).
+     * @param spr - Sprite resource
+     * @param subimg - Frame index
+     * @param x - X position
+     * @param y - Y position
+     * @param xscale - Horizontal scale factor
+     * @param yscale - Vertical scale factor
+     * @param rot - Rotation in degrees (counter-clockwise)
+     * @param color - Tint color (BGR integer, 0xFFFFFF = no tint)
+     * @param alpha - Transparency (0\u20131)
+     */
+    static draw_sprite_ext(spr: sprite, subimg: number, x: number, y: number, xscale: number, yscale: number, rot: number, color: number, alpha: number): void;
+    /**
+     * Draws a sub-region of a sprite frame.
+     * @param spr - Sprite resource
+     * @param subimg - Frame index
+     * @param left - Source left (pixels from frame left)
+     * @param top - Source top (pixels from frame top)
+     * @param width - Source width in pixels
+     * @param height - Source height in pixels
+     * @param x - Destination X
+     * @param y - Destination Y
+     */
+    static draw_sprite_part(spr: sprite, subimg: number, left: number, top: number, width: number, height: number, x: number, y: number): void;
+    /**
+     * Draws a sprite stretched to fit the given dimensions.
+     * @param spr - Sprite resource
+     * @param subimg - Frame index
+     * @param x - Destination X (top-left)
+     * @param y - Destination Y (top-left)
+     * @param w - Target width
+     * @param h - Target height
+     */
+    static draw_sprite_stretched(spr: sprite, subimg: number, x: number, y: number, w: number, h: number): void;
+    /**
+     * Draws a background at the given position.
+     * @param bg - Background resource
+     * @param x - X position
+     * @param y - Y position
+     */
+    static draw_background(bg: any, x: number, y: number): void;
+    /**
+     * Draws a background with extended transforms (scale, rotation, blend color, alpha).
+     * @param bg - Background resource
+     * @param x - X position
+     * @param y - Y position
+     * @param xscale - Horizontal scale factor
+     * @param yscale - Vertical scale factor
+     * @param rot - Rotation in degrees (counter-clockwise)
+     * @param color - Blend color as BGR integer
+     * @param alpha - Alpha transparency (0\u20131)
+     */
+    static draw_background_ext(bg: any, x: number, y: number, xscale: number, yscale: number, rot: number, color: number, alpha: number): void;
+    /**
+     * Draws a background stretched to fill a specified region.
+     * @param bg - Background resource
+     * @param x - X position
+     * @param y - Y position
+     * @param w - Width
+     * @param h - Height
+     */
+    static draw_background_stretched(bg: any, x: number, y: number, w: number, h: number): void;
+    /**
+     * Draws a background tiled to fill the current view.
+     * @param bg - Background resource
+     * @param x - X offset
+     * @param y - Y offset
+     * @param tile_x - X tile offset
+     * @param tile_y - Y tile offset
+     */
+    static draw_background_tiled(bg: any, x: number, y: number, tile_x: number, tile_y: number): void;
+    /**
+     * Draws a surface as if it were a sprite.
+     * @param surf - Surface to draw
+     * @param x - Destination X
+     * @param y - Destination Y
+     */
+    static draw_surface(surf: surface, x: number, y: number): void;
+    /**
+     * Draws a text string at the given position using the current font and alignment.
+     * @param x - X position
+     * @param y - Y position
+     * @param text - String to draw
+     */
+    static draw_text(x: number, y: number, text: string): void;
+    /**
+     * Clears the screen (or current surface) with a solid color.
+     * @param col - BGR color integer
+     */
+    static draw_clear(col: number): void;
+    /**
+     * Draws a filled or outlined axis-aligned rectangle.
+     * @param x1 - Left
+     * @param y1 - Top
+     * @param x2 - Right
+     * @param y2 - Bottom
+     * @param outline - True for outline only, false for filled
+     */
+    static draw_rectangle(x1: number, y1: number, x2: number, y2: number, outline: boolean): void;
+    /**
+     * Draws a filled or outlined circle using a triangle fan approximation.
+     * @param cx - Center X
+     * @param cy - Center Y
+     * @param r_px - Radius in pixels
+     * @param outline - True for outline only
+     */
+    static draw_circle(cx: number, cy: number, r_px: number, outline: boolean): void;
+    /**
+     * Draws a line between two points.
+     * @param x1 - Start X
+     * @param y1 - Start Y
+     * @param x2 - End X
+     * @param y2 - End Y
+     */
+    static draw_line(x1: number, y1: number, x2: number, y2: number): void;
+    /**
+     * Draws a line with a specific pixel width.
+     * @param x1 - Start X
+     * @param y1 - Start Y
+     * @param x2 - End X
+     * @param y2 - End Y
+     * @param w - Line width in pixels
+     */
+    static draw_line_width(x1: number, y1: number, x2: number, y2: number, w: number): void;
+    /**
+     * Draws a single point (1\xD71 pixel) at the given position.
+     * @param x - X position
+     * @param y - Y position
+     */
+    static draw_point(x: number, y: number): void;
+    /**
+     * Draws a filled or outlined triangle.
+     * @param x1 - Vertex 1 X
+     * @param y1 - Vertex 1 Y
+     * @param x2 - Vertex 2 X
+     * @param y2 - Vertex 2 Y
+     * @param x3 - Vertex 3 X
+     * @param y3 - Vertex 3 Y
+     * @param outline - True for outline only
+     */
+    static draw_triangle(x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, outline: boolean): void;
+    /**
+     * Draws a filled or outlined ellipse.
+     * @param x1 - Bounding box left
+     * @param y1 - Bounding box top
+     * @param x2 - Bounding box right
+     * @param y2 - Bounding box bottom
+     * @param outline - True for outline only
+     */
+    static draw_ellipse(x1: number, y1: number, x2: number, y2: number, outline: boolean): void;
+    /**
+     * Draws a triangle as two batch quads (degenerate quad approach).
+     * The third quad vertex is the same as vertex 3 making a true triangle.
+     */
+    private static draw_triangle_internal;
+    /**
+     * Draws a line as a thin rectangular quad aligned to the line direction.
+     */
+    private static draw_line_width_internal;
+    /** Returns the underlying HTML canvas element. */
+    static get_canvas(): HTMLCanvasElement;
+    /** Returns the WebGL 2 context. */
+    static get_gl(): WebGL2RenderingContext;
+    /** Returns the batch renderer (used by advanced rendering). */
+    static get_batch(): batch_renderer;
+    /** Flushes the current batch without a program change. Used by shader_system. */
+    static flush_batch(): void;
+    /**
+     * Switches back to the default engine shader program and re-uploads projection.
+     * Called by shader_reset().
+     */
+    static restore_default_program(): void;
+    /**
+     * Uploads the orthographic projection matrix to an arbitrary program's
+     * u_projection uniform. Used when activating a user shader.
+     * @param prog - The WebGLProgram to upload to
+     */
+    static upload_projection_to_program(prog: WebGLProgram): void;
+    /**
+     * Uploads a custom projection matrix to the currently active program's
+     * u_projection uniform. Used by view_apply() to set room-offset projections.
+     * Avoids gl.getParameter() GPU readback by using the cached active location.
+     * @param matrix - 16-element column-major Float32Array
+     */
+    static set_view_projection(matrix: Float32Array): void;
+    /** Returns the font renderer. */
+    static get_font_renderer(): font_renderer;
+    /**
+     * Frees all GPU resources owned by the renderer.
+     */
+    static destroy(): void;
+}
+//# sourceMappingURL=renderer.d.ts.map
+/**
+ * Shader compilation and program linking utilities for WebGL 2.
+ */
+/** GLSL vertex shader source for the default 2D sprite/shape renderer. */
+declare const DEFAULT_VERTEX_SHADER = "#version 300 es\\nlayout(location = 0) in vec2 a_position;\\nlayout(location = 1) in vec2 a_texcoord;\\nlayout(location = 2) in vec4 a_color;\\n\\nuniform mat4 u_projection;\\n\\nout vec2 v_texcoord;\\nout vec4 v_color;\\n\\nvoid main() {\\n    gl_Position = u_projection * vec4(a_position, 0.0, 1.0);\\n    v_texcoord = a_texcoord;\\n    v_color = a_color;\\n}";
+/** GLSL fragment shader source for the default 2D sprite/shape renderer. */
+declare const DEFAULT_FRAGMENT_SHADER = "#version 300 es\\nprecision mediump float;\\n\\nin vec2 v_texcoord;\\nin vec4 v_color;\\n\\nuniform sampler2D u_texture;\\n\\nout vec4 fragColor;\\n\\nvoid main() {\\n    fragColor = texture(u_texture, v_texcoord) * v_color;\\n}";
+/**
+ * Compiles a single GLSL shader of the given type.
+ * @param gl - WebGL 2 context
+ * @param type - gl.VERTEX_SHADER or gl.FRAGMENT_SHADER
+ * @param source - GLSL source string
+ * @returns Compiled WebGLShader
+ */
+declare function compile_shader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader;
+/**
+ * Links a vertex and fragment shader into a WebGL program.
+ * @param gl - WebGL 2 context
+ * @param vs_source - Vertex shader GLSL source
+ * @param fs_source - Fragment shader GLSL source
+ * @returns Linked WebGLProgram
+ */
+declare function create_program(gl: WebGL2RenderingContext, vs_source: string, fs_source: string): WebGLProgram;
+/**
+ * Represents a compiled user shader with cached uniform locations.
+ */
+declare class shader_program {
+    readonly program: WebGLProgram;
+    private gl;
+    private uniform_cache;
+    constructor(gl: WebGL2RenderingContext, vs_source: string, fs_source: string);
+    /**
+     * Gets and caches a uniform location by name.
+     * @param name - Uniform variable name in GLSL
+     * @returns WebGLUniformLocation or null if not found
+     */
+    get_uniform(name: string): WebGLUniformLocation | null;
+    /**
+     * Frees the shader program's GPU resources.
+     */
+    destroy(): void;
+}
+//# sourceMappingURL=shader.d.ts.map
+/**
+ * User-facing shader system.
+ *
+ * Wraps shader_program to give a GMS-compatible API:
+ *   shader_set()        \u2014 activates a user shader
+ *   shader_reset()      \u2014 returns to the default shader
+ *   shader_get_uniform  \u2014 returns a uniform handle (WebGLUniformLocation)
+ *   shader_set_uniform_f/i/mat \u2014 upload uniform values
+ *
+ * The active shader is set on the renderer's GL context.
+ * The renderer's batch must be flushed before switching programs.
+ */
+
+/**
+ * A user-defined shader asset.
+ * Create with new user_shader(vs_source, fs_source).
+ */
+declare class user_shader {
+    readonly internal: shader_program;
+    /**
+     * @param vs_source - Vertex shader GLSL source (#version 300 es required)
+     * @param fs_source - Fragment shader GLSL source
+     */
+    constructor(vs_source: string, fs_source: string);
+    /**
+     * Frees the shader's GPU resources.
+     * Do not use the shader after calling destroy().
+     */
+    destroy(): void;
+}
+/**
+ * Activates a user shader program for subsequent draw calls.
+ * The renderer's batch is flushed before switching.
+ * @param shader - The user_shader to activate
+ */
+declare function shader_set(shader: user_shader): void;
+/**
+ * Resets to the default engine shader program.
+ * The renderer's batch is flushed before switching.
+ */
+declare function shader_reset(): void;
+/**
+ * Returns the currently active user shader, or null if using the default.
+ */
+declare function shader_current(): user_shader | null;
+/**
+ * Returns a uniform handle for use with shader_set_uniform_*.
+ * @param shader - The shader containing the uniform
+ * @param name - GLSL uniform variable name
+ * @returns WebGLUniformLocation or null if not found
+ */
+declare function shader_get_uniform(shader: user_shader, name: string): WebGLUniformLocation | null;
+/**
+ * Sets a float uniform value (1 component).
+ * @param location - Uniform location from shader_get_uniform
+ * @param val - Float value
+ */
+declare function shader_set_uniform_f(location: WebGLUniformLocation, val: number): void;
+/**
+ * Sets a vec2 float uniform.
+ * @param location - Uniform location
+ * @param x - X component
+ * @param y - Y component
+ */
+declare function shader_set_uniform_f2(location: WebGLUniformLocation, x: number, y: number): void;
+/**
+ * Sets a vec3 float uniform.
+ * @param location - Uniform location
+ * @param x - X component
+ * @param y - Y component
+ * @param z - Z component
+ */
+declare function shader_set_uniform_f3(location: WebGLUniformLocation, x: number, y: number, z: number): void;
+/**
+ * Sets a vec4 float uniform.
+ * @param location - Uniform location
+ * @param x - X
+ * @param y - Y
+ * @param z - Z
+ * @param w - W
+ */
+declare function shader_set_uniform_f4(location: WebGLUniformLocation, x: number, y: number, z: number, w: number): void;
+/**
+ * Sets an integer uniform value (1 component).
+ * @param location - Uniform location
+ * @param val - Integer value
+ */
+declare function shader_set_uniform_i(location: WebGLUniformLocation, val: number): void;
+/**
+ * Sets an ivec2 integer uniform.
+ * @param location - Uniform location
+ * @param x - X component
+ * @param y - Y component
+ */
+declare function shader_set_uniform_i2(location: WebGLUniformLocation, x: number, y: number): void;
+/**
+ * Sets a float array uniform.
+ * @param location - Uniform location
+ * @param values - Float array
+ */
+declare function shader_set_uniform_f_array(location: WebGLUniformLocation, values: Float32Array | number[]): void;
+/**
+ * Sets a mat4 uniform from a 16-element column-major Float32Array.
+ * @param location - Uniform location
+ * @param matrix - 16-element column-major matrix
+ * @param transpose - Whether to transpose (default false)
+ */
+declare function shader_set_uniform_matrix(location: WebGLUniformLocation, matrix: Float32Array, transpose?: boolean): void;
+//# sourceMappingURL=shader_system.d.ts.map
+/**
+ * Sprite resource \u2014 holds frames (textures) and origin point.
+ * Mirrors GMS sprite data structure.
+ */
+
+/**
+ * A single frame of a sprite animation.
+ */
+interface sprite_frame {
+    texture: texture_entry;
+    width: number;
+    height: number;
+}
+/**
+ * A sprite resource containing one or more animation frames and an origin point.
+ */
+declare class sprite extends resource {
+    frames: sprite_frame[];
+    xoffset: number;
+    yoffset: number;
+    width: number;
+    height: number;
+    constructor();
+    /**
+     * Adds a frame to this sprite.
+     * @param frame - The frame to add
+     */
+    add_frame(frame: sprite_frame): void;
+    /**
+     * Returns the number of frames in this sprite.
+     */
+    get_number(): number;
+    /**
+     * Returns the frame at the given index, wrapping around if out of range.
+     * @param index - Frame index
+     * @returns sprite_frame or undefined if the sprite has no frames
+     */
+    get_frame(index: number): sprite_frame | undefined;
+}
+/**
+ * Returns the width of the given sprite resource.
+ * @param spr - Sprite instance
+ */
+declare function sprite_get_width(spr: sprite): number;
+/**
+ * Returns the height of the given sprite resource.
+ * @param spr - Sprite instance
+ */
+declare function sprite_get_height(spr: sprite): number;
+/**
+ * Returns the X origin of the given sprite resource.
+ * @param spr - Sprite instance
+ */
+declare function sprite_get_xoffset(spr: sprite): number;
+/**
+ * Returns the Y origin of the given sprite resource.
+ * @param spr - Sprite instance
+ */
+declare function sprite_get_yoffset(spr: sprite): number;
+/**
+ * Returns the number of frames of the given sprite resource.
+ * @param spr - Sprite instance
+ */
+declare function sprite_get_number(spr: sprite): number;
+/** Registers a sprite resource under a name so it can be looked up by name. */
+declare function sprite_register_name(name: string, id: number): void;
+/**
+ * Returns the resource id of a sprite by its project name, or -1 if unknown.
+ * GMS-style asset lookup \u2014 e.g. resolving \`static sprite = 'spr_player'\`.
+ * @param name - Sprite resource name
+ */
+declare function sprite_get_index(name: string): number;
+//# sourceMappingURL=sprite.d.ts.map
+/**
+ * Manages WebGL 2 texture loading and the 1x1 white pixel fallback texture.
+ */
+interface texture_entry {
+    texture: WebGLTexture;
+    width: number;
+    height: number;
+}
+/**
+ * Centralized texture registry.
+ * Tracks all loaded textures and provides a shared 1x1 white pixel texture for shape drawing.
+ */
+declare class texture_manager {
+    private gl;
+    white_pixel: WebGLTexture;
+    private textures;
+    constructor(gl: WebGL2RenderingContext);
+    /**
+     * Creates the 1x1 white pixel texture used when drawing solid-colored shapes.
+     * @returns WebGLTexture handle
+     */
+    private create_white_pixel;
+    /**
+     * Loads a texture from a URL and caches it by URL.
+     * @param url - Image URL
+     * @param smooth - Use LINEAR filtering (true) or NEAREST for pixel art (false)
+     * @returns Promise resolving to the texture entry
+     */
+    load(url: string, smooth?: boolean): Promise<texture_entry>;
+    /**
+     * Creates a texture from an already-loaded HTMLImageElement.
+     * @param img - Source image element
+     * @param smooth - Use LINEAR filtering (true) or NEAREST for pixel art (false)
+     * @returns texture_entry
+     */
+    from_image(img: HTMLImageElement, smooth?: boolean): texture_entry;
+    /**
+     * Creates a texture from a raw HTMLCanvasElement (used for text rendering).
+     * @param canvas - Source canvas element
+     * @param smooth - Use LINEAR filtering (true) or NEAREST (false)
+     * @returns texture_entry
+     */
+    from_canvas(canvas: HTMLCanvasElement, smooth?: boolean): texture_entry;
+    /**
+     * Frees a texture from GPU memory and removes it from the cache.
+     * @param url - URL key used when loading
+     */
+    free(url: string): void;
+    /**
+     * Frees a raw WebGLTexture directly (used by font_renderer cache cleanup).
+     * @param texture - The GPU texture handle to delete
+     */
+    free_texture(texture: WebGLTexture): void;
+    /**
+     * Frees all tracked textures and the white pixel texture.
+     */
+    destroy(): void;
+}
+//# sourceMappingURL=texture_manager.d.ts.map
+/**
+ * View / camera system.
+ *
+ * A view defines the visible region of the room mapped onto a viewport
+ * (a rectangle on screen). Multiple views can be active simultaneously.
+ *
+ * GMS-compatible API:
+ *   view_set / view_get \u2014 configure view properties
+ *   camera_set_view_pos / camera_set_view_size \u2014 convenience setters
+ *   view_apply \u2014 activate a view (sets GL viewport + projection)
+ *
+ * All coordinates are in room (world) space unless noted otherwise.
+ */
+interface view_config {
+    enabled: boolean;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    port_x: number;
+    port_y: number;
+    port_w: number;
+    port_h: number;
+    angle: number;
+}
+/**
+ * Returns the view config for a given view index.
+ * @param view_index - View slot (0\u20137)
+ */
+declare function view_get(view_index: number): view_config;
+/**
+ * Enables or disables a view.
+ * @param view_index - View slot (0\u20137)
+ * @param enabled - True to enable
+ */
+declare function view_set_enabled(view_index: number, enabled: boolean): void;
+/**
+ * Sets the room-space position of a view.
+ * @param view_index - View slot
+ * @param x - Room X
+ * @param y - Room Y
+ */
+declare function view_set_position(view_index: number, x: number, y: number): void;
+/**
+ * Sets the room-space size of a view.
+ * @param view_index - View slot
+ * @param w - Width in room pixels
+ * @param h - Height in room pixels
+ */
+declare function view_set_size(view_index: number, w: number, h: number): void;
+/**
+ * Sets the screen-space viewport rectangle for a view.
+ * @param view_index - View slot
+ * @param px - Viewport left (screen pixels)
+ * @param py - Viewport top (screen pixels)
+ * @param pw - Viewport width (screen pixels)
+ * @param ph - Viewport height (screen pixels)
+ */
+declare function view_set_port(view_index: number, px: number, py: number, pw: number, ph: number): void;
+/**
+ * Sets the view rotation angle in degrees.
+ * @param view_index - View slot
+ * @param angle - Rotation angle (degrees, counter-clockwise)
+ */
+declare function view_set_angle(view_index: number, angle: number): void;
+/**
+ * Applies a view to the GL context: sets the GL viewport and uploads
+ * a projection matrix that maps room coordinates to clip space.
+ *
+ * The projection maps the room region [x, x+w] \xD7 [y, y+h] into the
+ * viewport [port_x, port_x+port_w] \xD7 [port_y, port_y+port_h].
+ *
+ * @param view_index - View slot to apply
+ */
+declare function view_apply(view_index: number): void;
+/**
+ * Convenience: sets view 0's room-space position and enables it.
+ * Equivalent to camera_set_view_pos in GMS.
+ * @param x - Camera/view X in room space
+ * @param y - Camera/view Y in room space
+ */
+declare function camera_set_view_pos(x: number, y: number): void;
+/**
+ * Convenience: sets view 0's room-space size and enables it.
+ * @param w - Width in room pixels
+ * @param h - Height in room pixels
+ */
+declare function camera_set_view_size(w: number, h: number): void;
+/**
+ * Returns the X offset of a given view (for room-to-screen coordinate mapping).
+ * @param view_index - View slot (default 0)
+ */
+declare function view_get_x(view_index?: number): number;
+/**
+ * Returns the Y offset of a given view.
+ * @param view_index - View slot (default 0)
+ */
+declare function view_get_y(view_index?: number): number;
+//# sourceMappingURL=view.d.ts.map
+/**
+ * Silkweaver Engine \u2014 public API entry point.
+ *
+ * Import individual namespaces or use named imports.
+ * The engine is initialized by calling renderer.init() before game_loop.start().
+ */
+
+//# sourceMappingURL=index.d.ts.map
+/**
+ * Gamepad input system \u2014 wraps the Web Gamepad API.
+ *
+ * The Gamepad API is polled (not event-driven); gamepad_manager.poll()
+ * must be called each step to refresh state.
+ *
+ * Button indices follow the standard gamepad layout (Xbox/PlayStation mapping).
+ */
+declare const gp_face1 = 0;
+declare const gp_face2 = 1;
+declare const gp_face3 = 2;
+declare const gp_face4 = 3;
+declare const gp_shoulderl = 4;
+declare const gp_shoulderr = 5;
+declare const gp_shoulderlb = 6;
+declare const gp_shoulderrb = 7;
+declare const gp_select = 8;
+declare const gp_start = 9;
+declare const gp_stickl = 10;
+declare const gp_stickr = 11;
+declare const gp_padu = 12;
+declare const gp_padd = 13;
+declare const gp_padl = 14;
+declare const gp_padr = 15;
+declare const gp_axislh = 0;
+declare const gp_axislv = 1;
+declare const gp_axisrh = 2;
+declare const gp_axisrv = 3;
+declare class gamepad_manager {
+    private static _states;
+    /**
+     * Polls the Gamepad API and refreshes all state snapshots.
+     * Must be called every step before gamepad functions are queried.
+     */
+    static poll(): void;
+    /** Returns true if the Gamepad API is supported by the browser. */
+    static is_supported(): boolean;
+    /** Returns true if device index \`device\` is connected. */
+    static is_connected(device: number): boolean;
+    /** Returns the number of connected gamepad slots (may include gaps). */
+    static get_device_count(): number;
+    /** Returns the device description string (controller name). */
+    static get_description(device: number): string;
+    /** Returns the number of axes on device. */
+    static axis_count(device: number): number;
+    /**
+     * Returns the current value of an axis (-1 to 1, dead zone not applied).
+     * @param device - Gamepad index
+     * @param axis - Axis index (use gp_axis* constants)
+     */
+    static axis_value(device: number, axis: number): number;
+    /** Returns the number of buttons on device. */
+    static button_count(device: number): number;
+    /** Returns true if button is currently held. */
+    static button_check(device: number, button: number): boolean;
+    /** Returns true if button was pressed this step (was up last step, down now). */
+    static button_check_pressed(device: number, button: number): boolean;
+    /** Returns true if button was released this step. */
+    static button_check_released(device: number, button: number): boolean;
+    /**
+     * Returns the analog button value (0 to 1) for triggers or 0/1 for digital buttons.
+     * @param device - Gamepad index
+     * @param button - Button index
+     */
+    static button_value(device: number, button: number): number;
+    /**
+     * Sets controller vibration (rumble).
+     * @param device - Gamepad index
+     * @param left - Left motor strength (0\u20131)
+     * @param right - Right motor strength (0\u20131)
+     */
+    static set_vibration(device: number, left: number, right: number): void;
+}
+/** Returns true if the Gamepad API is supported. */
+declare function gamepad_is_supported(): boolean;
+/** Returns true if device index is connected. */
+declare function gamepad_is_connected(device: number): boolean;
+/** Returns the number of detected gamepad slots. */
+declare function gamepad_get_device_count(): number;
+/** Returns the description string of a gamepad. */
+declare function gamepad_get_description(device: number): string;
+/** Returns the number of axes on a gamepad. */
+declare function gamepad_axis_count(device: number): number;
+/** Returns the current axis value (-1 to 1). */
+declare function gamepad_axis_value(device: number, axis: number): number;
+/** Returns the number of buttons on a gamepad. */
+declare function gamepad_button_count(device: number): number;
+/** Returns true if the button is held this step. */
+declare function gamepad_button_check(device: number, button: number): boolean;
+/** Returns true if the button was pressed this step. */
+declare function gamepad_button_check_pressed(device: number, button: number): boolean;
+/** Returns true if the button was released this step. */
+declare function gamepad_button_check_released(device: number, button: number): boolean;
+/** Returns the analog button value (0\u20131). */
+declare function gamepad_button_value(device: number, button: number): number;
+/** Sets gamepad vibration. */
+declare function gamepad_set_vibration(device: number, left: number, right: number): void;
+//# sourceMappingURL=gamepad.d.ts.map
+/**
+ * Keyboard input system.
+ *
+ * Tracks key state across three categories:
+ *   - held:     key is currently down
+ *   - pressed:  key went down THIS step (cleared after one step)
+ *   - released: key went up THIS step (cleared after one step)
+ *
+ * Call keyboard_manager.poll() once per step (done by the game loop).
+ * Call keyboard_manager.end_step() after events fire to clear pressed/released.
+ */
+declare const vk_nokey = 0;
+declare const vk_anykey = 1;
+declare const vk_backspace = 8;
+declare const vk_tab = 9;
+declare const vk_enter = 13;
+declare const vk_shift = 16;
+declare const vk_control = 17;
+declare const vk_alt = 18;
+declare const vk_pause = 19;
+declare const vk_escape = 27;
+declare const vk_space = 32;
+declare const vk_pageup = 33;
+declare const vk_pagedown = 34;
+declare const vk_end = 35;
+declare const vk_home = 36;
+declare const vk_left = 37;
+declare const vk_up = 38;
+declare const vk_right = 39;
+declare const vk_down = 40;
+declare const vk_insert = 45;
+declare const vk_delete = 46;
+declare const vk_f1 = 112;
+declare const vk_f2 = 113;
+declare const vk_f3 = 114;
+declare const vk_f4 = 115;
+declare const vk_f5 = 116;
+declare const vk_f6 = 117;
+declare const vk_f7 = 118;
+declare const vk_f8 = 119;
+declare const vk_f9 = 120;
+declare const vk_f10 = 121;
+declare const vk_f11 = 122;
+declare const vk_f12 = 123;
+declare const vk_numpad0 = 96;
+declare const vk_numpad1 = 97;
+declare const vk_numpad2 = 98;
+declare const vk_numpad3 = 99;
+declare const vk_numpad4 = 100;
+declare const vk_numpad5 = 101;
+declare const vk_numpad6 = 102;
+declare const vk_numpad7 = 103;
+declare const vk_numpad8 = 104;
+declare const vk_numpad9 = 105;
+declare const vk_multiply = 106;
+declare const vk_add = 107;
+declare const vk_subtract = 109;
+declare const vk_decimal = 110;
+declare const vk_divide = 111;
+declare const vk_printscreen = 44;
+/**
+ * Internal keyboard state manager.
+ * Attach to window events via keyboard_manager.attach().
+ */
+declare class keyboard_manager {
+    private static _held;
+    private static _pressed;
+    private static _released;
+    private static _key_map;
+    /** Last key code that was pressed. */
+    static keyboard_key: number;
+    /** Previous key code (key before the last). */
+    static keyboard_lastkey: number;
+    /** Last character typed (from keypress events). */
+    static keyboard_lastchar: string;
+    /** Accumulated typed string (cleared by the game or manually). */
+    static keyboard_string: string;
+    private static _attached;
+    private static _on_keydown;
+    private static _on_keyup;
+    private static _on_keypress;
+    /**
+     * Attaches keyboard listeners to the window.
+     * Called once by input_manager.init().
+     */
+    static attach(): void;
+    /**
+     * Detaches keyboard listeners from the window.
+     */
+    static detach(): void;
+    private static _handle_down;
+    private static _handle_up;
+    private static _handle_press;
+    private static _map;
+    /**
+     * Clears the pressed and released sets at the end of each step.
+     * Called by the game loop after all events have fired.
+     */
+    static end_step(): void;
+    /** Returns true if the key is currently held down. */
+    static check(key: number): boolean;
+    /** Returns true if the key was pressed this step. */
+    static check_pressed(key: number): boolean;
+    /** Returns true if the key was released this step. */
+    static check_released(key: number): boolean;
+    /** Clears the held/pressed/released state for a specific key. */
+    static clear(key: number): void;
+    /** Simulates pressing a key. */
+    static key_press(key: number): void;
+    /** Simulates releasing a key. */
+    static key_release(key: number): void;
+    /** Remaps key1 to behave as key2. */
+    static set_map(key1: number, key2: number): void;
+    /** Returns the mapped key code for a given input code. */
+    static get_map(key: number): number;
+    /** Clears all key remappings. */
+    static unset_map(): void;
+}
+/** Returns true if key is currently held down. */
+declare function keyboard_check(key: number): boolean;
+/** Returns true if key was just pressed this step. */
+declare function keyboard_check_pressed(key: number): boolean;
+/** Returns true if key was just released this step. */
+declare function keyboard_check_released(key: number): boolean;
+/** Direct key state check \u2014 same as keyboard_check() in this implementation. */
+declare function keyboard_check_direct(key: number): boolean;
+/** Clears the held/pressed/released state for a key. */
+declare function keyboard_clear(key: number): void;
+/** Simulates pressing a key. */
+declare function keyboard_key_press(key: number): void;
+/** Simulates releasing a key. */
+declare function keyboard_key_release(key: number): void;
+/** Remaps key1 to act as key2. */
+declare function keyboard_set_map(key1: number, key2: number): void;
+/** Returns the current mapping for key. */
+declare function keyboard_get_map(key: number): number;
+/** Clears all key remappings. */
+declare function keyboard_unset_map(): void;
+//# sourceMappingURL=keyboard.d.ts.map
+/**
+ * Mouse input system.
+ *
+ * Tracks mouse button state (held/pressed/released), position, and scroll wheel.
+ * mouse_x / mouse_y are in room coordinates (accounts for view offset).
+ * window_mouse_get_x/y return raw canvas-relative pixel coordinates.
+ */
+declare const mb_none = 0;
+declare const mb_left = 1;
+declare const mb_right = 2;
+declare const mb_middle = 3;
+declare const mb_any = 4;
+/**
+ * Internal mouse state manager.
+ * Attach to the canvas via mouse_manager.attach(canvas).
+ */
+declare class mouse_manager {
+    private static _held;
+    private static _pressed;
+    private static _released;
+    private static _canvas;
+    /** Mouse X in canvas pixel coordinates. */
+    static window_x: number;
+    /** Mouse Y in canvas pixel coordinates. */
+    static window_y: number;
+    /** Mouse X in room space (window_x + view offset). Updated each step. */
+    static mouse_x: number;
+    /** Mouse Y in room space (window_y + view offset). Updated each step. */
+    static mouse_y: number;
+    /** Currently held button (0 = none). */
+    static mouse_button: number;
+    /** Last button that was clicked. */
+    static mouse_lastbutton: number;
+    /** True if the scroll wheel moved up this step. */
+    private static _wheel_up;
+    /** True if the scroll wheel moved down this step. */
+    private static _wheel_down;
+    private static _attached;
+    private static _on_mousedown;
+    private static _on_mouseup;
+    private static _on_mousemove;
+    private static _on_wheel;
+    private static _on_contextmenu;
+    /**
+     * Attaches mouse listeners to a canvas element.
+     * @param canvas - The game canvas
+     */
+    static attach(canvas: HTMLCanvasElement): void;
+    /**
+     * Detaches mouse listeners from the canvas.
+     */
+    static detach(): void;
+    private static _get_button;
+    private static _handle_down;
+    private static _handle_up;
+    private static _handle_move;
+    private static _handle_wheel;
+    private static _update_position;
+    /**
+     * Updates room-space mouse coordinates using the current view offset.
+     * Called once per step by the game loop before keyboard/mouse events fire.
+     * @param view_x - Current view X offset in the room
+     * @param view_y - Current view Y offset in the room
+     */
+    static update_room_position(view_x: number, view_y: number): void;
+    /** Clears pressed/released state and wheel flags at the end of each step. */
+    static end_step(): void;
+    /** Returns true if button is held. */
+    static check(btn: number): boolean;
+    /** Returns true if button was pressed this step. */
+    static check_pressed(btn: number): boolean;
+    /** Returns true if button was released this step. */
+    static check_released(btn: number): boolean;
+    /** Clears state for a specific button. */
+    static clear(btn: number): void;
+    /** Returns true if the wheel scrolled up this step. */
+    static wheel_up(): boolean;
+    /** Returns true if the wheel scrolled down this step. */
+    static wheel_down(): boolean;
+}
+/** Returns true if mouse button is currently held. */
+declare function mouse_check_button(button: number): boolean;
+/** Returns true if mouse button was pressed this step. */
+declare function mouse_check_button_pressed(button: number): boolean;
+/** Returns true if mouse button was released this step. */
+declare function mouse_check_button_released(button: number): boolean;
+/** Clears state for a mouse button. */
+declare function mouse_clear(button: number): void;
+/** Returns true if the scroll wheel moved up this step. */
+declare function mouse_wheel_up(): boolean;
+/** Returns true if the scroll wheel moved down this step. */
+declare function mouse_wheel_down(): boolean;
+/** Returns mouse X position in window (canvas-relative pixels). */
+declare function window_mouse_get_x(): number;
+/** Returns mouse Y position in window (canvas-relative pixels). */
+declare function window_mouse_get_y(): number;
+/**
+ * Moves the OS cursor to the given canvas-relative position.
+ * Note: browsers do not support arbitrary cursor warping.
+ * This is a no-op stub for GMS API compatibility.
+ */
+declare function window_mouse_set(_x: number, _y: number): void;
+//# sourceMappingURL=mouse.d.ts.map
+/**
+ * Touch input system \u2014 wraps the browser Touch Events API.
+ *
+ * GMS models touch as numbered "devices" (fingers), mapped to virtual mice.
+ * This module follows the same pattern: each active touch point is a device.
+ *
+ * device_mouse_check_button / device_mouse_x / device_mouse_y mirror GMS's API.
+ * Finger 0 is conventionally the primary touch; fingers 1+ are additional points.
+ *
+ * Call touch_manager.end_step() at the end of each step (done by input_manager).
+ */
+/**
+ * Internal touch state manager.
+ * Attach to a canvas element via touch_manager.attach(canvas).
+ */
+declare class touch_manager {
+    private static _points;
+    private static _canvas;
+    private static _attached;
+    private static _on_start;
+    private static _on_end;
+    private static _on_move;
+    private static _on_cancel;
+    /**
+     * Attaches touch listeners to a canvas element.
+     * @param canvas - The canvas receiving touch events
+     */
+    static attach(canvas: HTMLCanvasElement): void;
+    /**
+     * Detaches touch listeners from the canvas.
+     */
+    static detach(): void;
+    /**
+     * Converts a browser Touch to canvas-local coordinates.
+     */
+    private static _to_canvas;
+    /**
+     * Maps a Touch identifier to a stable slot index (0..MAX_TOUCH_POINTS-1).
+     * Returns -1 if no slot is available.
+     */
+    private static _id_to_slot;
+    private static _alloc_slot;
+    private static _free_slot;
+    private static _handle_start;
+    private static _handle_end;
+    private static _handle_move;
+    private static _handle_cancel;
+    /**
+     * Clears per-step pressed/released flags.
+     * Called by input_manager at the end of each step.
+     */
+    static end_step(): void;
+    /** Returns true if a touch point is currently active. */
+    static is_held(device: number): boolean;
+    /** Returns true if a touch point became active this step. */
+    static is_pressed(device: number): boolean;
+    /** Returns true if a touch point was lifted this step. */
+    static is_released(device: number): boolean;
+    /** Returns the canvas-space X coordinate of a touch device. */
+    static get_x(device: number): number;
+    /** Returns the canvas-space Y coordinate of a touch device. */
+    static get_y(device: number): number;
+    /** Returns the number of currently active touch points. */
+    static get_count(): number;
+}
+/**
+ * Returns true if the touch device (finger) is currently active.
+ * @param device - Finger slot (0 = primary)
+ * @param button - Ignored (always mb_left for touch); kept for API parity
+ */
+declare function device_mouse_check_button(device: number, button: number): boolean;
+/**
+ * Returns true if the touch device became active this step.
+ * @param device - Finger slot
+ * @param button - Ignored
+ */
+declare function device_mouse_check_button_pressed(device: number, button: number): boolean;
+/**
+ * Returns true if the touch device was lifted this step.
+ * @param device - Finger slot
+ * @param button - Ignored
+ */
+declare function device_mouse_check_button_released(device: number, button: number): boolean;
+/** Returns the canvas X position of the given touch device. */
+declare function device_mouse_x(device: number): number;
+/** Returns the canvas Y position of the given touch device. */
+declare function device_mouse_y(device: number): number;
+/** Returns the number of currently active touch points. */
+declare function device_get_touch_count(): number;
+//# sourceMappingURL=touch.d.ts.map
+/**
+ * Math utilities.
+ *
+ * Mirrors the GMS built-in math functions:
+ *   lengthdir_x/y, point_distance, point_direction,
+ *   angle_difference, lerp, clamp, sign, frac, round, floor, ceil,
+ *   dsin, dcos, dtan, arcsin, arccos, arctan, arctan2,
+ *   power, sqr, sqrt, abs, min, max, median, mean, log2, log10, ln, exp
+ */
+/** Converts degrees to radians. */
+declare function degtorad(deg: number): number;
+/** Converts radians to degrees. */
+declare function radtodeg(rad: number): number;
+/** Sine of angle in degrees. */
+declare function dsin(deg: number): number;
+/** Cosine of angle in degrees. */
+declare function dcos(deg: number): number;
+/** Tangent of angle in degrees. */
+declare function dtan(deg: number): number;
+/** Arcsine, returns degrees. */
+declare function arcsin(x: number): number;
+/** Arccosine, returns degrees. */
+declare function arccos(x: number): number;
+/** Arctangent, returns degrees. */
+declare function arctan(x: number): number;
+/** Two-argument arctangent, returns degrees. GMS: arctan2(y, x). */
+declare function arctan2(y: number, x: number): number;
+/**
+ * Returns the X component of a vector with given length and direction.
+ * @param len - Vector length
+ * @param dir - Direction in degrees (0 = right, 90 = up in GMS)
+ */
+declare function lengthdir_x(len: number, dir: number): number;
+/**
+ * Returns the Y component of a vector with given length and direction.
+ * GMS Y-axis is inverted (positive Y = down), so result is negated.
+ * @param len - Vector length
+ * @param dir - Direction in degrees
+ */
+declare function lengthdir_y(len: number, dir: number): number;
+/**
+ * Returns the Euclidean distance between two points.
+ */
+declare function point_distance(x1: number, y1: number, x2: number, y2: number): number;
+/**
+ * Returns the 3D Euclidean distance between two points.
+ */
+declare function point_distance_3d(x1: number, y1: number, z1: number, x2: number, y2: number, z2: number): number;
+/**
+ * Returns the direction from (x1, y1) to (x2, y2) in degrees.
+ * 0 = right, 90 = up (GMS convention).
+ */
+declare function point_direction(x1: number, y1: number, x2: number, y2: number): number;
+/**
+ * Returns the shortest signed difference between two angles in degrees.
+ * Result is in the range (-180, 180].
+ */
+declare function angle_difference(a: number, b: number): number;
+/** Linear interpolation from a to b by factor w (0\u20131). */
+declare function lerp(a: number, b: number, w: number): number;
+/** Clamps val to [min_val, max_val]. */
+declare function clamp(val: number, min_val: number, max_val: number): number;
+/** Returns the sign of x: -1, 0, or 1. */
+declare function sign(x: number): number;
+/** Returns the fractional part of x. */
+declare function frac(x: number): number;
+/** Returns x squared. */
+declare function sqr(x: number): number;
+/** Returns the square root of x. */
+declare function sqrt(x: number): number;
+/** Returns the absolute value of x. */
+declare function abs(x: number): number;
+/** Returns the floor of x. */
+declare function floor(x: number): number;
+/** Returns the ceiling of x. */
+declare function ceil(x: number): number;
+/** Rounds x to the nearest integer. */
+declare function round(x: number): number;
+/** Returns x raised to the power n. */
+declare function power(x: number, n: number): number;
+/** Returns the base-2 logarithm of x. */
+declare function log2(x: number): number;
+/** Returns the base-10 logarithm of x. */
+declare function log10(x: number): number;
+/** Returns the natural logarithm of x. */
+declare function ln(x: number): number;
+/** Returns e raised to the power x. */
+declare function exp(x: number): number;
+/** Returns the minimum of all provided values. */
+declare function min(...values: number[]): number;
+/** Returns the maximum of all provided values. */
+declare function max(...values: number[]): number;
+/**
+ * Returns the median of the provided values.
+ * For an even count, returns the average of the two middle values.
+ */
+declare function median(...values: number[]): number;
+/**
+ * Returns the arithmetic mean of the provided values.
+ * Returns 0 for empty input.
+ */
+declare function mean(...values: number[]): number;
+/**
+ * Returns whether x is between lo and hi (inclusive).
+ * Equivalent to GMS's between(lo, x, hi).
+ */
+declare function between(x: number, lo: number, hi: number): boolean;
+/**
+ * Returns whether x is approximately equal to y within epsilon.
+ */
+declare function approx(x: number, y: number, epsilon?: number): boolean;
+/**
+ * Wraps x into the range [0, range).
+ */
+declare function wrap(x: number, range: number): number;
+/**
+ * Returns the dot product of two 2D vectors.
+ */
+declare function dot2(x1: number, y1: number, x2: number, y2: number): number;
+/**
+ * Returns the dot product of two 3D vectors.
+ */
+declare function dot3(x1: number, y1: number, z1: number, x2: number, y2: number, z2: number): number;
+/**
+ * Returns the 2D cross product (scalar z of 3D cross product).
+ */
+declare function cross2(x1: number, y1: number, x2: number, y2: number): number;
+//# sourceMappingURL=math_utils.d.ts.map
+/**
+ * Random number utilities.
+ *
+ * Mirrors the GMS random API:
+ *   random, irandom, random_range, irandom_range,
+ *   randomize, random_set_seed, random_get_seed
+ *
+ * Uses a seeded Mulberry32 PRNG for reproducible sequences.
+ * Call randomize() or random_set_seed() to initialise the seed.
+ * By default, seed is 0 (deterministic).
+ */
+/**
+ * Sets the RNG seed to a specific value.
+ * @param seed - Integer seed value
+ */
+declare function random_set_seed(seed: number): void;
+/**
+ * Returns the current RNG seed.
+ */
+declare function random_get_seed(): number;
+/**
+ * Randomises the seed using the current timestamp.
+ */
+declare function randomize(): void;
+/**
+ * Returns a random float in [0, n).
+ * @param n - Upper bound (exclusive)
+ */
+declare function random(n: number): number;
+/**
+ * Returns a random integer in [0, n] (inclusive).
+ * @param n - Maximum value (inclusive)
+ */
+declare function irandom(n: number): number;
+/**
+ * Returns a random float in [lo, hi).
+ * @param lo - Lower bound (inclusive)
+ * @param hi - Upper bound (exclusive)
+ */
+declare function random_range(lo: number, hi: number): number;
+/**
+ * Returns a random integer in [lo, hi] (both inclusive).
+ * @param lo - Lower bound (inclusive)
+ * @param hi - Upper bound (inclusive)
+ */
+declare function irandom_range(lo: number, hi: number): number;
+/**
+ * Randomly shuffles an array in-place (Fisher-Yates).
+ * @param arr - Array to shuffle
+ * @returns The same array (mutated)
+ */
+declare function array_shuffle<T>(arr: T[]): T[];
+/**
+ * Returns a random element from an array.
+ * Returns undefined for empty arrays.
+ * @param arr - Source array
+ */
+declare function array_random<T>(arr: T[]): T | undefined;
+/**
+ * Returns a random float using JavaScript's built-in Math.random().
+ * Not affected by random_set_seed() \u2014 use for non-reproducible randomness.
+ */
+declare function random_native(): number;
+//# sourceMappingURL=random.d.ts.map
+/**
+ * Regular expression utilities.
+ *
+ * Thin wrappers around JavaScript's RegExp, providing a more GMS-friendly API.
+ * GMS does not have native regex; these are Silkweaver extensions.
+ */
+/**
+ * Returns true if str matches the pattern.
+ * @param str - String to test
+ * @param pattern - Regular expression pattern string
+ * @param flags - RegExp flags (e.g. 'i' for case-insensitive)
+ */
+declare function regex_match(str: string, pattern: string, flags?: string): boolean;
+/**
+ * Returns the first match of pattern in str, or null if no match.
+ * @param str - String to search
+ * @param pattern - Regular expression pattern string
+ * @param flags - RegExp flags
+ */
+declare function regex_find(str: string, pattern: string, flags?: string): string | null;
+/**
+ * Returns all matches of pattern in str as an array.
+ * @param str - String to search
+ * @param pattern - Regular expression pattern string
+ * @param flags - RegExp flags (default 'g' \u2014 global)
+ */
+declare function regex_find_all(str: string, pattern: string, flags?: string): string[];
+/**
+ * Replaces the first match of pattern in str with replacement.
+ * @param str - Input string
+ * @param pattern - Regular expression pattern string
+ * @param replacement - Replacement string (supports $1, $2 group references)
+ * @param flags - RegExp flags
+ */
+declare function regex_replace(str: string, pattern: string, replacement: string, flags?: string): string;
+/**
+ * Replaces all matches of pattern in str with replacement.
+ * @param str - Input string
+ * @param pattern - Regular expression pattern string
+ * @param replacement - Replacement string
+ * @param flags - RegExp flags (default 'g')
+ */
+declare function regex_replace_all(str: string, pattern: string, replacement: string, flags?: string): string;
+/**
+ * Splits str by pattern and returns an array of parts.
+ * @param str - Input string
+ * @param pattern - Regular expression pattern string
+ * @param flags - RegExp flags
+ */
+declare function regex_split(str: string, pattern: string, flags?: string): string[];
+/**
+ * Returns the 1-based index of the first match, or 0 if not found.
+ * @param str - String to search
+ * @param pattern - Regular expression pattern string
+ * @param flags - RegExp flags
+ */
+declare function regex_pos(str: string, pattern: string, flags?: string): number;
+/**
+ * Returns an array of capture groups from the first match, or empty array.
+ * Index 0 is the full match; indices 1+ are capture groups.
+ * @param str - String to match against
+ * @param pattern - Regular expression pattern
+ * @param flags - RegExp flags
+ */
+declare function regex_groups(str: string, pattern: string, flags?: string): string[];
+//# sourceMappingURL=regex_utils.d.ts.map
+/**
+ * String utility functions.
+ *
+ * Mirrors the GMS string API:
+ *   string_length, string_copy, string_pos, string_delete, string_insert,
+ *   string_replace, string_replace_all, string_count, string_lower, string_upper,
+ *   string_letters, string_digits, string_lettersdigits,
+ *   string_trim, string_repeat, string_reverse, string_format,
+ *   chr, ord, ansi_char, string_char_at, string_byte_at, string_byte_length,
+ *   string_set_byte_at
+ *
+ * String indexing is 1-based (matching GMS), unlike JavaScript's 0-based indexing.
+ */
+/**
+ * Returns the number of characters in a string.
+ * @param str - Input string
+ */
+declare function string_length(str: string): number;
+/**
+ * Returns a substring.
+ * @param str - Input string
+ * @param index - Start index (1-based)
+ * @param count - Number of characters to copy
+ */
+declare function string_copy(str: string, index: number, count: number): string;
+/**
+ * Returns the 1-based position of substr in str, or 0 if not found.
+ * @param substr - Substring to search for
+ * @param str - String to search in
+ */
+declare function string_pos(substr: string, str: string): number;
+/**
+ * Returns the 1-based position of the nth occurrence of substr in str.
+ * @param substr - Substring to find
+ * @param str - String to search in
+ * @param occurrence - Which occurrence to find (1 = first)
+ */
+declare function string_pos_ext(substr: string, str: string, occurrence?: number): number;
+/**
+ * Deletes count characters from str starting at index (1-based).
+ * @param str - Input string
+ * @param index - Start index (1-based)
+ * @param count - Number of characters to delete
+ */
+declare function string_delete(str: string, index: number, count: number): string;
+/**
+ * Inserts substr into str at 1-based index.
+ * @param substr - String to insert
+ * @param str - Target string
+ * @param index - Insertion position (1-based)
+ */
+declare function string_insert(substr: string, str: string, index: number): string;
+/**
+ * Replaces the first occurrence of old_str with new_str.
+ * @param str - Input string
+ * @param old_str - String to replace
+ * @param new_str - Replacement string
+ */
+declare function string_replace(str: string, old_str: string, new_str: string): string;
+/**
+ * Replaces all occurrences of old_str with new_str.
+ * @param str - Input string
+ * @param old_str - String to replace
+ * @param new_str - Replacement string
+ */
+declare function string_replace_all(str: string, old_str: string, new_str: string): string;
+/**
+ * Returns the number of times substr appears in str.
+ */
+declare function string_count(substr: string, str: string): number;
+/** Converts a string to lowercase. */
+declare function string_lower(str: string): string;
+/** Converts a string to uppercase. */
+declare function string_upper(str: string): string;
+/** Returns only the letter characters from a string. */
+declare function string_letters(str: string): string;
+/** Returns only the digit characters from a string. */
+declare function string_digits(str: string): string;
+/** Returns only letters and digits from a string. */
+declare function string_lettersdigits(str: string): string;
+/** Trims leading and trailing whitespace. */
+declare function string_trim(str: string): string;
+/** Trims leading whitespace. */
+declare function string_trim_start(str: string): string;
+/** Trims trailing whitespace. */
+declare function string_trim_end(str: string): string;
+/**
+ * Repeats str n times.
+ * @param str - String to repeat
+ * @param n - Number of repetitions
+ */
+declare function string_repeat(str: string, n: number): string;
+/** Reverses a string. */
+declare function string_reverse(str: string): string;
+/**
+ * Returns a character at 1-based index.
+ * Returns an empty string if out of range.
+ */
+declare function string_char_at(str: string, index: number): string;
+/**
+ * Returns the byte value at 1-based index (uses charCodeAt).
+ */
+declare function string_byte_at(str: string, index: number): number;
+/** Returns the byte length of the UTF-16 encoded string. */
+declare function string_byte_length(str: string): number;
+/**
+ * Returns the character with the given Unicode code point.
+ * GMS equivalent: chr(val)
+ */
+declare function chr(code: number): string;
+/**
+ * Returns the Unicode code point of the first character of str.
+ * GMS equivalent: ord(str)
+ */
+declare function ord(str: string): number;
+/** Alias for chr(), matching GMS's ansi_char. */
+declare function ansi_char(code: number): string;
+/**
+ * Formats a number to a string with given total width and decimal places.
+ * Mirrors GMS's string_format(val, tot, dec).
+ * @param val - Number to format
+ * @param tot - Minimum total width (padded with spaces on left)
+ * @param dec - Number of decimal places
+ */
+declare function string_format(val: number, tot: number, dec: number): string;
+/**
+ * Converts a value to its string representation.
+ * Mirrors GMS's string(val).
+ */
+declare function string(val: unknown): string;
+/**
+ * Converts a string to a real number.
+ * Returns 0 if the string is not a valid number (GMS behaviour).
+ */
+declare function real(str: string): number;
+/**
+ * Splits a string by a delimiter and returns an array of parts.
+ * @param str - String to split
+ * @param delimiter - Separator string
+ */
+declare function string_split(str: string, delimiter: string): string[];
+/**
+ * Joins an array of strings with a separator.
+ * @param parts - String array
+ * @param separator - Separator between parts
+ */
+declare function string_join(parts: string[], separator?: string): string;
+//# sourceMappingURL=string_utils.d.ts.map
+/**
+ * A 2D vector representing a point or direction in 2D space.
+ */
+declare class vector2 {
+    x: number;
+    y: number;
+    /**
+     * Creates a new 2D vector.
+     * @param x - X component (default 0)
+     * @param y - Y component (default 0)
+     */
+    constructor(x?: number, y?: number);
+    /**
+     * Returns a JSON string representation of this vector.
+     * @returns JSON string with x and y values
+     */
+    toString(): string;
+}
+//# sourceMappingURL=vectors.d.ts.map
+/**
+ * Binary buffer system \u2014 ArrayBuffer-backed read/write buffers.
+ *
+ * Mirrors the GMS buffer API:
+ *   buffer_create, buffer_delete, buffer_write, buffer_read,
+ *   buffer_seek, buffer_tell, buffer_get_size, buffer_exists,
+ *   buffer_get_surface (not applicable \u2014 omitted),
+ *   buffer_base64_encode, buffer_base64_decode,
+ *   buffer_md5, buffer_sha1 (omitted \u2014 no native WebCrypto sync API)
+ *
+ * Data types match GMS buffer_* type constants.
+ * All writes grow the buffer automatically when needed.
+ */
+declare const buffer_u8 = 0;
+declare const buffer_s8 = 1;
+declare const buffer_u16 = 2;
+declare const buffer_s16 = 3;
+declare const buffer_u32 = 4;
+declare const buffer_s32 = 5;
+declare const buffer_f32 = 6;
+declare const buffer_f64 = 7;
+declare const buffer_bool = 8;
+declare const buffer_string = 9;
+declare const buffer_u64 = 10;
+declare const buffer_fixed = 0;
+declare const buffer_grow = 1;
+declare const buffer_wrap = 2;
+declare const buffer_fast = 3;
+declare const buffer_seek_start = 0;
+declare const buffer_seek_relative = 1;
+declare const buffer_seek_end = 2;
+/**
+ * Creates a new buffer.
+ * @param size - Initial capacity in bytes
+ * @param mode - buffer_fixed | buffer_grow | buffer_wrap | buffer_fast
+ * @param alignment - Byte alignment hint (1 = byte-aligned, 2 = 16-bit, etc.)
+ * @returns Buffer ID
+ */
+declare function buffer_create(size: number, mode?: number, alignment?: number): number;
+/**
+ * Deletes a buffer and frees its memory.
+ * @param buffer_id - Buffer ID
+ */
+declare function buffer_delete(buffer_id: number): void;
+/**
+ * Returns true if the buffer ID is valid.
+ * @param buffer_id - Buffer ID
+ */
+declare function buffer_exists(buffer_id: number): boolean;
+/**
+ * Returns the allocated capacity of the buffer in bytes.
+ * @param buffer_id - Buffer ID
+ */
+declare function buffer_get_size(buffer_id: number): number;
+/**
+ * Returns the number of bytes written to the buffer.
+ * @param buffer_id - Buffer ID
+ */
+declare function buffer_tell(buffer_id: number): number;
+/**
+ * Moves the read/write cursor.
+ * @param buffer_id - Buffer ID
+ * @param base - buffer_seek_start | buffer_seek_relative | buffer_seek_end
+ * @param offset - Byte offset from base
+ */
+declare function buffer_seek(buffer_id: number, base: number, offset: number): void;
+/**
+ * Writes a value of the given type at the current cursor position.
+ * @param buffer_id - Buffer ID
+ * @param type - buffer_u8 | buffer_s8 | ... | buffer_string
+ * @param value - Value to write
+ */
+declare function buffer_write(buffer_id: number, type: number, value: number | boolean | string | bigint): void;
+/**
+ * Reads a value of the given type from the current cursor position.
+ * @param buffer_id - Buffer ID
+ * @param type - Data type constant
+ * @returns The read value, or 0 / false / '' on error
+ */
+declare function buffer_read(buffer_id: number, type: number): number | boolean | string | bigint;
+/**
+ * Fills a region of the buffer with a repeating byte value.
+ * @param buffer_id - Buffer ID
+ * @param offset - Start offset in bytes (from buffer start)
+ * @param size - Number of bytes to fill
+ * @param value - Byte value (0\u2013255)
+ */
+declare function buffer_fill(buffer_id: number, offset: number, size: number, value: number): void;
+/**
+ * Copies data from one buffer to another.
+ * @param src_id - Source buffer ID
+ * @param src_offset - Byte offset in source
+ * @param dst_id - Destination buffer ID
+ * @param dst_offset - Byte offset in destination
+ * @param size - Number of bytes to copy
+ */
+declare function buffer_copy(src_id: number, src_offset: number, dst_id: number, dst_offset: number, size: number): void;
+/**
+ * Returns a Uint8Array view of the buffer's raw bytes (read-only snapshot).
+ * @param buffer_id - Buffer ID
+ */
+declare function buffer_get_bytes(buffer_id: number): Uint8Array;
+/**
+ * Creates a buffer from a Uint8Array (e.g. from a network message).
+ * @param bytes - Raw bytes
+ * @returns Buffer ID
+ */
+declare function buffer_from_bytes(bytes: Uint8Array): number;
+/**
+ * Encodes the buffer contents as a Base64 string.
+ * @param buffer_id - Buffer ID
+ * @param offset - Start offset (default 0)
+ * @param size - Number of bytes (default: full buffer)
+ */
+declare function buffer_base64_encode(buffer_id: number, offset?: number, size?: number): string;
+/**
+ * Creates a buffer from a Base64-encoded string.
+ * @param base64 - Base64 string
+ * @returns Buffer ID
+ */
+declare function buffer_base64_decode(base64: string): number;
+//# sourceMappingURL=buffer.d.ts.map
+/**
+ * HTTP client utilities.
+ *
+ * Mirrors GMS's http_get / http_post / http_get_file API.
+ * All functions are Promise-based (unlike GMS async events).
+ *
+ * GMS equivalents:
+ *   http_get(url)           \u2192 http_get(url)
+ *   http_post_string(url,s) \u2192 http_post(url, body)
+ *   http_get_file(url,path) \u2192 http_get_bytes(url)
+ *   http_request(url,\u2026)     \u2192 http_request(url, \u2026)
+ */
+/**
+ * Represents the result of an HTTP request.
+ */
+interface http_response {
+    status: number;
+    ok: boolean;
+    text: string;
+    headers: Record<string, string>;
+}
+/**
+ * Represents the result of a binary HTTP request.
+ */
+interface http_binary_response {
+    status: number;
+    ok: boolean;
+    bytes: Uint8Array;
+    headers: Record<string, string>;
+}
+/**
+ * Performs an HTTP GET request and returns the response body as a string.
+ * @param url - Request URL
+ * @param headers - Optional extra headers
+ * @returns Promise resolving to http_response
+ */
+declare function http_get(url: string, headers?: Record<string, string>): Promise<http_response>;
+/**
+ * Performs an HTTP POST request with a string body.
+ * @param url - Request URL
+ * @param body - Request body string
+ * @param content_type - Content-Type header (default 'application/x-www-form-urlencoded')
+ * @param headers - Optional extra headers
+ * @returns Promise resolving to http_response
+ */
+declare function http_post(url: string, body: string, content_type?: string, headers?: Record<string, string>): Promise<http_response>;
+/**
+ * Performs an HTTP POST request with a JSON body.
+ * @param url - Request URL
+ * @param data - JavaScript value to serialize as JSON
+ * @param headers - Optional extra headers
+ * @returns Promise resolving to http_response
+ */
+declare function http_post_json(url: string, data: unknown, headers?: Record<string, string>): Promise<http_response>;
+/**
+ * Performs an HTTP GET request and returns the response body as raw bytes.
+ * Equivalent to GMS's http_get_file (but returns bytes instead of saving to disk).
+ * @param url - Request URL
+ * @param headers - Optional extra headers
+ * @returns Promise resolving to http_binary_response
+ */
+declare function http_get_bytes(url: string, headers?: Record<string, string>): Promise<http_binary_response>;
+/**
+ * Performs a generic HTTP request with full control over method, headers, and body.
+ * @param url - Request URL
+ * @param method - HTTP method (GET, POST, PUT, DELETE, PATCH, etc.)
+ * @param headers - Request headers
+ * @param body - Request body (string or Uint8Array), or null
+ * @returns Promise resolving to http_response
+ */
+declare function http_request(url: string, method: string, headers?: Record<string, string>, body?: string | Uint8Array | null): Promise<http_response>;
+//# sourceMappingURL=http_client.d.ts.map
+/**
+ * WebRTC peer-to-peer networking via RTCDataChannel.
+ *
+ * Provides UDP-like unreliable messaging between peers using RTCDataChannel
+ * in unordered + unreliable mode, or reliable ordered mode for TCP-like use.
+ *
+ * Usage pattern:
+ *   1. Create a peer: webrtc_create_peer()
+ *   2. Create a data channel on the offerer: webrtc_create_channel()
+ *   3. Exchange SDP offer/answer and ICE candidates out-of-band (e.g. via WebSocket)
+ *   4. Send/receive messages via webrtc_send / webrtc_set_on_message
+ *
+ * SDP and ICE negotiation is exposed directly \u2014 the application is responsible
+ * for the signalling transport (typically a WebSocket server).
+ */
+/**
+ * Creates a new RTCPeerConnection.
+ * @param ice_servers - STUN/TURN server config (default: Google STUN)
+ * @returns Peer ID
+ */
+declare function webrtc_create_peer(ice_servers?: RTCIceServer[]): number;
+/**
+ * Creates a data channel on a peer (offerer side).
+ * @param peer_id - Peer ID
+ * @param label - Channel label
+ * @param ordered - True for reliable ordered, false for UDP-like
+ * @param max_retransmits - Max retransmits for unreliable mode (0 = no retry)
+ * @returns Channel ID, or -1 on failure
+ */
+declare function webrtc_create_channel(peer_id: number, label?: string, ordered?: boolean, max_retransmits?: number): number;
+/**
+ * Creates an SDP offer for the peer (async).
+ * @param peer_id - Peer ID
+ * @returns SDP offer string, or null on failure
+ */
+declare function webrtc_create_offer(peer_id: number): Promise<string | null>;
+/**
+ * Creates an SDP answer in response to a received offer (async).
+ * @param peer_id - Peer ID
+ * @param offer_sdp - SDP offer string from the remote peer
+ * @returns SDP answer string, or null on failure
+ */
+declare function webrtc_create_answer(peer_id: number, offer_sdp: string): Promise<string | null>;
+/**
+ * Sets the remote SDP answer on the offerer (async).
+ * @param peer_id - Peer ID
+ * @param answer_sdp - SDP answer string from the remote peer
+ */
+declare function webrtc_set_remote_answer(peer_id: number, answer_sdp: string): Promise<void>;
+/**
+ * Adds a received ICE candidate from the remote peer.
+ * @param peer_id - Peer ID
+ * @param candidate - RTCIceCandidateInit object (from signalling)
+ */
+declare function webrtc_add_ice_candidate(peer_id: number, candidate: RTCIceCandidateInit): Promise<void>;
+/**
+ * Sends raw bytes over a data channel.
+ * @param peer_id - Peer ID
+ * @param channel_id - Channel ID
+ * @param bytes - Data to send
+ */
+declare function webrtc_send(peer_id: number, channel_id: number, bytes: Uint8Array): void;
+/**
+ * Sends a text string over a data channel.
+ * @param peer_id - Peer ID
+ * @param channel_id - Channel ID
+ * @param text - Text to send
+ */
+declare function webrtc_send_text(peer_id: number, channel_id: number, text: string): void;
+/**
+ * Closes a peer connection and all its channels.
+ * @param peer_id - Peer ID
+ */
+declare function webrtc_destroy_peer(peer_id: number): void;
+/**
+ * Sets the callback fired when a new incoming data channel is opened (answerer side).
+ * @param peer_id - Peer ID
+ * @param cb - Callback receiving (channel_id, label)
+ */
+declare function webrtc_set_on_channel(peer_id: number, cb: (channel_id: number, label: string) => void): void;
+/**
+ * Sets the callback fired when a local ICE candidate is ready to be sent to the remote peer.
+ * @param peer_id - Peer ID
+ * @param cb - Callback receiving the RTCIceCandidate
+ */
+declare function webrtc_set_on_ice_candidate(peer_id: number, cb: (candidate: RTCIceCandidate) => void): void;
+/**
+ * Sets the callback fired when a message arrives on a channel.
+ * The callback receives a buffer ID (owned by caller; use buffer_delete when done).
+ * @param peer_id - Peer ID
+ * @param channel_id - Channel ID
+ * @param cb - Callback receiving the buffer ID
+ */
+declare function webrtc_set_on_message(peer_id: number, channel_id: number, cb: (buffer_id: number) => void): void;
+/**
+ * Sets the callback fired when a channel opens.
+ * @param peer_id - Peer ID
+ * @param channel_id - Channel ID
+ * @param cb - Callback
+ */
+declare function webrtc_set_on_open(peer_id: number, channel_id: number, cb: () => void): void;
+/**
+ * Sets the callback fired when a channel closes.
+ * @param peer_id - Peer ID
+ * @param channel_id - Channel ID
+ * @param cb - Callback
+ */
+declare function webrtc_set_on_close(peer_id: number, channel_id: number, cb: () => void): void;
+/** Returns true if the peer ID refers to a live peer. */
+declare function webrtc_peer_exists(peer_id: number): boolean;
+/** Returns the RTCPeerConnection connection state string, or 'closed' if not found. */
+declare function webrtc_get_state(peer_id: number): string;
+//# sourceMappingURL=webrtc_client.d.ts.map
+/**
+ * WebSocket networking client.
+ *
+ * Mirrors GMS's network_create_socket / network_connect / network_send_raw API.
+ * Messages are binary (ArrayBuffer) or text strings.
+ *
+ * Events (onopen, onmessage, onclose, onerror) are exposed as callbacks
+ * rather than GMS async events, to match JavaScript idioms.
+ */
+/** WebSocket states matching the GMS network_type_* constants. */
+declare const network_type_connect = 0;
+declare const network_type_disconnect = 1;
+declare const network_type_data = 2;
+declare const network_type_non_blocking_connect = 3;
+/**
+ * Creates a WebSocket connection to the given URL.
+ * @param url - WebSocket URL (ws:// or wss://)
+ * @param protocols - Optional subprotocols
+ * @returns Socket ID, or -1 on immediate failure
+ */
+declare function network_create_socket(url: string, protocols?: string | string[]): number;
+/**
+ * Sends raw bytes from a buffer over a WebSocket connection.
+ * @param socket_id - Socket ID
+ * @param bytes - Uint8Array to send
+ */
+declare function network_send_raw(socket_id: number, bytes: Uint8Array): void;
+/**
+ * Sends a text string over a WebSocket connection.
+ * @param socket_id - Socket ID
+ * @param text - Text to send
+ */
+declare function network_send_text(socket_id: number, text: string): void;
+/**
+ * Closes a WebSocket connection.
+ * @param socket_id - Socket ID
+ * @param code - Close code (default 1000 = normal closure)
+ * @param reason - Human-readable reason
+ */
+declare function network_destroy(socket_id: number, code?: number, reason?: string): void;
+/**
+ * Returns the WebSocket ready state: 0=CONNECTING 1=OPEN 2=CLOSING 3=CLOSED.
+ * Returns -1 if the socket ID is invalid.
+ * @param socket_id - Socket ID
+ */
+declare function network_get_ready_state(socket_id: number): number;
+/**
+ * Sets the callback fired when the socket connects.
+ * @param socket_id - Socket ID
+ * @param cb - Callback
+ */
+declare function network_set_on_open(socket_id: number, cb: () => void): void;
+/**
+ * Sets the callback fired when a message is received.
+ * The callback receives a buffer ID containing the message bytes.
+ * The buffer is owned by the callback and should be freed with buffer_delete().
+ * @param socket_id - Socket ID
+ * @param cb - Callback receiving the buffer ID
+ */
+declare function network_set_on_message(socket_id: number, cb: (buffer_id: number) => void): void;
+/**
+ * Sets the callback fired when the socket closes.
+ * @param socket_id - Socket ID
+ * @param cb - Callback receiving (code, reason)
+ */
+declare function network_set_on_close(socket_id: number, cb: (code: number, reason: string) => void): void;
+/**
+ * Sets the callback fired when a socket error occurs.
+ * @param socket_id - Socket ID
+ * @param cb - Callback
+ */
+declare function network_set_on_error(socket_id: number, cb: () => void): void;
+/**
+ * Returns true if the given socket ID refers to a live socket.
+ * @param socket_id - Socket ID
+ */
+declare function network_socket_exists(socket_id: number): boolean;
+//# sourceMappingURL=websocket_client.d.ts.map
+/**
+ * Particle emitter \u2014 spawns particles into a particle system.
+ *
+ * Mirrors the GMS part_emitter_* API.
+ *
+ * An emitter belongs to a system and defines:
+ *   - A region (point, rectangle, ellipse, diamond) where particles spawn
+ *   - A distribution within that region (linear, Gaussian, inv_Gaussian)
+ *   - Burst and stream modes
+ */
+declare const ps_shape_rectangle = 0;
+declare const ps_shape_ellipse = 1;
+declare const ps_shape_diamond = 2;
+declare const ps_shape_line = 3;
+declare const ps_distr_linear = 0;
+declare const ps_distr_gaussian = 1;
+declare const ps_distr_inv_gaussian = 2;
+/**
+ * Creates a new emitter attached to a particle system.
+ * @param system_id - System ID to spawn particles into
+ * @returns Emitter ID
+ */
+declare function part_emitter_create(system_id: number): number;
+/**
+ * Destroys an emitter.
+ * @param emitter_id - Emitter ID
+ */
+declare function part_emitter_destroy(emitter_id: number): void;
+/** Returns true if the emitter ID is valid. */
+declare function part_emitter_exists(emitter_id: number): boolean;
+/**
+ * Sets the region and distribution for an emitter.
+ * @param emitter_id - Emitter ID
+ * @param x1 - Region left
+ * @param y1 - Region top
+ * @param x2 - Region right
+ * @param y2 - Region bottom
+ * @param shape - ps_shape_* constant
+ * @param distr - ps_distr_* constant
+ */
+declare function part_emitter_region(emitter_id: number, x1: number, y1: number, x2: number, y2: number, shape: number, distr: number): void;
+/**
+ * Spawns a single burst of particles from an emitter.
+ * @param emitter_id - Emitter ID
+ * @param type_id - Particle type ID
+ * @param number - Number of particles to spawn
+ */
+declare function part_emitter_burst(emitter_id: number, type_id: number, number: number): void;
+/**
+ * Spawns a continuous stream of particles (call each step).
+ * Internally identical to burst \u2014 the caller is responsible for calling each step.
+ * @param emitter_id - Emitter ID
+ * @param type_id - Particle type ID
+ * @param number - Number of particles to spawn this step
+ */
+declare function part_emitter_stream(emitter_id: number, type_id: number, number: number): void;
+//# sourceMappingURL=particle_emitter.d.ts.map
+/**
+ * Particle system \u2014 manages a pool of live particles and renders them.
+ *
+ * Mirrors the GMS part_system_* API.
+ *
+ * One particle system holds all particles created by its emitters.
+ * Call part_system_update() each step and part_system_draw() in the draw event.
+ *
+ * Rendering uses the engine's 2D renderer (draw_rectangle / draw_circle style
+ * primitives via the renderer's batch API).  Shapes are drawn as simple
+ * colored rectangles/circles \u2014 a sprite atlas approach is left for future work.
+ */
+interface live_particle {
+    type_id: number;
+    x: number;
+    y: number;
+    spd: number;
+    dir: number;
+    ang: number;
+    spd_incr: number;
+    dir_incr: number;
+    ang_incr: number;
+    size: number;
+    size_incr: number;
+    life: number;
+    life_max: number;
+    r: number;
+    g: number;
+    b: number;
+    alpha: number;
+    additive: boolean;
+}
+interface part_system_def {
+    particles: live_particle[];
+    depth: number;
+    persistent: boolean;
+    auto_update: boolean;
+    auto_draw: boolean;
+}
+/** Creates a single live particle from a type at position (x, y). */
+declare function _spawn_particle(sys: part_system_def, type_id: number, x: number, y: number): void;
+/** Returns the raw system state object for internal use by particle_emitter.ts. */
+declare function _get_system_raw(system_id: number): part_system_def | undefined;
+/** Creates a new particle system and returns its ID. */
+declare function part_system_create(): number;
+/** Destroys a particle system and all its particles. */
+declare function part_system_destroy(system_id: number): void;
+/** Returns true if the system ID is valid. */
+declare function part_system_exists(system_id: number): boolean;
+/** Sets the draw depth of the system. */
+declare function part_system_depth(system_id: number, depth: number): void;
+/** Clears all live particles from the system without destroying it. */
+declare function part_system_clear(system_id: number): void;
+/** Returns the number of live particles in the system. */
+declare function part_system_count(system_id: number): number;
+/**
+ * Advances all particles in the system by one step.
+ * Handles motion, lifetime, per-step sub-emitters, and death sub-emitters.
+ * @param system_id - System ID
+ */
+declare function part_system_update(system_id: number): void;
+/**
+ * Draws all particles in the system using the engine renderer.
+ * Must be called from within a draw event (after renderer.begin_frame).
+ * @param system_id - System ID
+ */
+declare function part_system_draw(system_id: number): void;
+
+//# sourceMappingURL=particle_system.d.ts.map
+/**
+ * Particle type definitions.
+ *
+ * A particle type is a template describing how individual particles look and behave.
+ * Mirrors the GMS part_type_* API.
+ *
+ * Particle types are consumed by particle emitters and particle systems.
+ * They are shared \u2014 one type can be used by many emitters.
+ */
+declare const pt_shape_pixel = 0;
+declare const pt_shape_disk = 1;
+declare const pt_shape_square = 2;
+declare const pt_shape_line = 3;
+declare const pt_shape_star = 4;
+declare const pt_shape_circle = 5;
+declare const pt_shape_ring = 6;
+declare const pt_shape_sphere = 7;
+declare const pt_shape_flare = 8;
+declare const pt_shape_spark = 9;
+declare const pt_shape_explosion = 10;
+declare const pt_shape_cloud = 11;
+declare const pt_shape_smoke = 12;
+declare const pt_shape_snow = 13;
+interface part_type_def {
+    shape: number;
+    size1: number;
+    size2: number;
+    size_incr: number;
+    size_wiggle: number;
+    speed1: number;
+    speed2: number;
+    speed_incr: number;
+    speed_wiggle: number;
+    dir1: number;
+    dir2: number;
+    dir_incr: number;
+    dir_wiggle: number;
+    grav_amount: number;
+    grav_dir: number;
+    ang1: number;
+    ang2: number;
+    ang_incr: number;
+    ang_wiggle: number;
+    ang_relative: boolean;
+    life1: number;
+    life2: number;
+    color1: number;
+    color2: number;
+    color3: number;
+    alpha1: number;
+    alpha2: number;
+    alpha3: number;
+    additive: boolean;
+    death_type_id: number;
+    death_number: number;
+    step_type_id: number;
+    step_number: number;
+}
+/** Creates a new particle type and returns its ID. */
+declare function part_type_create(): number;
+/** Destroys a particle type. */
+declare function part_type_destroy(type_id: number): void;
+/** Returns true if the particle type ID is valid. */
+declare function part_type_exists(type_id: number): boolean;
+/** Sets the shape of particles of this type. */
+declare function part_type_shape(type_id: number, shape: number): void;
+/** Sets the size range and per-step variation. */
+declare function part_type_size(type_id: number, size_min: number, size_max: number, size_incr: number, size_wiggle: number): void;
+/** Sets the speed range and per-step variation. */
+declare function part_type_speed(type_id: number, speed_min: number, speed_max: number, speed_incr: number, speed_wiggle: number): void;
+/** Sets the direction range and per-step variation (degrees). */
+declare function part_type_direction(type_id: number, dir_min: number, dir_max: number, dir_incr: number, dir_wiggle: number): void;
+/** Sets the gravity applied to particles (amount in pixels/step\xB2, direction in degrees). */
+declare function part_type_gravity(type_id: number, amount: number, direction: number): void;
+/** Sets the orientation (angle) range and variation. */
+declare function part_type_orientation(type_id: number, ang_min: number, ang_max: number, ang_incr: number, ang_wiggle: number, ang_relative: boolean): void;
+/** Sets the lifetime range in steps. */
+declare function part_type_life(type_id: number, life_min: number, life_max: number): void;
+/** Sets three color stops interpolated over the particle lifetime. */
+declare function part_type_color3(type_id: number, c1: number, c2: number, c3: number): void;
+/** Sets two color stops (shorthand). */
+declare function part_type_color2(type_id: number, c1: number, c2: number): void;
+/** Sets a single constant color. */
+declare function part_type_color1(type_id: number, c: number): void;
+/** Sets three alpha stops interpolated over the particle lifetime. */
+declare function part_type_alpha3(type_id: number, a1: number, a2: number, a3: number): void;
+/** Sets two alpha stops. */
+declare function part_type_alpha2(type_id: number, a1: number, a2: number): void;
+/** Sets a single constant alpha. */
+declare function part_type_alpha1(type_id: number, a: number): void;
+/** Sets whether particles blend additively. */
+declare function part_type_blend(type_id: number, additive: boolean): void;
+/**
+ * Sets a sub-emitter that spawns particles on step.
+ * @param type_id - Parent type ID
+ * @param sub_type_id - Type to spawn (-1 = none)
+ * @param number - Number of particles spawned per step
+ */
+declare function part_type_step(type_id: number, sub_type_id: number, number: number): void;
+/**
+ * Sets a sub-emitter that spawns particles when a particle dies.
+ * @param type_id - Parent type ID
+ * @param sub_type_id - Type to spawn (-1 = none)
+ * @param number - Number of particles spawned on death
+ */
+declare function part_type_death(type_id: number, sub_type_id: number, number: number): void;
+/** Returns the raw type definition for use by the particle system. */
+declare function part_type_get_def(type_id: number): part_type_def | undefined;
+//# sourceMappingURL=particle_type.d.ts.map
+/**
+ * Physics body and fixture system \u2014 wraps matter.js Body.
+ *
+ * Fixture shapes: rectangle, circle, polygon (convex hull).
+ * Bodies can be dynamic, static, or kinematic.
+ *
+ * Positions are in room pixel space.
+ * The px_per_metre scale factor converts to matter.js metre space.
+ *
+ * GMS-compatible API:
+ *   physics_fixture_create / physics_fixture_set_* / physics_fixture_bind /
+ *   physics_fixture_delete / physics_body_apply_force /
+ *   physics_body_apply_impulse / physics_body_set_velocity /
+ *   physics_body_get_* / physics_body_set_*
+ */
+
+/**
+ * Creates a new fixture definition and returns its ID.
+ * Configure the fixture with physics_fixture_set_* before binding it.
+ * @returns Fixture ID
+ */
+declare function physics_fixture_create(): number;
+/**
+ * Sets the fixture shape to a box.
+ * @param fixture_id - Fixture ID
+ * @param w - Width in pixels
+ * @param h - Height in pixels
+ */
+declare function physics_fixture_set_box(fixture_id: number, w: number, h: number): void;
+/**
+ * Sets the fixture shape to a circle.
+ * @param fixture_id - Fixture ID
+ * @param radius - Radius in pixels
+ */
+declare function physics_fixture_set_circle(fixture_id: number, radius: number): void;
+/**
+ * Sets the fixture shape to a convex polygon.
+ * @param fixture_id - Fixture ID
+ * @param verts - Array of {x, y} vertices in pixel space
+ */
+declare function physics_fixture_set_polygon(fixture_id: number, verts: {
+    x: number;
+    y: number;
+}[]): void;
+/**
+ * Sets the density of a fixture (affects mass).
+ * @param fixture_id - Fixture ID
+ * @param density - Density value (default 0.001)
+ */
+declare function physics_fixture_set_density(fixture_id: number, density: number): void;
+/**
+ * Sets the restitution (bounciness) of a fixture.
+ * @param fixture_id - Fixture ID
+ * @param restitution - Value 0 (no bounce) to 1 (full bounce)
+ */
+declare function physics_fixture_set_restitution(fixture_id: number, restitution: number): void;
+/**
+ * Sets the friction of a fixture.
+ * @param fixture_id - Fixture ID
+ * @param friction - Friction coefficient (0 = frictionless, 1 = high friction)
+ */
+declare function physics_fixture_set_friction(fixture_id: number, friction: number): void;
+/**
+ * Sets whether a fixture is a sensor (detects overlaps without physical response).
+ * @param fixture_id - Fixture ID
+ * @param is_sensor - True for sensor, false for solid
+ */
+declare function physics_fixture_set_sensor(fixture_id: number, is_sensor: boolean): void;
+/**
+ * Creates a physics body from a fixture at the given position.
+ * @param fixture_id - Fixture ID to use as the body's shape
+ * @param x - Initial X position in room pixels
+ * @param y - Initial Y position in room pixels
+ * @param is_static - True for static (immovable) body
+ * @returns Body ID, or -1 if the world is not created
+ */
+declare function physics_fixture_bind(fixture_id: number, x: number, y: number, is_static?: boolean): number;
+/**
+ * Frees a fixture definition. Bodies already created from it are unaffected.
+ * @param fixture_id - Fixture ID
+ */
+declare function physics_fixture_delete(fixture_id: number): void;
+/**
+ * Destroys a physics body and removes it from the world.
+ * @param body_id - Body ID returned by physics_fixture_bind
+ */
+declare function physics_body_destroy(body_id: number): void;
+/**
+ * Applies a continuous force to a body at its centre.
+ * @param body_id - Body ID
+ * @param fx - Force X (pixel-space units)
+ * @param fy - Force Y (pixel-space units)
+ */
+declare function physics_body_apply_force(body_id: number, fx: number, fy: number): void;
+/**
+ * Applies an impulse (instant velocity change) at the body's centre.
+ * @param body_id - Body ID
+ * @param ix - Impulse X
+ * @param iy - Impulse Y
+ */
+declare function physics_body_apply_impulse(body_id: number, ix: number, iy: number): void;
+/**
+ * Sets the velocity of a body directly.
+ * @param body_id - Body ID
+ * @param vx - Velocity X in pixels/step
+ * @param vy - Velocity Y in pixels/step
+ */
+declare function physics_body_set_velocity(body_id: number, vx: number, vy: number): void;
+/**
+ * Sets the position of a body directly (teleports without velocity change).
+ * @param body_id - Body ID
+ * @param x - New X in room pixels
+ * @param y - New Y in room pixels
+ */
+declare function physics_body_set_position(body_id: number, x: number, y: number): void;
+/**
+ * Sets the angular velocity of a body.
+ * @param body_id - Body ID
+ * @param omega - Angular velocity in radians/step
+ */
+declare function physics_body_set_angular_velocity(body_id: number, omega: number): void;
+/** Returns the X position of a body in room pixels. */
+declare function physics_body_get_x(body_id: number): number;
+/** Returns the Y position of a body in room pixels. */
+declare function physics_body_get_y(body_id: number): number;
+/** Returns the rotation angle of a body in degrees. */
+declare function physics_body_get_angle(body_id: number): number;
+/** Returns the X velocity of a body. */
+declare function physics_body_get_vx(body_id: number): number;
+/** Returns the Y velocity of a body. */
+declare function physics_body_get_vy(body_id: number): number;
+/** Returns the angular velocity of a body in radians/step. */
+declare function physics_body_get_angular_velocity(body_id: number): number;
+/**
+ * Makes a body static (immovable) or dynamic.
+ * @param body_id - Body ID
+ * @param is_static - True to make static
+ */
+declare function physics_body_set_static(body_id: number, is_static: boolean): void;
+/** Returns true if the body ID refers to a live body. */
+declare function physics_body_exists(body_id: number): boolean;
+/**
+ * Returns the raw matter.js Body for advanced use.
+ * @param body_id - Body ID
+ */
+declare function physics_body_get_raw(body_id: number): any | undefined;
+//# sourceMappingURL=physics_body.d.ts.map
+/**
+ * Physics joints \u2014 wraps matter.js Constraint.
+ *
+ * Supports:
+ *   - Distance joint: fixed separation between two points
+ *   - Revolute joint: bodies rotate around a shared pivot
+ *   - Weld joint: bodies locked together (zero stiffness distance constraint)
+ *
+ * All positions are in room pixel space.
+ */
+
+/**
+ * Creates a distance joint between two bodies.
+ * The joint maintains (approximately) the distance between the two anchor points.
+ * @param body_a_id - First body ID
+ * @param body_b_id - Second body ID
+ * @param ax - Anchor X on body A in body-local pixels (0 = centre)
+ * @param ay - Anchor Y on body A
+ * @param bx - Anchor X on body B
+ * @param by - Anchor Y on body B
+ * @param stiffness - Spring stiffness (0\u20131; 1 = rigid, <1 = springy)
+ * @param damping - Damping ratio (0 = no damping)
+ * @returns Joint ID, or -1 on failure
+ */
+declare function physics_joint_distance_create(body_a_id: number, body_b_id: number, ax: number, ay: number, bx: number, by: number, stiffness?: number, damping?: number): number;
+/**
+ * Creates a revolute (pin) joint \u2014 bodies rotate freely around a shared world-space pivot.
+ * Implemented as a stiff zero-length distance constraint anchored at the same world point.
+ * @param body_a_id - First body ID
+ * @param body_b_id - Second body ID
+ * @param pivot_x - Pivot X in room pixels
+ * @param pivot_y - Pivot Y in room pixels
+ * @returns Joint ID, or -1 on failure
+ */
+declare function physics_joint_revolute_create(body_a_id: number, body_b_id: number, pivot_x: number, pivot_y: number): number;
+/**
+ * Creates a weld joint \u2014 two bodies move as one rigid unit.
+ * Implemented as a stiff zero-length distance constraint at their current relative offset.
+ * @param body_a_id - First body ID
+ * @param body_b_id - Second body ID
+ * @returns Joint ID, or -1 on failure
+ */
+declare function physics_joint_weld_create(body_a_id: number, body_b_id: number): number;
+/**
+ * Creates a spring joint with a rest length and spring stiffness.
+ * @param body_a_id - First body ID
+ * @param body_b_id - Second body ID
+ * @param ax - Anchor X on body A (local pixels)
+ * @param ay - Anchor Y on body A
+ * @param bx - Anchor X on body B
+ * @param by - Anchor Y on body B
+ * @param rest_length - Natural length of the spring in pixels
+ * @param stiffness - Spring stiffness (0\u20131)
+ * @param damping - Damping (0 = undamped)
+ * @returns Joint ID, or -1 on failure
+ */
+declare function physics_joint_spring_create(body_a_id: number, body_b_id: number, ax: number, ay: number, bx: number, by: number, rest_length: number, stiffness?: number, damping?: number): number;
+/**
+ * Destroys a joint and removes it from the world.
+ * @param joint_id - Joint ID returned by physics_joint_*_create
+ */
+declare function physics_joint_destroy(joint_id: number): void;
+/** Returns true if a joint ID refers to a live joint. */
+declare function physics_joint_exists(joint_id: number): boolean;
+/**
+ * Returns the raw matter.js Constraint for advanced use.
+ * @param joint_id - Joint ID
+ */
+declare function physics_joint_get_raw(joint_id: number): any | undefined;
+//# sourceMappingURL=physics_joint.d.ts.map
+/**
+ * Physics world \u2014 wraps a matter.js Engine and World.
+ *
+ * One physics world exists per game. Call physics_world_create() once,
+ * then physics_world_step() each game step to advance the simulation.
+ *
+ * Gravity matches GMS defaults: (0, 0.1) in room-pixel units per step.
+ * The scale factor (physics_world_create's pixel-per-meter) converts
+ * between pixel space (instances) and matter.js metre space.
+ */
+
+type collision_cb = (body_a: any, body_b: any) => void;
+/**
+ * Creates (or recreates) the physics world.
+ * Must be called before any physics_body or physics_fixture functions.
+ * @param gx - Gravity X in room units per step (default 0)
+ * @param gy - Gravity Y in room units per step (default 0.1)
+ * @param px_per_metre - Pixel-to-metre scale (default 64)
+ */
+declare function physics_world_create(gx?: number, gy?: number, px_per_metre?: number): void;
+/**
+ * Advances the physics simulation by one step.
+ * Call this once per game step (before reading body positions).
+ * @param delta_ms - Step duration in milliseconds (default 1000/60 \u2248 16.67)
+ */
+declare function physics_world_step(delta_ms?: number): void;
+/**
+ * Sets the world gravity vector.
+ * @param gx - Gravity X (room units per step)
+ * @param gy - Gravity Y (room units per step)
+ */
+declare function physics_world_gravity(gx: number, gy: number): void;
+/**
+ * Destroys the physics world and frees all resources.
+ */
+declare function physics_world_destroy(): void;
+/**
+ * Registers a callback fired when two physics bodies begin colliding.
+ * @param cb - Callback receiving the two colliding bodies
+ */
+declare function physics_world_on_collision_start(cb: collision_cb): void;
+/**
+ * Registers a callback fired when two physics bodies stop colliding.
+ * @param cb - Callback receiving the two separated bodies
+ */
+declare function physics_world_on_collision_end(cb: collision_cb): void;
+/**
+ * Returns the raw matter.js Engine for advanced use.
+ * Returns null if the world has not been created yet.
+ */
+declare function physics_world_get_engine(): any | null;
+/**
+ * Returns the pixel-per-metre scale factor set at world creation.
+ */
+declare function physics_get_scale(): number;
+/**
+ * Returns the raw matter.js World, or null if not created.
+ * Used internally by physics_body.ts.
+ */
+declare function _get_world(): any | null;
+/**
+ * Returns the raw matter.js Engine, or null if not created.
+ * Used internally by physics_body.ts.
+ */
+declare function _get_engine(): any | null;
+
+//# sourceMappingURL=physics_world.d.ts.map
+/**
+ * Virtual file system backed by IndexedDB.
+ *
+ * Mirrors the GMS text-file API: file_text_open_read, file_text_open_write,
+ * file_text_open_append, file_text_close, file_text_read_string,
+ * file_text_write_string, file_text_writeln, file_text_eof,
+ * file_text_readln, file_exists, file_delete.
+ *
+ * All I/O is asynchronous (Promise-based), unlike GMS which is synchronous.
+ * The file handle returned is a numeric ID, consistent with GMS.
+ *
+ * Storage layout: IndexedDB database "silkweaver_fs", object store "files",
+ * keyed by filename (string).
+ */
+/**
+ * Opens a file for reading. Returns a handle ID.
+ * The file must exist; use file_exists() to check first.
+ * @param filename - Filename (used as the key in IndexedDB)
+ * @returns Promise resolving to a file handle number, or -1 if not found
+ */
+declare function file_text_open_read(filename: string): Promise<number>;
+/**
+ * Opens a file for writing (creates or overwrites).
+ * @param filename - Filename
+ * @returns Promise resolving to a file handle number
+ */
+declare function file_text_open_write(filename: string): Promise<number>;
+/**
+ * Opens a file for appending. Existing content is preserved.
+ * @param filename - Filename
+ * @returns Promise resolving to a file handle number
+ */
+declare function file_text_open_append(filename: string): Promise<number>;
+/**
+ * Closes a file handle, flushing writes to IndexedDB.
+ * @param handle - File handle returned by file_text_open_*
+ */
+declare function file_text_close(handle: number): Promise<void>;
+/**
+ * Reads the next line from a read-mode file.
+ * Returns an empty string if at end of file.
+ * @param handle - File handle
+ */
+declare function file_text_readln(handle: number): string;
+/**
+ * Reads a single string token (up to whitespace) from a read-mode file.
+ * @param handle - File handle
+ */
+declare function file_text_read_string(handle: number): string;
+/**
+ * Returns true if the read cursor is at the end of the file.
+ * @param handle - File handle
+ */
+declare function file_text_eof(handle: number): boolean;
+/**
+ * Writes a string to a write/append mode file.
+ * @param handle - File handle
+ * @param str - String to write
+ */
+declare function file_text_write_string(handle: number, str: string): void;
+/**
+ * Writes a newline character to a write/append mode file.
+ * @param handle - File handle
+ */
+declare function file_text_writeln(handle: number): void;
+/**
+ * Returns true if a file exists in the virtual file system.
+ * @param filename - Filename to check
+ */
+declare function file_exists(filename: string): Promise<boolean>;
+/**
+ * Deletes a file from the virtual file system.
+ * @param filename - Filename to delete
+ */
+declare function file_delete(filename: string): Promise<void>;
+//# sourceMappingURL=file_system.d.ts.map
+/**
+ * INI-style storage backed by localStorage.
+ *
+ * Mirrors GMS's ini_open / ini_close / ini_read_* / ini_write_* API.
+ * Data is stored under the localStorage key \`silkweaver_ini_<filename>\`.
+ *
+ * Format in localStorage is JSON: { [section]: { [key]: string } }
+ *
+ * Only one INI file is "open" at a time (GMS convention).
+ * All reads/writes operate on the currently open file.
+ */
+/**
+ * Opens (or creates) an INI file for reading and writing.
+ * If a file is already open it is saved and closed first.
+ * @param filename - Logical file name (used as localStorage key suffix)
+ */
+declare function ini_open(filename: string): void;
+/**
+ * Saves the current INI file to localStorage and closes it.
+ * Must be called after all reads/writes to persist changes.
+ */
+declare function ini_close(): void;
+/**
+ * Reads a string value.
+ * @param section - INI section name
+ * @param key - Key within the section
+ * @param default_val - Returned if the key is absent
+ */
+declare function ini_read_string(section: string, key: string, default_val: string): string;
+/**
+ * Reads a numeric value. Non-numeric stored values fall back to the default.
+ * @param section - INI section name
+ * @param key - Key within the section
+ * @param default_val - Returned if the key is absent or not a valid number
+ */
+declare function ini_read_real(section: string, key: string, default_val: number): number;
+/**
+ * Writes a string value.
+ * @param section - INI section name
+ * @param key - Key within the section
+ * @param val - Value to store
+ */
+declare function ini_write_string(section: string, key: string, val: string): void;
+/**
+ * Writes a numeric value (stored as its string representation).
+ * @param section - INI section name
+ * @param key - Key within the section
+ * @param val - Value to store
+ */
+declare function ini_write_real(section: string, key: string, val: number): void;
+/**
+ * Returns true if a section/key pair exists in the open file.
+ * @param section - Section name
+ * @param key - Key name
+ */
+declare function ini_key_exists(section: string, key: string): boolean;
+/**
+ * Returns true if a section exists in the open file.
+ * @param section - Section name
+ */
+declare function ini_section_exists(section: string): boolean;
+/**
+ * Deletes a key from a section.
+ * @param section - Section name
+ * @param key - Key to delete
+ */
+declare function ini_key_delete(section: string, key: string): void;
+/**
+ * Deletes an entire section and all its keys.
+ * @param section - Section to delete
+ */
+declare function ini_section_delete(section: string): void;
+/**
+ * Deletes the INI file from localStorage entirely.
+ * @param filename - The file to delete
+ */
+declare function ini_delete(filename: string): void;
+//# sourceMappingURL=ini.d.ts.map
+/**
+ * JSON encoding/decoding utilities.
+ *
+ * Mirrors GMS's json_encode / json_decode API with additional helpers
+ * for deep cloning and safe parsing.
+ *
+ * Unlike GMS, these functions operate on native JS values (objects, arrays)
+ * rather than on ds_map/ds_list IDs.
+ */
+/**
+ * Encodes a JavaScript value to a JSON string.
+ * Equivalent to GMS's json_encode (which accepts a ds_map).
+ * @param val - Any JSON-serialisable value
+ * @returns JSON string, or an empty string on error
+ */
+declare function json_encode(val: unknown): string;
+/**
+ * Decodes a JSON string into a JavaScript value.
+ * Returns undefined if the string is not valid JSON.
+ * @param str - JSON string
+ * @returns Parsed value, or undefined on parse error
+ */
+declare function json_decode(str: string): unknown;
+/**
+ * Encodes a value to a pretty-printed JSON string (human-readable).
+ * @param val - Any JSON-serialisable value
+ * @param indent - Number of spaces for indentation (default 2)
+ */
+declare function json_stringify_pretty(val: unknown, indent?: number): string;
+/**
+ * Deep clones a JSON-serialisable value via encode/decode round-trip.
+ * Functions and undefined values in the object will be lost.
+ * @param val - Value to clone
+ * @returns A deep copy of val, or undefined if not serialisable
+ */
+declare function json_deep_clone<T>(val: T): T | undefined;
+/**
+ * Returns true if a string is valid JSON.
+ * @param str - String to test
+ */
+declare function json_is_valid(str: string): boolean;
+/**
+ * Saves a serialisable value to localStorage under a given key.
+ * @param key - localStorage key
+ * @param val - Value to save
+ */
+declare function json_save(key: string, val: unknown): void;
+/**
+ * Loads a value from localStorage and decodes it from JSON.
+ * Returns the default value if the key is missing or invalid.
+ * @param key - localStorage key
+ * @param default_val - Returned if the key is absent or invalid
+ */
+declare function json_load<T>(key: string, default_val: T): T;
+/**
+ * Deletes a JSON entry from localStorage.
+ * @param key - localStorage key to delete
+ */
+declare function json_delete(key: string): void;
+//# sourceMappingURL=json_storage.d.ts.map
+`;
+
 // packages/ide/src/editors/script_editor.ts
 var MONACO_VERSION = "0.52.2";
 var MONACO_CDN = `https://cdn.jsdelivr.net/npm/monaco-editor@${MONACO_VERSION}/min/vs`;
@@ -1761,226 +7364,10 @@ function _load_monaco() {
   });
   return _monaco_ready;
 }
-var SW_TYPES = `
-// \u2500\u2500 Context \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-declare var this: gm_object;
-
-declare const enum EVENT_TYPE {
-    CREATE = 'create', DESTROY = 'destroy',
-    STEP = 'step', STEP_BEGIN = 'step_begin', STEP_END = 'step_end',
-    DRAW = 'draw', DRAW_GUI = 'draw_gui',
-    ALARM = 'alarm', COLLISION = 'collision',
-    KEY_DOWN = 'key_down', KEY_UP = 'key_up',
-    MOUSE_DOWN = 'mouse_down', MOUSE_UP = 'mouse_up', MOUSE_MOVE = 'mouse_move',
-}
-
-declare class gm_object {
-    x: number; y: number; z: number;
-    speed: number; direction: number;
-    hspeed: number; vspeed: number;
-    sprite_index: number; image_index: number; image_speed: number;
-    image_xscale: number; image_yscale: number; image_angle: number;
-    image_alpha: number; image_blend: number;
-    visible: boolean; solid: boolean; persistent: boolean; depth: number;
-    id: number; object_index: string;
-    bbox_left: number; bbox_right: number; bbox_top: number; bbox_bottom: number;
-    mask_index: number;
-    gravity: number; gravity_direction: number; friction: number;
-    xprevious: number; yprevious: number;
-    move_direction: number;  // Custom property example
-    [key: string]: any;  // Allow any custom properties
-
-    // Lifecycle methods
-    create(): void;
-    destroy(): void;
-    step(): void;
-    step_begin(): void;
-    step_end(): void;
-    draw(): void;
-    draw_gui(): void;
-
-    // Instance methods
-    place_meeting(x: number, y: number, obj: any): boolean;
-    place_free(x: number, y: number): boolean;
-    instance_place(x: number, y: number, obj: any): any;
-    instance_destroy(): void;
-    draw_self(): void;
-
-    // Event registration
-    on(event: EVENT_TYPE, callback: () => void): void;
-    timer_create(name: string, steps: number, repeat: boolean, callback: () => void): void;
-    timer_destroy(name: string): void;
-    timer_exists(name: string): boolean;
-}
-
-// \u2500\u2500 Drawing \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-declare function draw_sprite(sprite: string, subimg: number, x: number, y: number): void;
-declare function draw_sprite_ext(sprite: string, subimg: number, x: number, y: number, xscale: number, yscale: number, rot: number, blend: number, alpha: number): void;
-declare function draw_text(x: number, y: number, str: string): void;
-declare function draw_text_color(x: number, y: number, str: string, c1: number, c2: number, c3: number, c4: number, alpha: number): void;
-declare function draw_rectangle(x1: number, y1: number, x2: number, y2: number, outline: boolean): void;
-declare function draw_circle(x: number, y: number, r: number, outline: boolean): void;
-declare function draw_ellipse(x1: number, y1: number, x2: number, y2: number, outline: boolean): void;
-declare function draw_line(x1: number, y1: number, x2: number, y2: number): void;
-declare function draw_line_width(x1: number, y1: number, x2: number, y2: number, w: number): void;
-declare function draw_set_color(col: number): void;
-declare function draw_set_alpha(alpha: number): void;
-declare function draw_set_font(font: string): void;
-declare function draw_set_halign(align: number): void;
-declare function draw_set_valign(align: number): void;
-declare const fa_left: number; declare const fa_center: number; declare const fa_right: number;
-declare const fa_top: number; declare const fa_middle: number; declare const fa_bottom: number;
-declare const c_white: number; declare const c_black: number; declare const c_red: number;
-declare const c_green: number; declare const c_blue: number; declare const c_yellow: number;
-declare const c_orange: number; declare const c_purple: number; declare const c_aqua: number;
-declare const c_gray: number; declare const c_silver: number; declare const c_ltgray: number;
-declare const c_dkgray: number; declare const c_lime: number; declare const c_maroon: number;
-declare const c_navy: number; declare const c_olive: number; declare const c_teal: number;
-declare const c_fuchsia: number;
-declare function make_color_rgb(r: number, g: number, b: number): number;
-declare function color_get_red(col: number): number;
-declare function color_get_green(col: number): number;
-declare function color_get_blue(col: number): number;
-
-// \u2500\u2500 Instances \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-declare class instance {
-    static instance_create(x: number, y: number, obj: any): any;
-    static instance_nearest(x: number, y: number, obj: any): any;
-    static instance_destroy_id(id: number): void;
-    instance_destroy(): void;
-    place_meeting(x: number, y: number, obj: any): boolean;
-    place_free(x: number, y: number): boolean;
-    instance_place(x: number, y: number, obj: any): any;
-}
-declare function instance_create(x: number, y: number, obj: any): number;
-declare function instance_destroy(id?: number): void;
-declare function instance_exists(id: number): boolean;
-declare function instance_number(obj: any): number;
-declare function instance_find(obj: any, n: number): number;
-declare function instance_nearest(x: number, y: number, obj: any): any;
-declare function with_object(obj: any, fn: (inst: gm_object) => void): void;
-declare function place_meeting(x: number, y: number, obj: any): boolean;
-declare function place_free(x: number, y: number): boolean;
-declare function move_contact(dir: number, maxdist: number, solid: boolean): void;
-declare function move_towards_point(x: number, y: number, sp: number): void;
-
-// \u2500\u2500 Input \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-declare function keyboard_check(key: number): boolean;
-declare function keyboard_check_pressed(key: number): boolean;
-declare function keyboard_check_released(key: number): boolean;
-declare const vk_left: number; declare const vk_right: number;
-declare const vk_up: number; declare const vk_down: number;
-declare const vk_space: number; declare const vk_enter: number;
-declare const vk_escape: number; declare const vk_shift: number;
-declare const vk_control: number; declare const vk_alt: number;
-declare function mouse_check_button(btn: number): boolean;
-declare function mouse_check_button_pressed(btn: number): boolean;
-declare function mouse_check_button_released(btn: number): boolean;
-declare const mouse_x: number; declare const mouse_y: number;
-declare const mb_left: number; declare const mb_right: number; declare const mb_middle: number;
-
-// \u2500\u2500 Audio \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-declare function audio_play_sound(snd: string, priority: number, loop: boolean): number;
-declare function audio_stop_sound(id: number): void;
-declare function audio_pause_sound(id: number): void;
-declare function audio_resume_sound(id: number): void;
-declare function audio_is_playing(id: number): boolean;
-declare function audio_set_master_gain(gain: number): void;
-declare function audio_sound_gain(id: number, gain: number, ms: number): void;
-
-// \u2500\u2500 Rooms \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-declare function room_goto(name: string): void;
-declare function room_goto_next(): void;
-declare function room_goto_previous(): void;
-declare function room_get_name(): string;
-declare function room_get_width(): number;
-declare function room_get_height(): number;
-declare function room_get_speed(): number;
-
-// \u2500\u2500 Math \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-declare function random(n: number): number;
-declare function irandom(n: number): number;
-declare function random_range(lo: number, hi: number): number;
-declare function irandom_range(lo: number, hi: number): number;
-declare function choose(...args: number[]): number;
-declare function abs(x: number): number; declare function sign(x: number): number;
-declare function floor(x: number): number; declare function ceil(x: number): number;
-declare function round(x: number): number; declare function frac(x: number): number;
-declare function sqr(x: number): number; declare function sqrt(x: number): number;
-declare function power(x: number, n: number): number;
-declare function log2(x: number): number; declare function log10(x: number): number;
-declare function logn(base: number, x: number): number;
-declare function lerp(a: number, b: number, t: number): number;
-declare function clamp(val: number, lo: number, hi: number): number;
-declare function min(...args: number[]): number; declare function max(...args: number[]): number;
-declare function mean(...args: number[]): number; declare function median(...args: number[]): number;
-declare function lengthdir_x(len: number, dir: number): number;
-declare function lengthdir_y(len: number, dir: number): number;
-declare function point_distance(x1: number, y1: number, x2: number, y2: number): number;
-declare function point_direction(x1: number, y1: number, x2: number, y2: number): number;
-declare function angle_difference(a: number, b: number): number;
-declare function dsin(deg: number): number; declare function dcos(deg: number): number;
-declare function arctan2(y: number, x: number): number;
-
-// \u2500\u2500 Strings \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-declare function string(val: any): string;
-declare function real(str: string): number;
-declare function string_length(s: string): number;
-declare function string_copy(s: string, index: number, count: number): string;
-declare function string_pos(sub: string, s: string): number;
-declare function string_lower(s: string): string; declare function string_upper(s: string): string;
-declare function string_replace(s: string, sub: string, rep: string): string;
-declare function string_replace_all(s: string, sub: string, rep: string): string;
-declare function string_count(sub: string, s: string): number;
-declare function string_delete(s: string, index: number, count: number): string;
-declare function string_insert(sub: string, s: string, index: number): string;
-declare function string_letters(s: string): string; declare function string_digits(s: string): string;
-declare function chr(n: number): string; declare function ord(c: string): number;
-
-// \u2500\u2500 Data structures \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-declare function ds_list_create(): number;
-declare function ds_list_destroy(id: number): void;
-declare function ds_list_add(id: number, val: any): void;
-declare function ds_list_delete(id: number, pos: number): void;
-declare function ds_list_find_value(id: number, pos: number): any;
-declare function ds_list_find_index(id: number, val: any): number;
-declare function ds_list_size(id: number): number;
-declare function ds_list_clear(id: number): void;
-declare function ds_map_create(): number;
-declare function ds_map_destroy(id: number): void;
-declare function ds_map_add(id: number, key: any, val: any): void;
-declare function ds_map_set(id: number, key: any, val: any): void;
-declare function ds_map_delete(id: number, key: any): void;
-declare function ds_map_find_value(id: number, key: any): any;
-declare function ds_map_exists(id: number, key: any): boolean;
-declare function ds_map_size(id: number): number;
-
-// \u2500\u2500 Physics \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-declare function physics_world_create(grav_x: number, grav_y: number): void;
-declare function physics_fixture_create(): number;
-declare function physics_fixture_set_box_shape(fix: number, hw: number, hh: number): void;
-declare function physics_fixture_set_circle_shape(fix: number, r: number): void;
-declare function physics_fixture_set_density(fix: number, density: number): void;
-declare function physics_fixture_set_restitution(fix: number, res: number): void;
-declare function physics_fixture_set_friction(fix: number, fric: number): void;
-declare function physics_fixture_bind(fix: number, inst: number): void;
-declare function physics_fixture_delete(fix: number): void;
-declare function physics_body_apply_force(inst: number, fx: number, fy: number, px: number, py: number): void;
-declare function physics_body_apply_impulse(inst: number, ix: number, iy: number, px: number, py: number): void;
-
-// \u2500\u2500 Global \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-declare const global: Record<string, any>;
-declare function show_debug_message(msg: any): void;
-declare function show_error(msg: string, abort: boolean): void;
-declare function game_end(): void;
-declare function game_get_fps(): number;
-declare const delta_time: number;
-declare const current_time: number;
-`;
 function _setup_monaco(monaco) {
   monaco.languages.typescript.typescriptDefaults.addExtraLib(
-    SW_TYPES,
-    "ts:silkweaver/types.d.ts"
+    ENGINE_DTS,
+    "ts:silkweaver/engine.d.ts"
   );
   monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
     target: monaco.languages.typescript.ScriptTarget.ES2020,
@@ -2481,7 +7868,7 @@ var PixelEditor = class {
   }
   _pick_color(px, py) {
     const imageData = this._ctx.getImageData(px, py, 1, 1);
-    const [r, g, b] = imageData.data;
+    const [r = 0, g = 0, b = 0] = imageData.data;
     this._color = `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
     this._color_input.value = this._color;
     this._color_preview.style.background = this._color;
@@ -3374,6 +8761,7 @@ function object_editor_open(workspace, object_name) {
 var _next_offset2 = 0;
 var object_editor_window = class {
   constructor(workspace, object_name) {
+    this._vars_list_el = document.createElement("div");
     this._on_closed_cb = null;
     this._object_name = object_name;
     const off = _next_offset2++ % 8 * 24;
@@ -3395,7 +8783,8 @@ var object_editor_window = class {
       phys_density: 1,
       phys_restitution: 0.1,
       phys_friction: 0.5,
-      events: []
+      events: [],
+      variables: []
     };
     this._event_list_el = document.createElement("div");
     this._build_ui();
@@ -3501,6 +8890,7 @@ var object_editor_window = class {
       this._data.depth = v;
       this._save();
     }));
+    el.appendChild(this._build_variables_section());
     el.appendChild(_section_header("Physics"));
     const phys_toggle = _checkbox_row("Enable Physics", this._data.physics, (v) => {
       this._data.physics = v;
@@ -3527,6 +8917,66 @@ var object_editor_window = class {
     );
     el.appendChild(phys_props);
     return el;
+  }
+  _build_variables_section() {
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "display:flex; flex-direction:column; gap:4px;";
+    wrap.appendChild(_section_header("Variables"));
+    this._vars_list_el.style.cssText = "display:flex; flex-direction:column; gap:4px;";
+    wrap.appendChild(this._vars_list_el);
+    const add = document.createElement("button");
+    add.textContent = "+ Add Variable";
+    add.style.cssText = "font-size:11px; align-self:flex-start; cursor:pointer; padding:2px 8px;";
+    add.addEventListener("click", () => {
+      this._data.variables.push({ name: "", value: "0" });
+      this._render_variables();
+      this._save();
+    });
+    wrap.appendChild(add);
+    this._render_variables();
+    return wrap;
+  }
+  /** Renders the variable definition rows (name = default value, with delete). */
+  _render_variables() {
+    this._vars_list_el.innerHTML = "";
+    this._data.variables.forEach((v, idx) => {
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex; align-items:center; gap:4px;";
+      const name = document.createElement("input");
+      name.className = "sw-input";
+      name.placeholder = "name";
+      name.value = v.name;
+      name.style.cssText = "width:90px; font-size:11px;";
+      name.addEventListener("change", () => {
+        const clean = name.value.trim().replace(/[^A-Za-z0-9_]/g, "");
+        v.name = /^[A-Za-z_]/.test(clean) ? clean : "";
+        name.value = v.name;
+        this._save();
+      });
+      const eq = document.createElement("span");
+      eq.textContent = "=";
+      eq.style.cssText = "color:var(--sw-text-dim);";
+      const val = document.createElement("input");
+      val.className = "sw-input";
+      val.placeholder = "0";
+      val.value = v.value;
+      val.style.cssText = "flex:1; font-size:11px;";
+      val.addEventListener("change", () => {
+        v.value = val.value;
+        this._save();
+      });
+      const del = document.createElement("button");
+      del.textContent = "\xD7";
+      del.title = "Delete variable";
+      del.style.cssText = "cursor:pointer; padding:0 6px;";
+      del.addEventListener("click", () => {
+        this._data.variables.splice(idx, 1);
+        this._render_variables();
+        this._save();
+      });
+      row.append(name, eq, val, del);
+      this._vars_list_el.appendChild(row);
+    });
   }
   _build_events_panel() {
     const el = document.createElement("div");
@@ -3654,6 +9104,7 @@ var object_editor_window = class {
     } catch {
     }
     this._rebuild_event_list();
+    this._render_variables();
   }
   _save() {
     project_write_file(
@@ -5223,11 +10674,11 @@ var font_editor_window = class {
       const row = document.createElement("div");
       row.className = "sw-font-range-row";
       const from_inp = this._small_number_input(range.from, 0, 65535, (v) => {
-        this._data.ranges[idx].from = v;
+        range.from = v;
         this._save();
       });
       const to_inp = this._small_number_input(range.to, 0, 65535, (v) => {
-        this._data.ranges[idx].to = v;
+        range.to = v;
         this._save();
       });
       const sep = document.createElement("span");
@@ -5630,8 +11081,9 @@ var path_editor_window = class {
     }
     if (this._drag_idx >= 0) {
       const w = this._canvas_to_world(e.offsetX, e.offsetY);
-      this._data.points[this._drag_idx].x = Math.round(w.x / GRID2) * GRID2;
-      this._data.points[this._drag_idx].y = Math.round(w.y / GRID2) * GRID2;
+      const pt = this._data.points[this._drag_idx];
+      pt.x = Math.round(w.x / GRID2) * GRID2;
+      pt.y = Math.round(w.y / GRID2) * GRID2;
       this._draw();
     }
   }
@@ -5822,7 +11274,7 @@ var timeline_editor_window = class {
       name_inp.value = m.name;
       name_inp.placeholder = "label\u2026";
       name_inp.addEventListener("change", () => {
-        this._data.moments[data_idx].name = name_inp.value;
+        m.name = name_inp.value;
         this._save();
       });
       name_inp.addEventListener("click", (e) => e.stopPropagation());
@@ -5835,7 +11287,7 @@ var timeline_editor_window = class {
       step_inp.addEventListener("change", () => {
         const v = parseInt(step_inp.value);
         if (!isNaN(v) && v >= 0) {
-          this._data.moments[data_idx].step = v;
+          m.step = v;
           this._render_list();
           this._save();
         }
@@ -5870,6 +11322,10 @@ var timeline_editor_window = class {
       return;
     }
     const moment = this._data.moments[this._sel_idx];
+    if (!moment) {
+      alert("Select a moment first.");
+      return;
+    }
     const rel = `timelines/${this._name}/step_${moment.step}.ts`;
     try {
       await script_editor_open_smart(this._workspace, rel, async () => {
@@ -6509,7 +11965,7 @@ function _draw_metric(ui, buf, reference, color) {
   const ch = canvas.height;
   ctx.clearRect(0, 0, cw, ch);
   if (buf.length === 0) return;
-  const cur = buf[buf.length - 1];
+  const cur = buf[buf.length - 1] ?? 0;
   const max = Math.max(...buf);
   const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
   lbl_cur.textContent = cur.toFixed(1);
@@ -6603,6 +12059,10 @@ function boot() {
     run_play: on_run_play,
     run_stop: on_run_stop,
     run_build: on_run_build,
+    run_export_html5: on_export_html5,
+    run_export_win: () => on_export_exe("win32", "x64", "Windows"),
+    run_export_mac: () => on_export_exe("darwin", "arm64", "macOS"),
+    run_export_linux: () => on_export_exe("linux", "x64", "Linux"),
     help_about: on_help_about
   });
   document.body.appendChild(menubar);
@@ -6789,7 +12249,7 @@ function on_open_resource(cat, name) {
       sprite_editor_open(_workspace, name, _project?.name ?? "");
       break;
     case "objects":
-      object_editor_open(_workspace, name);
+      _open_object(name);
       break;
     case "rooms":
       room_editor_open(_workspace, name);
@@ -6811,6 +12271,43 @@ function on_open_resource(cat, name) {
       break;
     default:
       console.log(`[IDE] Open ${cat}/${name} \u2014 editor not yet implemented`);
+  }
+}
+async function _proj_has(rel) {
+  try {
+    await project_read_file(rel);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function _open_object(name) {
+  try {
+    const class_rel = `objects/${name}.ts`;
+    const has_class = await _proj_has(class_rel);
+    if (!has_class && await _proj_has(`objects/${name}/object.json`)) {
+      object_editor_open(_workspace, name);
+      return;
+    }
+    if (!has_class) {
+      const swfs = window.swfs;
+      const source = swfs?.object_op ? await swfs.object_op("scaffold", name) : `import { gm_object } from '@silkweaver/engine'
+
+export class ${name} extends gm_object {
+    on_create(): void {
+
+    }
+}
+`;
+      await project_write_file(class_rel, source);
+    }
+    await script_editor_open_smart(_workspace, class_rel, async () => {
+      const dir = project_get_dir();
+      const objs = await dir.getDirectoryHandle("objects", { create: true });
+      return objs.getFileHandle(`${name}.ts`, { create: true });
+    });
+  } catch (err) {
+    console.error("[IDE] Failed to open object:", err);
   }
 }
 async function _open_script(name) {
@@ -6841,17 +12338,7 @@ function on_run_stop() {
   preview_stop();
   console_write("system", "[IDE] Game stopped.");
 }
-async function on_run_build() {
-  console_open(_workspace);
-  if (!_project) {
-    console_write("warn", "[IDE] No project open.");
-    return;
-  }
-  const swfs = window.swfs;
-  if (!swfs?.build_game) {
-    console_write("warn", "[IDE] Build is only available in the Electron app.");
-    return;
-  }
+async function _ensure_project_folder() {
   let folder = project_get_folder_path() ?? project_get_last_folder();
   if (folder) {
     project_set_folder(folder);
@@ -6865,11 +12352,24 @@ async function on_run_build() {
       await project_save(_project);
       _mark_saved();
     } catch {
-      console_write("warn", "[IDE] No project folder \u2014 save cancelled.");
-      return;
+      return null;
     }
     folder = project_get_folder_path();
   }
+  return folder ?? null;
+}
+async function on_run_build() {
+  console_open(_workspace);
+  if (!_project) {
+    console_write("warn", "[IDE] No project open.");
+    return;
+  }
+  const swfs = window.swfs;
+  if (!swfs?.build_game) {
+    console_write("warn", "[IDE] Build is only available in the Electron app.");
+    return;
+  }
+  const folder = await _ensure_project_folder();
   if (!folder) {
     console_write("warn", "[IDE] No project folder set.");
     return;
@@ -6881,6 +12381,67 @@ async function on_run_build() {
     preview_reload();
   } else {
     console_write("warn", `[IDE] Build failed:
+${result.error}`);
+  }
+}
+async function on_export_html5() {
+  console_open(_workspace);
+  if (!_project) {
+    console_write("warn", "[IDE] No project open.");
+    return;
+  }
+  const swfs = window.swfs;
+  if (!swfs?.export_html5) {
+    console_write("warn", "[IDE] Export is only available in the Electron app.");
+    return;
+  }
+  const folder = await _ensure_project_folder();
+  if (!folder) {
+    console_write("warn", "[IDE] No project folder set.");
+    return;
+  }
+  const out_dir = await swfs.pick_folder("save", folder);
+  if (!out_dir) {
+    console_write("warn", "[IDE] Export cancelled.");
+    return;
+  }
+  console_write("system", `[IDE] Exporting HTML5 build to ${out_dir}\u2026`);
+  const result = await swfs.export_html5(folder, out_dir);
+  if (result.ok) {
+    console_write("system", `[IDE] HTML5 export complete \u2192 ${result.out_dir ?? out_dir}`);
+  } else {
+    console_write("warn", `[IDE] Export failed:
+${result.error}`);
+  }
+}
+async function on_export_exe(platform, arch, label) {
+  console_open(_workspace);
+  if (!_project) {
+    console_write("warn", "[IDE] No project open.");
+    return;
+  }
+  const swfs = window.swfs;
+  if (!swfs?.export_exe) {
+    console_write("warn", "[IDE] Executable export is only available in the Electron app.");
+    return;
+  }
+  const folder = await _ensure_project_folder();
+  if (!folder) {
+    console_write("warn", "[IDE] No project folder set.");
+    return;
+  }
+  const out_dir = await swfs.pick_folder("save", folder);
+  if (!out_dir) {
+    console_write("warn", "[IDE] Export cancelled.");
+    return;
+  }
+  console_write("system", `[IDE] Packaging ${label} build to ${out_dir}\u2026`);
+  console_write("system", "[IDE] This can take a minute (first run downloads the Electron runtime).");
+  const result = await swfs.export_exe(folder, out_dir, platform, arch);
+  if (result.ok) {
+    console_write("system", `[IDE] ${label} export complete \u2192 ${result.out_dir ?? out_dir}`);
+  } else {
+    console_write("warn", `[IDE] ${label} export failed:
 ${result.error}`);
   }
 }

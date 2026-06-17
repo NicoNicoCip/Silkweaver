@@ -229,9 +229,9 @@ function _add_box_verts(m: model_def, x1: number, y1: number, z1: number, x2: nu
         [0,-1,0],[0,-1,0], [0,1,0],[0,1,0],
     ]
     faces.forEach((tri, fi) => {
-        const [nx, ny, nz] = normals[fi]
+        const [nx = 0, ny = 0, nz = 0] = normals[fi]!
         for (let vi = 0; vi < 9; vi += 3) {
-            m.build_verts.push(tri[vi], tri[vi+1], tri[vi+2], nx, ny, nz, 0, 0)
+            m.build_verts.push(tri[vi]!, tri[vi+1]!, tri[vi+2]!, nx, ny, nz, 0, 0)
         }
     })
 }

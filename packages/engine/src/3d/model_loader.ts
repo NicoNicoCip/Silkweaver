@@ -38,13 +38,13 @@ function _parse_obj(src: string): obj_data {
         const parts = line.split(/\s+/)
         switch (parts[0]) {
             case 'v':
-                positions.push([parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3])])
+                positions.push([parseFloat(parts[1] ?? '0'), parseFloat(parts[2] ?? '0'), parseFloat(parts[3] ?? '0')])
                 break
             case 'vn':
-                normals.push([parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3])])
+                normals.push([parseFloat(parts[1] ?? '0'), parseFloat(parts[2] ?? '0'), parseFloat(parts[3] ?? '0')])
                 break
             case 'vt':
-                uvs.push([parseFloat(parts[1]), parseFloat(parts[2] ?? '0')])
+                uvs.push([parseFloat(parts[1] ?? '0'), parseFloat(parts[2] ?? '0')])
                 break
             case 'f': {
                 // Fan-triangulate polygon face (handles quads and n-gons)
@@ -57,7 +57,7 @@ function _parse_obj(src: string): obj_data {
                     ]
                 })
                 for (let i = 1; i < verts.length - 1; i++) {
-                    faces.push(verts[0], verts[i], verts[i + 1])
+                    faces.push(verts[0]!, verts[i]!, verts[i + 1]!)
                 }
                 break
             }
@@ -87,10 +87,11 @@ export function model_load_obj(obj_src: string): number {
     }
 
     for (const face_vert of data.faces) {
-        const [pi, ui, ni] = face_vert
-        const pos = pi > 0 ? data.positions[pi - 1] : [0, 0, 0]
-        const nrm = ni > 0 ? data.normals[ni - 1]   : [0, 0, 1]
-        const uv  = ui > 0 ? data.uvs[ui - 1]        : [0, 0]
+        const [pi = 0, ui = 0, ni = 0] = face_vert
+        // Fall back to defaults for absent (idx 0) or out-of-range indices.
+        const pos = (pi > 0 ? data.positions[pi - 1] : undefined) ?? [0, 0, 0]
+        const nrm = (ni > 0 ? data.normals[ni - 1]   : undefined) ?? [0, 0, 1]
+        const uv  = (ui > 0 ? data.uvs[ui - 1]        : undefined) ?? [0, 0]
         m.build_verts.push(
             pos[0] ?? 0, pos[1] ?? 0, pos[2] ?? 0,
             nrm[0] ?? 0, nrm[1] ?? 0, nrm[2] ?? 1,

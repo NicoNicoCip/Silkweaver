@@ -176,7 +176,7 @@ export function physics_fixture_bind(fixture_id: number, x: number, y: number, i
             break
 
         case FIXTURE_SHAPE_POLYGON:
-            body = Matter.Bodies.fromVertices(x, y, f.verts, {
+            body = Matter.Bodies.fromVertices(x, y, [f.verts], {
                 density:     f.density,
                 restitution: f.restitution,
                 friction:    f.friction,

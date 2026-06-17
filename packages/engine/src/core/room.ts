@@ -1,7 +1,7 @@
-import { EVENT_TYPE } from "./game_event";
-import { game_loop } from "./game_loop";
-import type { instance } from "./instance";
-import { resource } from "./resource";
+import { EVENT_TYPE } from "./game_event.js";
+import { game_loop } from "./game_loop.js";
+import type { instance } from "./instance.js";
+import { resource } from "./resource.js";
 
 /**
  * Data structure representing a single tile in a room.

@@ -149,6 +149,10 @@ export interface menubar_actions {
     run_play:    () => void
     run_stop:    () => void
     run_build:   () => void
+    run_export_html5:  () => void
+    run_export_win:    () => void
+    run_export_mac:    () => void
+    run_export_linux:  () => void
     help_about:  () => void
 }
 
@@ -209,7 +213,12 @@ export function menubar_default(actions: menubar_actions): HTMLElement {
                 { label: 'Play',  shortcut: 'F5',       action: actions.run_play },
                 { label: 'Stop',  shortcut: 'Shift+F5', action: actions.run_stop },
                 { separator: true },
-                { label: 'Build Game…', action: actions.run_build },
+                { label: 'Build Game…',          action: actions.run_build },
+                { label: 'Export HTML5…',        action: actions.run_export_html5 },
+                { separator: true },
+                { label: 'Export Windows (.exe)…', action: actions.run_export_win },
+                { label: 'Export macOS (.app)…',   action: actions.run_export_mac },
+                { label: 'Export Linux…',          action: actions.run_export_linux },
             ],
         },
         {

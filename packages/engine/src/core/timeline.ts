@@ -35,7 +35,7 @@ const _timelines: Map<number, timeline_def> = new Map()
 let _next_timeline_id = 1
 
 function _compute_end(tl: timeline_def): number {
-    return tl.moments.length > 0 ? tl.moments[tl.moments.length - 1].step : 0
+    return tl.moments.length > 0 ? tl.moments[tl.moments.length - 1]!.step : 0
 }
 
 // =========================================================================

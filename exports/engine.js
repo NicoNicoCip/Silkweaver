@@ -1497,6 +1497,7 @@ var touch_manager = class _touch_manager {
   static _handle_start(e) {
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
+      if (!t) continue;
       const slot = this._alloc_slot(t.identifier);
       if (slot < 0) continue;
       const pos = this._to_canvas(t);
@@ -1510,6 +1511,7 @@ var touch_manager = class _touch_manager {
   static _handle_end(e) {
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
+      if (!t) continue;
       const slot = this._free_slot(t.identifier);
       if (slot < 0) continue;
       const pos = this._to_canvas(t);
@@ -1523,16 +1525,19 @@ var touch_manager = class _touch_manager {
   static _handle_move(e) {
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
+      if (!t) continue;
       const slot = this._id_to_slot.get(t.identifier) ?? -1;
       if (slot < 0) continue;
       const pos = this._to_canvas(t);
-      this._points[slot].x = pos.x;
-      this._points[slot].y = pos.y;
+      const pt = this._points[slot];
+      pt.x = pos.x;
+      pt.y = pos.y;
     }
   }
   static _handle_cancel(e) {
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
+      if (!t) continue;
       const slot = this._free_slot(t.identifier);
       if (slot < 0) continue;
       const pt = this._points[slot];
@@ -1638,6 +1643,18 @@ var game_loop = class {
   }
   static {
     // Canvas for mouse/touch attachment
+    this._pending_game_start = false;
+  }
+  static {
+    // Fire Game Start at the next update
+    this._pending_room_start = false;
+  }
+  static {
+    // Fire Room Start at the next update
+    this._stopped = false;
+  }
+  static {
+    // Set by end() to halt the loop
     // Map of update event types to their registered event handlers
     this.update_events = /* @__PURE__ */ new Map();
   }
@@ -1660,11 +1677,14 @@ var game_loop = class {
    * Starts the game loop.
    * Initializes timing values and begins the requestAnimationFrame cycle.
    */
-  static start(room3) {
-    if (room3) {
-      this.room = room3;
-      this.room_first = room3.id;
+  static start(room2) {
+    if (room2) {
+      this.room = room2;
+      this.room_first = room2.id;
     }
+    this._pending_game_start = true;
+    this._pending_room_start = true;
+    this._stopped = false;
     this.last_delta = performance.now();
     requestAnimationFrame(this.tick.bind(this));
   }
@@ -1674,6 +1694,7 @@ var game_loop = class {
    * @param current - The current timestamp provided by requestAnimationFrame
    */
   static tick(current) {
+    if (this._stopped) return;
     this.room_delta = current - this.last_delta;
     this.last_delta = current;
     this.accumulator += this.room_delta;
@@ -1695,6 +1716,14 @@ var game_loop = class {
     const createEvents = [...this.update_events.get("CREATE" /* create */) ?? []];
     this.update_events.set("CREATE" /* create */, []);
     createEvents.forEach((e) => e.run());
+    if (this._pending_game_start) {
+      this._pending_game_start = false;
+      this._dispatch_lifecycle("on_game_start");
+    }
+    if (this._pending_room_start) {
+      this._pending_room_start = false;
+      this._dispatch_lifecycle("on_room_start");
+    }
     this.update_events.get("STEP_BEGIN" /* step_begin */)?.forEach((e) => e.run());
     this.update_events.get("STEP" /* step */)?.forEach((e) => e.run());
     this.update_events.get("STEP_END" /* step_end */)?.forEach((e) => e.run());
@@ -1747,16 +1776,48 @@ var game_loop = class {
    * Transitions to a new room, clearing current events and loading the new room's state.
    * @param room - The room to transition to
    */
-  static change_room(room3) {
+  static change_room(room2) {
+    this._dispatch_lifecycle("on_room_end");
     if (this.room && this.room.room_persistent) {
     }
     this.update_events.clear();
     this.draw_events.clear();
-    this.room = room3;
-    this.room_speed = room3.room_speed;
-    room3.register_all_instances();
+    this.room = room2;
+    this.room_speed = room2.room_speed;
+    room2.register_all_instances();
+    this._pending_room_start = true;
+  }
+  /**
+   * Ends the game: fires the Game End event for all instances, then halts the loop.
+   */
+  static end() {
+    this._dispatch_lifecycle("on_game_end");
+    this._stopped = true;
+  }
+  /**
+   * Restarts the game by returning to the first room.
+   */
+  static restart() {
+    const first = resource.findByID(this.room_first);
+    if (first instanceof room) this.change_room(first);
+  }
+  /**
+   * Calls a lifecycle event method on every active instance in the current room.
+   * @param method - Name of the lifecycle method to invoke
+   */
+  static _dispatch_lifecycle(method) {
+    if (!this.room) return;
+    for (const inst of this.room.instance_get_all()) {
+      if (inst.active) inst[method]();
+    }
   }
 };
+function game_end() {
+  game_loop.end();
+}
+function game_restart() {
+  game_loop.restart();
+}
 
 // packages/engine/src/collision/collision.ts
 var MASK_RECT = 0;
@@ -1765,6 +1826,14 @@ var MASK_ELLIPSE = 2;
 function get_bbox(inst, x, y) {
   const px = x ?? inst.x;
   const py = y ?? inst.y;
+  if (inst.mask_manual) {
+    return {
+      left: px + inst.mask_off_left,
+      top: py + inst.mask_off_top,
+      right: px + inst.mask_off_right,
+      bottom: py + inst.mask_off_bottom
+    };
+  }
   const sprite2 = get_sprite_for_instance(inst);
   if (!sprite2) {
     return { left: px, top: py, right: px + 1, bottom: py + 1 };
@@ -1836,8 +1905,37 @@ function circle_in_instance(cx, cy, cr, b) {
   const dy = cy - nearest_y;
   return dx * dx + dy * dy < cr * cr;
 }
+function line_in_instance(x1, y1, x2, y2, b) {
+  if (!b.active) return false;
+  const bbox = get_bbox(b);
+  return seg_intersects_aabb(x1, y1, x2, y2, bbox.left, bbox.top, bbox.right, bbox.bottom);
+}
+function seg_intersects_aabb(x1, y1, x2, y2, left, top, right, bottom) {
+  if (x1 >= left && x1 <= right && y1 >= top && y1 <= bottom || x2 >= left && x2 <= right && y2 >= top && y2 <= bottom) return true;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  let t0 = 0, t1 = 1;
+  const clip = (p, q) => {
+    if (p === 0) return q >= 0;
+    const r = q / p;
+    if (p < 0) {
+      if (r > t1) return false;
+      if (r > t0) t0 = r;
+    } else {
+      if (r < t0) return false;
+      if (r < t1) t1 = r;
+    }
+    return true;
+  };
+  if (!clip(-dx, x1 - left)) return false;
+  if (!clip(dx, right - x1)) return false;
+  if (!clip(-dy, y1 - top)) return false;
+  if (!clip(dy, bottom - y1)) return false;
+  return t0 <= t1;
+}
 
 // packages/engine/src/core/instance.ts
+var ALARM_COUNT = 12;
 var _renderer_draw_sprite_ext = null;
 function set_draw_sprite_ext(fn) {
   _renderer_draw_sprite_ext = fn;
@@ -1847,7 +1945,7 @@ var instance = class _instance extends resource {
    * Creates a new instance in the specified room.
    * @param room - The room this instance will belong to
    */
-  constructor(room3) {
+  constructor(room2) {
     super();
     // The room this instance belongs to
     // =========================================================================
@@ -1913,6 +2011,10 @@ var instance = class _instance extends resource {
     // Whether the instance persists across rooms
     this.active = true;
     // Whether the instance participates in logic and collision
+    /** Countdown timers (GMS alarm[0..11]). -1 = inactive; set to N to fire on_alarm(i) after N steps. */
+    this.alarm = new Array(ALARM_COUNT).fill(-1);
+    /** Set once instance_destroy() runs, so the rest of the current step is skipped. */
+    this._destroyed = false;
     // Cached bounding box — updated each step before collision checks
     this.bbox_left = 0;
     // Left edge of collision bounding box
@@ -1922,6 +2024,14 @@ var instance = class _instance extends resource {
     // Right edge of collision bounding box
     this.bbox_bottom = 0;
     // Bottom edge of collision bounding box
+    // Manual collision mask (offsets from the instance origin). When mask_manual
+    // is true, the collision system uses these instead of the sprite-derived bbox
+    // — required for spriteless objects. Set via mask_set_rectangle/mask_set_size.
+    this.mask_manual = false;
+    this.mask_off_left = 0;
+    this.mask_off_top = 0;
+    this.mask_off_right = 0;
+    this.mask_off_bottom = 0;
     // Bound event handlers — stored so unregister() can match the exact same function reference
     this._bound_step_begin = () => {
     };
@@ -1933,7 +2043,7 @@ var instance = class _instance extends resource {
     };
     this._bound_draw_gui = () => {
     };
-    this.room = room3;
+    this.room = room2;
     this._bound_step_begin = this.on_step_begin.bind(this);
     this._bound_step = this.internal_step.bind(this);
     this._bound_step_end = this.on_step_end.bind(this);
@@ -1982,6 +2092,8 @@ var instance = class _instance extends resource {
    * Queues the destroy event to run at the end of the current step.
    */
   instance_destroy() {
+    if (this._destroyed) return;
+    this._destroyed = true;
     game_loop.register("DESTROY" /* destroy */, this.on_destroy.bind(this));
     this.unregister_events();
     this.room.instance_remove(this.id);
@@ -2016,12 +2128,17 @@ var instance = class _instance extends resource {
     game_loop.unregister("DRAW_GUI" /* draw_gui */, this._bound_draw_gui);
   }
   /**
-   * Internal step: physics, animation, bbox update, then calls on_step().
+   * Internal step: alarms, input events, physics, animation, bbox, collision
+   * events, then on_step(). Bails out early if an event destroys the instance.
    */
   internal_step() {
-    if (!this.active) return;
+    if (!this.active || this._destroyed) return;
     this.xprevious = this.x;
     this.yprevious = this.y;
+    this._process_alarms();
+    if (this._destroyed) return;
+    this._process_input_events();
+    if (this._destroyed) return;
     if (this.gravity !== 0) {
       const grav_rad = this.gravity_direction * (Math.PI / 180);
       this.hspeed += Math.cos(grav_rad) * this.gravity;
@@ -2043,16 +2160,79 @@ var instance = class _instance extends resource {
     }
     this.x += this.hspeed;
     this.y += this.vspeed;
-    if (this.image_speed !== 0 && this.sprite_index >= 0) {
-      const spr = resource.findByID(this.sprite_index);
-      const frame_count = spr && "frames" in spr ? spr.frames.length : 1;
-      if (frame_count > 0) {
-        this.image_index = (this.image_index + this.image_speed) % frame_count;
-        if (this.image_index < 0) this.image_index += frame_count;
+    this._advance_animation();
+    update_bbox(this);
+    this._process_collisions();
+    if (this._destroyed) return;
+    this.on_step();
+  }
+  /** Decrements active alarms; fires on_alarm(i) when one reaches zero. */
+  _process_alarms() {
+    for (let i = 0; i < ALARM_COUNT; i++) {
+      const a = this.alarm[i] ?? -1;
+      if (a > 0) {
+        const next = a - 1;
+        this.alarm[i] = next;
+        if (next === 0) {
+          this.alarm[i] = -1;
+          this.on_alarm(i);
+        }
+        if (this._destroyed) return;
       }
     }
-    update_bbox(this);
-    this.on_step();
+  }
+  /** Fires keyboard and mouse-over-instance events for this step. */
+  _process_input_events() {
+    if (keyboard_check_pressed(vk_anykey)) {
+      this.on_key_press();
+      if (this._destroyed) return;
+    }
+    if (keyboard_check_released(vk_anykey)) {
+      this.on_key_release();
+      if (this._destroyed) return;
+    }
+    if (keyboard_check(vk_anykey)) {
+      this.on_key_held();
+      if (this._destroyed) return;
+    }
+    const mx = window_mouse_get_x();
+    const my = window_mouse_get_y();
+    if (point_in_instance(mx, my, this)) {
+      if (mouse_check_button_pressed(mb_left)) {
+        this.on_mouse_left_press();
+        if (this._destroyed) return;
+      }
+      if (mouse_check_button_released(mb_left)) {
+        this.on_mouse_left_release();
+        if (this._destroyed) return;
+      }
+      if (mouse_check_button_pressed(mb_right)) {
+        this.on_mouse_right_press();
+      }
+    }
+  }
+  /** Advances the sprite animation, firing on_animation_end() on each loop. */
+  _advance_animation() {
+    if (this.image_speed === 0 || this.sprite_index < 0) return;
+    const spr = resource.findByID(this.sprite_index);
+    const frame_count = spr && "frames" in spr ? spr.frames.length : 1;
+    if (frame_count <= 0) return;
+    const prev = this.image_index;
+    this.image_index = (this.image_index + this.image_speed) % frame_count;
+    if (this.image_index < 0) this.image_index += frame_count;
+    const looped = this.image_speed > 0 ? this.image_index < prev : this.image_index > prev;
+    if (looped) this.on_animation_end();
+  }
+  /** Fires on_collision(other) for each instance this one overlaps (collision-event objects only). */
+  _process_collisions() {
+    if (this.on_collision === _instance.prototype.on_collision) return;
+    for (const other of this.room.instance_get_all()) {
+      if (other === this || !other.active) continue;
+      if (instances_collide(this, this.x, this.y, other)) {
+        this.on_collision(other);
+        if (this._destroyed) return;
+      }
+    }
   }
   /**
    * Internal draw: skips hidden instances, then calls on_draw().
@@ -2284,6 +2464,55 @@ var instance = class _instance extends resource {
     return true;
   }
   /**
+   * Like place_meeting, but returns the first instance collided with at (x, y),
+   * or undefined if none.
+   * @param x - X position to test
+   * @param y - Y position to test
+   * @param obj - Object class to check against (pass the base `instance` for "all")
+   */
+  instance_place(x, y, obj) {
+    const rm = game_loop.room;
+    if (!rm) return void 0;
+    for (const other of rm.instance_get_all()) {
+      if (other === this || !other.active) continue;
+      if (!(other instanceof obj)) continue;
+      if (instances_collide(this, x, y, other)) return other;
+    }
+    return void 0;
+  }
+  // =========================================================================
+  // Collision mask (manual)
+  // =========================================================================
+  /**
+   * Sets a manual rectangular collision mask, as offsets from the instance
+   * origin (x, y). Use this for spriteless objects so collision functions work.
+   * @param left - Left offset from x
+   * @param top - Top offset from y
+   * @param right - Right offset from x
+   * @param bottom - Bottom offset from y
+   */
+  mask_set_rectangle(left, top, right, bottom) {
+    this.mask_manual = true;
+    this.mask_off_left = left;
+    this.mask_off_top = top;
+    this.mask_off_right = right;
+    this.mask_off_bottom = bottom;
+    update_bbox(this);
+  }
+  /**
+   * Convenience: sets a manual width×height mask with its top-left at the origin.
+   * @param width - Mask width
+   * @param height - Mask height
+   */
+  mask_set_size(width, height) {
+    this.mask_set_rectangle(0, 0, width, height);
+  }
+  /** Removes the manual mask, reverting to the sprite/mask_index-derived bbox. */
+  mask_clear() {
+    this.mask_manual = false;
+    update_bbox(this);
+  }
+  /**
    * Moves the instance by the given amount, stopping when it hits a solid.
    * @param hspd - Horizontal movement
    * @param vspd - Vertical movement
@@ -2451,6 +2680,54 @@ var instance = class _instance extends resource {
   /** Called every frame to draw GUI elements (fixed to the screen, not the room). */
   on_draw_gui() {
   }
+  // ── Alarm ────────────────────────────────────────────────────────────────
+  /** Called when alarm[index] counts down to zero. */
+  on_alarm(_index) {
+  }
+  // ── Keyboard (generic — check specific keys with keyboard_check* inside) ──
+  /** Called the step any key is pressed. */
+  on_key_press() {
+  }
+  /** Called the step any key is released. */
+  on_key_release() {
+  }
+  /** Called every step any key is held down. */
+  on_key_held() {
+  }
+  // ── Mouse (fired only while the pointer is over this instance) ────────────
+  /** Called when the left mouse button is pressed over this instance. */
+  on_mouse_left_press() {
+  }
+  /** Called when the left mouse button is released over this instance. */
+  on_mouse_left_release() {
+  }
+  /** Called when the right mouse button is pressed over this instance. */
+  on_mouse_right_press() {
+  }
+  // ── Collision ─────────────────────────────────────────────────────────────
+  /** Called for each other instance this one overlaps this step. */
+  on_collision(_other) {
+  }
+  // ── Room / Game lifecycle ────────────────────────────────────────────────
+  /** Called when the room this instance is in starts. */
+  on_room_start() {
+  }
+  /** Called when the room this instance is in ends (before leaving it). */
+  on_room_end() {
+  }
+  /** Called once when the game starts, for instances present in the first room. */
+  on_game_start() {
+  }
+  /** Called once when the game ends. */
+  on_game_end() {
+  }
+  // ── Other ─────────────────────────────────────────────────────────────────
+  /** Called when the sprite animation completes a loop. */
+  on_animation_end() {
+  }
+  /** Called when path following ends (requires path_start; not yet wired). */
+  on_path_end() {
+  }
 };
 function with_object(obj, callback) {
   if (Array.isArray(obj)) {
@@ -2467,6 +2744,114 @@ function with_object(obj, callback) {
     }
   }
 }
+function collision_point(x, y, obj) {
+  const rm = game_loop.room;
+  if (!rm) return void 0;
+  for (const inst of rm.instance_get_all()) {
+    if (inst instanceof obj && inst.active && point_in_instance(x, y, inst)) return inst;
+  }
+  return void 0;
+}
+function position_meeting(x, y, obj) {
+  return collision_point(x, y, obj) !== void 0;
+}
+function position_destroy(x, y) {
+  const rm = game_loop.room;
+  if (!rm) return;
+  for (const inst of rm.instance_get_all()) {
+    if (inst.active && point_in_instance(x, y, inst)) inst.instance_destroy();
+  }
+}
+function collision_rectangle(x1, y1, x2, y2, obj) {
+  const rm = game_loop.room;
+  if (!rm) return void 0;
+  for (const inst of rm.instance_get_all()) {
+    if (inst instanceof obj && inst.active && rect_in_instance(x1, y1, x2, y2, inst)) return inst;
+  }
+  return void 0;
+}
+function collision_circle(x, y, radius, obj) {
+  const rm = game_loop.room;
+  if (!rm) return void 0;
+  for (const inst of rm.instance_get_all()) {
+    if (inst instanceof obj && inst.active && circle_in_instance(x, y, radius, inst)) return inst;
+  }
+  return void 0;
+}
+function collision_line(x1, y1, x2, y2, obj) {
+  const rm = game_loop.room;
+  if (!rm) return void 0;
+  for (const inst of rm.instance_get_all()) {
+    if (inst instanceof obj && inst.active && line_in_instance(x1, y1, x2, y2, inst)) return inst;
+  }
+  return void 0;
+}
+
+// packages/engine/src/drawing/sprite.ts
+var sprite = class extends resource {
+  // Height of the first frame
+  constructor() {
+    super();
+    this.frames = [];
+    // Animation frames
+    this.xoffset = 0;
+    // Horizontal origin point (pixels from left)
+    this.yoffset = 0;
+    // Vertical origin point (pixels from top)
+    this.width = 0;
+    // Width of the first frame
+    this.height = 0;
+  }
+  /**
+   * Adds a frame to this sprite.
+   * @param frame - The frame to add
+   */
+  add_frame(frame) {
+    this.frames.push(frame);
+    if (this.frames.length === 1) {
+      this.width = frame.width;
+      this.height = frame.height;
+    }
+  }
+  /**
+   * Returns the number of frames in this sprite.
+   */
+  get_number() {
+    return this.frames.length;
+  }
+  /**
+   * Returns the frame at the given index, wrapping around if out of range.
+   * @param index - Frame index
+   * @returns sprite_frame or undefined if the sprite has no frames
+   */
+  get_frame(index) {
+    if (this.frames.length === 0) return void 0;
+    const i = Math.floor(index) % this.frames.length;
+    return this.frames[i < 0 ? i + this.frames.length : i];
+  }
+};
+function sprite_get_width(spr) {
+  return spr.width;
+}
+function sprite_get_height(spr) {
+  return spr.height;
+}
+function sprite_get_xoffset(spr) {
+  return spr.xoffset;
+}
+function sprite_get_yoffset(spr) {
+  return spr.yoffset;
+}
+function sprite_get_number(spr) {
+  return spr.get_number();
+}
+var _sprite_names = /* @__PURE__ */ new Map();
+function sprite_register_name(name, id) {
+  _sprite_names.set(name, id);
+}
+function sprite_get_index(name) {
+  return _sprite_names.get(name) ?? -1;
+}
 
 // packages/engine/src/core/gm_object.ts
 var gm_object = class extends instance {
@@ -2481,6 +2866,42 @@ var gm_object = class extends instance {
   static {
     /** Human-readable object name. Defaults to the class name. */
     this.object_name = "";
+  }
+  static {
+    // Class-level metadata applied to every instance on construction. Subclasses
+    // override with `static solid = true` etc. (object-editor checkboxes write these).
+    this.solid = false;
+  }
+  static {
+    // Blocks movement / counts as a solid
+    this.visible = true;
+  }
+  static {
+    // Drawn by default
+    this.persistent = false;
+  }
+  static {
+    // Survives room changes
+    this.depth = 0;
+  }
+  static {
+    // Draw depth (lower = on top)
+    this.sprite = null;
+  }
+  // Sprite resource name (resolved to sprite_index)
+  /**
+   * Applies this object's static metadata defaults to the new instance.
+   * @param room - The room this instance belongs to
+   */
+  constructor(room2) {
+    super(room2);
+    const cls = this.constructor;
+    this.solid = cls.solid;
+    this.visible = cls.visible;
+    this.persistent = cls.persistent;
+    this.depth = cls.depth;
+    if (cls.sprite) this.sprite_index = sprite_get_index(cls.sprite);
+    else if (cls.default_sprite) this.sprite_index = cls.default_sprite.id;
   }
   /**
    * Returns the object name. Falls back to the constructor name if not set.
@@ -2544,7 +2965,10 @@ function _eval_path(path, t) {
   const pts = path.points;
   const n = pts.length;
   if (n === 0) return { x: 0, y: 0, speed: 1 };
-  if (n === 1) return { x: pts[0].x, y: pts[0].y, speed: pts[0].speed };
+  if (n === 1) {
+    const p = pts[0];
+    return { x: p.x, y: p.y, speed: p.speed };
+  }
   if (path.closed) {
     t = (t % 1 + 1) % 1;
   } else {
@@ -3778,10 +4202,27 @@ var renderer = class {
    */
   static draw_background_ext(bg, x, y, xscale, yscale, rot, color, alpha) {
     if (!bg || !bg.texture) return;
-    const w = bg.width * xscale;
-    const h = bg.height * yscale;
     const [r, g, b] = color_to_rgb_normalized(color);
-    this.batch.add_quad_rotated(x, y, w, h, rot, 0, 0, 1, 1, r, g, b, alpha, bg.texture.texture);
+    this.batch.add_quad_transformed(
+      x,
+      y,
+      bg.width,
+      bg.height,
+      0,
+      0,
+      xscale,
+      yscale,
+      rot,
+      0,
+      0,
+      1,
+      1,
+      r,
+      g,
+      b,
+      alpha,
+      bg.texture.texture
+    );
   }
   /**
    * Draws a background stretched to fill a specified region.
@@ -3807,8 +4248,8 @@ var renderer = class {
   static draw_background_tiled(bg, x, y, tile_x, tile_y) {
     if (!bg || !bg.texture) return;
     const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    const view_w = this.canvas_width;
-    const view_h = this.canvas_height;
+    const view_w = this.canvas.width;
+    const view_h = this.canvas.height;
     const tiles_x = Math.ceil(view_w / bg.width) + 1;
     const tiles_y = Math.ceil(view_h / bg.height) + 1;
     const start_x = x - tile_x % bg.width;
@@ -4163,65 +4604,6 @@ var renderer = class {
   }
 };
 
-// packages/engine/src/drawing/sprite.ts
-var sprite = class extends resource {
-  // Height of the first frame
-  constructor() {
-    super();
-    this.frames = [];
-    // Animation frames
-    this.xoffset = 0;
-    // Horizontal origin point (pixels from left)
-    this.yoffset = 0;
-    // Vertical origin point (pixels from top)
-    this.width = 0;
-    // Width of the first frame
-    this.height = 0;
-  }
-  /**
-   * Adds a frame to this sprite.
-   * @param frame - The frame to add
-   */
-  add_frame(frame) {
-    this.frames.push(frame);
-    if (this.frames.length === 1) {
-      this.width = frame.width;
-      this.height = frame.height;
-    }
-  }
-  /**
-   * Returns the number of frames in this sprite.
-   */
-  get_number() {
-    return this.frames.length;
-  }
-  /**
-   * Returns the frame at the given index, wrapping around if out of range.
-   * @param index - Frame index
-   * @returns sprite_frame or undefined if the sprite has no frames
-   */
-  get_frame(index) {
-    if (this.frames.length === 0) return void 0;
-    const i = Math.floor(index) % this.frames.length;
-    return this.frames[i < 0 ? i + this.frames.length : i];
-  }
-};
-function sprite_get_width(spr) {
-  return spr.width;
-}
-function sprite_get_height(spr) {
-  return spr.height;
-}
-function sprite_get_xoffset(spr) {
-  return spr.xoffset;
-}
-function sprite_get_yoffset(spr) {
-  return spr.yoffset;
-}
-function sprite_get_number(spr) {
-  return spr.get_number();
-}
-
 // packages/engine/src/drawing/background.ts
 var background = class extends resource {
   // Use smooth filtering
@@ -4335,29 +4717,35 @@ function make_default_view(port_w = 800, port_h = 600) {
 }
 var MAX_VIEWS = 8;
 var _views = Array.from({ length: MAX_VIEWS }, () => make_default_view());
+function _get_view(view_index) {
+  const v = _views[view_index];
+  if (!v) throw new Error(`view: index out of range (0\u2013${MAX_VIEWS - 1})`);
+  return v;
+}
 function view_get(view_index) {
-  if (view_index < 0 || view_index >= MAX_VIEWS) throw new Error(`view_get: index out of range (0\u2013${MAX_VIEWS - 1})`);
-  return _views[view_index];
+  return _get_view(view_index);
 }
 function view_set_enabled(view_index, enabled) {
-  _views[view_index].enabled = enabled;
+  _get_view(view_index).enabled = enabled;
 }
 function view_set_position(view_index, x, y) {
-  _views[view_index].x = x;
-  _views[view_index].y = y;
+  const v = _get_view(view_index);
+  v.x = x;
+  v.y = y;
 }
 function view_set_size(view_index, w, h) {
-  _views[view_index].w = w;
-  _views[view_index].h = h;
+  const v = _get_view(view_index);
+  v.w = w;
+  v.h = h;
 }
 function view_set_port(view_index, px, py, pw, ph) {
-  Object.assign(_views[view_index], { port_x: px, port_y: py, port_w: pw, port_h: ph });
+  Object.assign(_get_view(view_index), { port_x: px, port_y: py, port_w: pw, port_h: ph });
 }
 function view_set_angle(view_index, angle) {
-  _views[view_index].angle = angle;
+  _get_view(view_index).angle = angle;
 }
 function view_apply(view_index) {
-  const v = _views[view_index];
+  const v = _get_view(view_index);
   const gl = renderer.get_gl();
   renderer.flush_batch();
   gl.viewport(v.port_x, v.port_y, v.port_w, v.port_h);
@@ -4386,20 +4774,22 @@ function view_apply(view_index) {
   renderer.set_view_projection(matrix);
 }
 function camera_set_view_pos(x, y) {
-  _views[0].x = x;
-  _views[0].y = y;
-  _views[0].enabled = true;
+  const v = _get_view(0);
+  v.x = x;
+  v.y = y;
+  v.enabled = true;
 }
 function camera_set_view_size(w, h) {
-  _views[0].w = w;
-  _views[0].h = h;
-  _views[0].enabled = true;
+  const v = _get_view(0);
+  v.w = w;
+  v.h = h;
+  v.enabled = true;
 }
 function view_get_x(view_index = 0) {
-  return _views[view_index].x;
+  return _get_view(view_index).x;
 }
 function view_get_y(view_index = 0) {
-  return _views[view_index].y;
+  return _get_view(view_index).y;
 }
 
 // packages/engine/src/drawing/draw_functions.ts
@@ -4681,12 +5071,14 @@ function ds_grid_set(id, x, y, val) {
 function ds_grid_add(id, x, y, val) {
   const g = _get3(id);
   if (!_in_bounds(g, x, y)) return;
-  g.data[_idx(g, x, y)] += val;
+  const i = _idx(g, x, y);
+  g.data[i] = g.data[i] + val;
 }
 function ds_grid_multiply(id, x, y, factor) {
   const g = _get3(id);
   if (!_in_bounds(g, x, y)) return;
-  g.data[_idx(g, x, y)] *= factor;
+  const i = _idx(g, x, y);
+  g.data[i] = g.data[i] * factor;
 }
 function ds_grid_clear(id, val) {
   _get3(id).data.fill(val);
@@ -4725,7 +5117,10 @@ function ds_grid_add_region(id, x1, y1, x2, y2, val) {
   const g = _get3(id);
   for (let y = y1; y <= y2; y++) {
     for (let x = x1; x <= x2; x++) {
-      if (_in_bounds(g, x, y)) g.data[_idx(g, x, y)] += val;
+      if (_in_bounds(g, x, y)) {
+        const i = _idx(g, x, y);
+        g.data[i] = g.data[i] + val;
+      }
     }
   }
 }
@@ -4733,7 +5128,10 @@ function ds_grid_multiply_region(id, x1, y1, x2, y2, factor) {
   const g = _get3(id);
   for (let y = y1; y <= y2; y++) {
     for (let x = x1; x <= x2; x++) {
-      if (_in_bounds(g, x, y)) g.data[_idx(g, x, y)] *= factor;
+      if (_in_bounds(g, x, y)) {
+        const i = _idx(g, x, y);
+        g.data[i] = g.data[i] * factor;
+      }
     }
   }
 }
@@ -5717,7 +6115,6 @@ var _on_collision_start = null;
 var _on_collision_end = null;
 function physics_world_create(gx = 0, gy = 0.1, px_per_metre = 64) {
   if (_engine) {
-    Matter.Events.off(_engine);
     Matter.Engine.clear(_engine);
   }
   _px_per_m = px_per_metre;
@@ -5749,7 +6146,6 @@ function physics_world_gravity(gx, gy) {
 }
 function physics_world_destroy() {
   if (!_engine) return;
-  Matter.Events.off(_engine);
   Matter.Engine.clear(_engine);
   _engine = null;
   _world = null;
@@ -5848,7 +6244,7 @@ function physics_fixture_bind(fixture_id, x, y, is_static = false) {
       });
       break;
     case FIXTURE_SHAPE_POLYGON:
-      body = Matter2.Bodies.fromVertices(x, y, f.verts, {
+      body = Matter2.Bodies.fromVertices(x, y, [f.verts], {
         density: f.density,
         restitution: f.restitution,
         friction: f.friction,
@@ -6421,7 +6817,7 @@ function webrtc_create_channel(peer_id, label = "data", ordered = false, max_ret
   if (!peer) return -1;
   const channel = peer.pc.createDataChannel(label, {
     ordered,
-    maxRetransmits: ordered ? void 0 : max_retransmits
+    ...ordered ? {} : { maxRetransmits: max_retransmits }
   });
   const channel_id = peer.next_channel_id++;
   const ch_state = {
@@ -6530,7 +6926,7 @@ function _extract_headers(resp) {
 }
 async function http_get(url, headers) {
   try {
-    const resp = await fetch(url, { method: "GET", headers });
+    const resp = await fetch(url, { method: "GET", ...headers && { headers } });
     const text = await resp.text();
     return { status: resp.status, ok: resp.ok, text, headers: _extract_headers(resp) };
   } catch (e) {
@@ -6555,7 +6951,7 @@ async function http_post_json(url, data, headers) {
 }
 async function http_get_bytes(url, headers) {
   try {
-    const resp = await fetch(url, { method: "GET", headers });
+    const resp = await fetch(url, { method: "GET", ...headers && { headers } });
     const buf = await resp.arrayBuffer();
     const bytes = new Uint8Array(buf);
     return { status: resp.status, ok: resp.ok, bytes, headers: _extract_headers(resp) };
@@ -6565,7 +6961,7 @@ async function http_get_bytes(url, headers) {
 }
 async function http_request(url, method, headers = {}, body = null) {
   try {
-    const resp = await fetch(url, { method, headers, body: body ?? void 0 });
+    const resp = await fetch(url, { method, headers, ...body != null && { body } });
     const text = await resp.text();
     return { status: resp.status, ok: resp.ok, text, headers: _extract_headers(resp) };
   } catch (e) {
@@ -7410,7 +7806,7 @@ function _add_box_verts(m, x1, y1, z1, x2, y2, z2, hr, vr) {
     [0, 1, 0]
   ];
   faces.forEach((tri, fi) => {
-    const [nx, ny, nz] = normals[fi];
+    const [nx = 0, ny = 0, nz = 0] = normals[fi];
     for (let vi = 0; vi < 9; vi += 3) {
       m.build_verts.push(tri[vi], tri[vi + 1], tri[vi + 2], nx, ny, nz, 0, 0);
     }
@@ -7484,13 +7880,13 @@ function _parse_obj(src) {
     const parts = line.split(/\s+/);
     switch (parts[0]) {
       case "v":
-        positions.push([parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3])]);
+        positions.push([parseFloat(parts[1] ?? "0"), parseFloat(parts[2] ?? "0"), parseFloat(parts[3] ?? "0")]);
         break;
       case "vn":
-        normals.push([parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3])]);
+        normals.push([parseFloat(parts[1] ?? "0"), parseFloat(parts[2] ?? "0"), parseFloat(parts[3] ?? "0")]);
         break;
       case "vt":
-        uvs.push([parseFloat(parts[1]), parseFloat(parts[2] ?? "0")]);
+        uvs.push([parseFloat(parts[1] ?? "0"), parseFloat(parts[2] ?? "0")]);
         break;
       case "f": {
         const verts = parts.slice(1).map((tok) => {
@@ -7520,10 +7916,10 @@ function model_load_obj(obj_src) {
     return model_id;
   }
   for (const face_vert of data.faces) {
-    const [pi, ui, ni] = face_vert;
-    const pos = pi > 0 ? data.positions[pi - 1] : [0, 0, 0];
-    const nrm = ni > 0 ? data.normals[ni - 1] : [0, 0, 1];
-    const uv = ui > 0 ? data.uvs[ui - 1] : [0, 0];
+    const [pi = 0, ui = 0, ni = 0] = face_vert;
+    const pos = (pi > 0 ? data.positions[pi - 1] : void 0) ?? [0, 0, 0];
+    const nrm = (ni > 0 ? data.normals[ni - 1] : void 0) ?? [0, 0, 1];
+    const uv = (ui > 0 ? data.uvs[ui - 1] : void 0) ?? [0, 0];
     m.build_verts.push(
       pos[0] ?? 0,
       pos[1] ?? 0,
@@ -8025,6 +8421,10 @@ export {
   chr,
   circle_in_instance,
   clamp,
+  collision_circle,
+  collision_line,
+  collision_point,
+  collision_rectangle,
   color_get_blue,
   color_get_green,
   color_get_red,
@@ -8209,8 +8609,10 @@ export {
   floor,
   font_resource,
   frac,
+  game_end,
   game_event,
   game_loop,
+  game_restart,
   gamepad_axis_count,
   gamepad_axis_value,
   gamepad_button_check,
@@ -8288,6 +8690,7 @@ export {
   lengthdir_x,
   lengthdir_y,
   lerp,
+  line_in_instance,
   ln,
   log10,
   log2,
@@ -8440,6 +8843,8 @@ export {
   point_distance,
   point_distance_3d,
   point_in_instance,
+  position_destroy,
+  position_meeting,
   power,
   pr_linelist,
   pr_linestrip,
@@ -8507,10 +8912,12 @@ export {
   spatial_sound_instance,
   sprite,
   sprite_get_height,
+  sprite_get_index,
   sprite_get_number,
   sprite_get_width,
   sprite_get_xoffset,
   sprite_get_yoffset,
+  sprite_register_name,
   sqr,
   sqrt,
   string,

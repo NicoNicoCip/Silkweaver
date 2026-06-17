@@ -15,6 +15,8 @@
  */
 
 import { instance } from './instance.js'
+import type { room } from './room.js'
+import { sprite_get_index } from '../drawing/sprite.js'
 import type { sprite } from '../drawing/sprite.js'
 
 /**
@@ -30,6 +32,31 @@ export abstract class gm_object extends instance {
 
     /** Human-readable object name. Defaults to the class name. */
     public static object_name: string = ''
+
+    // Class-level metadata applied to every instance on construction. Subclasses
+    // override with `static solid = true` etc. (object-editor checkboxes write these).
+    public static solid:      boolean = false        // Blocks movement / counts as a solid
+    public static visible:    boolean = true         // Drawn by default
+    public static persistent: boolean = false        // Survives room changes
+    public static depth:      number  = 0            // Draw depth (lower = on top)
+    public static sprite:     string | null = null   // Sprite resource name (resolved to sprite_index)
+
+    /**
+     * Applies this object's static metadata defaults to the new instance.
+     * @param room - The room this instance belongs to
+     */
+    constructor(room: room) {
+        super(room)
+        const cls = this.constructor as typeof gm_object
+        this.solid      = cls.solid
+        this.visible    = cls.visible
+        this.persistent = cls.persistent
+        this.depth      = cls.depth
+        // Resolve the sprite by name (sprites are registered by the bootstrap before
+        // instances are created). Falls back to the class's default_sprite object.
+        if (cls.sprite) this.sprite_index = sprite_get_index(cls.sprite)
+        else if (cls.default_sprite) this.sprite_index = cls.default_sprite.id
+    }
 
     /**
      * Returns the object name. Falls back to the constructor name if not set.

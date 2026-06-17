@@ -271,7 +271,7 @@ export class ResourceTree {
                     const meta = JSON.parse(meta_text) as { frames?: Array<{ name: string } | string> }
 
                     if (meta.frames && meta.frames.length > 0) {
-                        const first_frame = meta.frames[0]
+                        const first_frame = meta.frames[0]!
                         const frame_name = typeof first_frame === 'string' ? first_frame : first_frame.name
                         const img_url = await project_read_binary_url(`sprites/${name}/${frame_name}`)
 

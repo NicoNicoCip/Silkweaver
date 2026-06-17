@@ -1,0 +1,16 @@
+{
+    "name": "@silkweaver/project",
+    "version": "0.2.6",
+    "description": "Silkweaver project format — the shared manifest/room/object type contract (types only)",
+    "type": "module",
+    "license": "GPL-3.0",
+    "types": "./src/index.ts",
+    "exports": {
+        ".": {
+            "types": "./src/index.ts"
+        }
+    },
+    "files": [
+        "src"
+    ]
+}

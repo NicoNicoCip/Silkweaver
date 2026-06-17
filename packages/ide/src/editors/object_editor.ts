@@ -75,6 +75,7 @@ interface object_data {
     phys_restitution: number
     phys_friction: number
     events:       event_type[]
+    variables:    { name: string; value: string }[]   // Instance var definitions (name = default expression)
 }
 
 // =========================================================================
@@ -113,6 +114,7 @@ class object_editor_window {
     private _object_name: string
 
     private _event_list_el: HTMLElement
+    private _vars_list_el:  HTMLElement = document.createElement('div')
     private _on_closed_cb:  (() => void) | null = null
 
     constructor(workspace: HTMLElement, object_name: string) {
@@ -139,6 +141,7 @@ class object_editor_window {
             phys_restitution: 0.1,
             phys_friction:    0.5,
             events:           [],
+            variables:        [],
         }
 
         this._event_list_el = document.createElement('div')
@@ -244,6 +247,9 @@ class object_editor_window {
         )
         el.append(_number_row('Depth:', this._data.depth, (v) => { this._data.depth = v; this._save() }))
 
+        // Variables (instance variable definitions, initialised in Create)
+        el.appendChild(this._build_variables_section())
+
         // Physics
         el.appendChild(_section_header('Physics'))
         const phys_toggle = _checkbox_row('Enable Physics', this._data.physics, (v) => {
@@ -263,6 +269,74 @@ class object_editor_window {
         el.appendChild(phys_props)
 
         return el
+    }
+
+    private _build_variables_section(): HTMLElement {
+        const wrap = document.createElement('div')
+        wrap.style.cssText = 'display:flex; flex-direction:column; gap:4px;'
+        wrap.appendChild(_section_header('Variables'))
+
+        this._vars_list_el.style.cssText = 'display:flex; flex-direction:column; gap:4px;'
+        wrap.appendChild(this._vars_list_el)
+
+        const add = document.createElement('button')
+        add.textContent = '+ Add Variable'
+        add.style.cssText = 'font-size:11px; align-self:flex-start; cursor:pointer; padding:2px 8px;'
+        add.addEventListener('click', () => {
+            this._data.variables.push({ name: '', value: '0' })
+            this._render_variables()
+            this._save()
+        })
+        wrap.appendChild(add)
+
+        this._render_variables()
+        return wrap
+    }
+
+    /** Renders the variable definition rows (name = default value, with delete). */
+    private _render_variables(): void {
+        this._vars_list_el.innerHTML = ''
+        this._data.variables.forEach((v, idx) => {
+            const row = document.createElement('div')
+            row.style.cssText = 'display:flex; align-items:center; gap:4px;'
+
+            const name = document.createElement('input')
+            name.className = 'sw-input'
+            name.placeholder = 'name'
+            name.value = v.name
+            name.style.cssText = 'width:90px; font-size:11px;'
+            name.addEventListener('change', () => {
+                // Sanitise to a valid identifier (letters/digits/_, not starting with a digit)
+                const clean = name.value.trim().replace(/[^A-Za-z0-9_]/g, '')
+                v.name = /^[A-Za-z_]/.test(clean) ? clean : ''
+                name.value = v.name
+                this._save()
+            })
+
+            const eq = document.createElement('span')
+            eq.textContent = '='
+            eq.style.cssText = 'color:var(--sw-text-dim);'
+
+            const val = document.createElement('input')
+            val.className = 'sw-input'
+            val.placeholder = '0'
+            val.value = v.value
+            val.style.cssText = 'flex:1; font-size:11px;'
+            val.addEventListener('change', () => { v.value = val.value; this._save() })
+
+            const del = document.createElement('button')
+            del.textContent = '×'
+            del.title = 'Delete variable'
+            del.style.cssText = 'cursor:pointer; padding:0 6px;'
+            del.addEventListener('click', () => {
+                this._data.variables.splice(idx, 1)
+                this._render_variables()
+                this._save()
+            })
+
+            row.append(name, eq, val, del)
+            this._vars_list_el.appendChild(row)
+        })
     }
 
     private _build_events_panel(): HTMLElement {
@@ -413,6 +487,7 @@ class object_editor_window {
             // New object
         }
         this._rebuild_event_list()
+        this._render_variables()
     }
 
     private _save(): void {

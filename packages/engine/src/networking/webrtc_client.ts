@@ -126,7 +126,7 @@ export function webrtc_create_channel(
 
     const channel = peer.pc.createDataChannel(label, {
         ordered,
-        maxRetransmits: ordered ? undefined : max_retransmits,
+        ...(ordered ? {} : { maxRetransmits: max_retransmits }),
     })
     const channel_id = peer.next_channel_id++
     const ch_state: rtc_channel = {
@@ -217,7 +217,9 @@ export function webrtc_send(peer_id: number, channel_id: number, bytes: Uint8Arr
     if (!peer) return
     const ch = peer.channels.get(channel_id)
     if (!ch || ch.channel.readyState !== 'open') return
-    ch.channel.send(bytes)
+    // RTCDataChannel.send wants an ArrayBuffer-backed view (unlike WebSocket.send,
+    // which accepts ArrayBufferLike); our buffers are always ArrayBuffer-backed.
+    ch.channel.send(bytes as Uint8Array<ArrayBuffer>)
 }
 
 /**

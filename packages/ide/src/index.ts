@@ -8,7 +8,7 @@ import { menubar_default }                                           from './men
 import { status_bar_create, status_set_project, status_set_unsaved } from './status_bar.js'
 import { ResourceTree }                                              from './resource_tree.js'
 import type { open_resource_event, resource_category }               from './resource_tree.js'
-import { project_new, project_open, project_open_last, project_save, project_set_dir, project_set_folder, project_get_dir, project_has_folder, project_get_folder_path, project_get_last_folder }  from './services/project.js'
+import { project_new, project_open, project_open_last, project_save, project_set_dir, project_set_folder, project_get_dir, project_has_folder, project_get_folder_path, project_get_last_folder, project_read_file, project_write_file }  from './services/project.js'
 import type { project_state }                                         from './services/project.js'
 import { undo_push, undo_undo, undo_redo, undo_clear }               from './services/undo.js'
 import { script_editor_open, script_editor_open_smart, inject_project_types } from './editors/script_editor.js'
@@ -81,6 +81,10 @@ function boot(): void {
         run_play:              on_run_play,
         run_stop:              on_run_stop,
         run_build:             on_run_build,
+        run_export_html5:      on_export_html5,
+        run_export_win:        () => on_export_exe('win32', 'x64',   'Windows'),
+        run_export_mac:        () => on_export_exe('darwin', 'arm64', 'macOS'),
+        run_export_linux:      () => on_export_exe('linux', 'x64',    'Linux'),
         help_about:            on_help_about,
     })
     document.body.appendChild(menubar)
@@ -251,7 +255,7 @@ function on_open_resource(cat: resource_category, name: string): void {
     switch (cat) {
         case 'scripts':     _open_script(name);                                    break
         case 'sprites':     sprite_editor_open(_workspace, name, _project?.name ?? ''); break
-        case 'objects':     object_editor_open(_workspace, name);                break
+        case 'objects':     _open_object(name);                                 break
         case 'rooms':       room_editor_open(_workspace, name);                  break
         case 'sounds':      sound_editor_open(_workspace, name);                 break
         case 'backgrounds': background_editor_open(_workspace, name);            break
@@ -260,6 +264,46 @@ function on_open_resource(cat: resource_category, name: string): void {
         case 'timelines':   timeline_editor_open(_workspace, name);              break
         default:
             console.log(`[IDE] Open ${cat}/${name} — editor not yet implemented`)
+    }
+}
+
+/** True if a project-relative file exists (read succeeds). */
+async function _proj_has(rel: string): Promise<boolean> {
+    try { await project_read_file(rel); return true } catch { return false }
+}
+
+/**
+ * Opens an object. Class-per-object files (objects/<name>.ts) open in the code editor
+ * (full class, accurate autocomplete); brand-new objects are scaffolded as a class file;
+ * legacy snippet-folder objects fall back to the classic object editor.
+ */
+async function _open_object(name: string): Promise<void> {
+    try {
+        const class_rel = `objects/${name}.ts`
+        const has_class = await _proj_has(class_rel)
+
+        // Legacy snippet-folder object → classic editor.
+        if (!has_class && await _proj_has(`objects/${name}/object.json`)) {
+            object_editor_open(_workspace, name)
+            return
+        }
+
+        // Scaffold a class file for a brand-new object.
+        if (!has_class) {
+            const swfs = (window as any).swfs
+            const source: string = swfs?.object_op
+                ? await swfs.object_op('scaffold', name)
+                : `import { gm_object } from '@silkweaver/engine'\n\nexport class ${name} extends gm_object {\n    on_create(): void {\n\n    }\n}\n`
+            await project_write_file(class_rel, source)
+        }
+
+        await script_editor_open_smart(_workspace, class_rel, async () => {
+            const dir  = project_get_dir()!
+            const objs = await dir.getDirectoryHandle('objects', { create: true })
+            return objs.getFileHandle(`${name}.ts`, { create: true })
+        })
+    } catch (err) {
+        console.error('[IDE] Failed to open object:', err)
     }
 }
 
@@ -299,6 +343,30 @@ function on_run_stop(): void {
     console_write('system', '[IDE] Game stopped.')
 }
 
+/**
+ * Ensures the current project is saved to a folder on disk and returns its
+ * absolute path (resolving in-memory path → localStorage → save dialog).
+ * Returns null if no folder could be resolved (e.g. the save dialog was cancelled).
+ */
+async function _ensure_project_folder(): Promise<string | null> {
+    let folder = project_get_folder_path() ?? project_get_last_folder()
+    if (folder) {
+        // Folder known — restore it if it wasn't set in memory, then save
+        project_set_folder(folder)
+        try { await project_save(_project!); _mark_saved() } catch { /* ignore */ }
+    } else {
+        // No folder at all — ask via save dialog
+        try {
+            await project_save(_project!)
+            _mark_saved()
+        } catch {
+            return null
+        }
+        folder = project_get_folder_path()
+    }
+    return folder ?? null
+}
+
 async function on_run_build(): Promise<void> {
     console_open(_workspace)
 
@@ -313,24 +381,7 @@ async function on_run_build(): Promise<void> {
         return
     }
 
-    // Resolve folder: in-memory path → localStorage fallback → prompt
-    let folder = project_get_folder_path() ?? project_get_last_folder()
-    if (folder) {
-        // Folder known — restore it if it wasn't set in memory, then save
-        project_set_folder(folder)
-        try { await project_save(_project); _mark_saved() } catch { /* ignore */ }
-    } else {
-        // No folder at all — ask via save dialog
-        try {
-            await project_save(_project)
-            _mark_saved()
-        } catch {
-            console_write('warn', '[IDE] No project folder — save cancelled.')
-            return
-        }
-        folder = project_get_folder_path()
-    }
-
+    const folder = await _ensure_project_folder()
     if (!folder) {
         console_write('warn', '[IDE] No project folder set.')
         return
@@ -343,6 +394,79 @@ async function on_run_build(): Promise<void> {
         preview_reload()
     } else {
         console_write('warn', `[IDE] Build failed:\n${result.error}`)
+    }
+}
+
+async function on_export_html5(): Promise<void> {
+    console_open(_workspace)
+
+    if (!_project) {
+        console_write('warn', '[IDE] No project open.')
+        return
+    }
+
+    const swfs = (window as any).swfs
+    if (!swfs?.export_html5) {
+        console_write('warn', '[IDE] Export is only available in the Electron app.')
+        return
+    }
+
+    const folder = await _ensure_project_folder()
+    if (!folder) {
+        console_write('warn', '[IDE] No project folder set.')
+        return
+    }
+
+    // Pick the export destination folder
+    const out_dir: string | null = await swfs.pick_folder('save', folder)
+    if (!out_dir) {
+        console_write('warn', '[IDE] Export cancelled.')
+        return
+    }
+
+    console_write('system', `[IDE] Exporting HTML5 build to ${out_dir}…`)
+    const result: { ok: boolean; error?: string; out_dir?: string } = await swfs.export_html5(folder, out_dir)
+    if (result.ok) {
+        console_write('system', `[IDE] HTML5 export complete → ${result.out_dir ?? out_dir}`)
+    } else {
+        console_write('warn', `[IDE] Export failed:\n${result.error}`)
+    }
+}
+
+async function on_export_exe(platform: string, arch: string, label: string): Promise<void> {
+    console_open(_workspace)
+
+    if (!_project) {
+        console_write('warn', '[IDE] No project open.')
+        return
+    }
+
+    const swfs = (window as any).swfs
+    if (!swfs?.export_exe) {
+        console_write('warn', '[IDE] Executable export is only available in the Electron app.')
+        return
+    }
+
+    const folder = await _ensure_project_folder()
+    if (!folder) {
+        console_write('warn', '[IDE] No project folder set.')
+        return
+    }
+
+    // Pick the export destination folder
+    const out_dir: string | null = await swfs.pick_folder('save', folder)
+    if (!out_dir) {
+        console_write('warn', '[IDE] Export cancelled.')
+        return
+    }
+
+    console_write('system', `[IDE] Packaging ${label} build to ${out_dir}…`)
+    console_write('system', '[IDE] This can take a minute (first run downloads the Electron runtime).')
+    const result: { ok: boolean; error?: string; out_dir?: string } = await swfs.export_exe(folder, out_dir, platform, arch)
+    if (result.ok) {
+        console_write('system', `[IDE] ${label} export complete → ${result.out_dir ?? out_dir}`)
+    } else {
+        console_write('warn', `[IDE] ${label} export failed:\n${result.error}`)
     }
 }
 

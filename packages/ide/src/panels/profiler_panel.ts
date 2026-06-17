@@ -141,7 +141,7 @@ function _draw_metric(ui: metric_ui, buf: number[], reference: number, color: st
     if (buf.length === 0) return
 
     // Compute stats
-    const cur = buf[buf.length - 1]
+    const cur = buf[buf.length - 1] ?? 0
     const max = Math.max(...buf)
     const avg = buf.reduce((a, b) => a + b, 0) / buf.length
 

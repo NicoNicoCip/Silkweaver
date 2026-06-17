@@ -38,7 +38,8 @@ let _on_collision_end:   collision_cb | null = null
  */
 export function physics_world_create(gx: number = 0, gy: number = 0.1, px_per_metre: number = 64): void {
     if (_engine) {
-        Matter.Events.off(_engine)
+        // The old engine (and its event listeners) is discarded below; clearing
+        // it releases its bodies/constraints before we drop the reference.
         Matter.Engine.clear(_engine)
     }
 
@@ -93,7 +94,6 @@ export function physics_world_gravity(gx: number, gy: number): void {
  */
 export function physics_world_destroy(): void {
     if (!_engine) return
-    Matter.Events.off(_engine)
     Matter.Engine.clear(_engine)
     _engine = null
     _world  = null

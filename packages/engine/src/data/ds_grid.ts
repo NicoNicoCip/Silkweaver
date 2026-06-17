@@ -69,7 +69,7 @@ export function ds_grid_destroy(id: number): void {
 export function ds_grid_get(id: number, x: number, y: number): number {
     const g = _get(id)
     if (!_in_bounds(g, x, y)) return 0
-    return g.data[_idx(g, x, y)]
+    return g.data[_idx(g, x, y)]!
 }
 
 /**
@@ -95,7 +95,8 @@ export function ds_grid_set(id: number, x: number, y: number, val: number): void
 export function ds_grid_add(id: number, x: number, y: number, val: number): void {
     const g = _get(id)
     if (!_in_bounds(g, x, y)) return
-    g.data[_idx(g, x, y)] += val
+    const i = _idx(g, x, y)
+    g.data[i] = g.data[i]! + val
 }
 
 /**
@@ -108,7 +109,8 @@ export function ds_grid_add(id: number, x: number, y: number, val: number): void
 export function ds_grid_multiply(id: number, x: number, y: number, factor: number): void {
     const g = _get(id)
     if (!_in_bounds(g, x, y)) return
-    g.data[_idx(g, x, y)] *= factor
+    const i = _idx(g, x, y)
+    g.data[i] = g.data[i]! * factor
 }
 
 /**
@@ -156,7 +158,7 @@ export function ds_grid_region_get(id: number, x1: number, y1: number, x2: numbe
     const out: number[] = []
     for (let y = y1; y <= y2; y++) {
         for (let x = x1; x <= x2; x++) {
-            out.push(_in_bounds(g, x, y) ? g.data[_idx(g, x, y)] : 0)
+            out.push(_in_bounds(g, x, y) ? g.data[_idx(g, x, y)]! : 0)
         }
     }
     return out
@@ -193,7 +195,7 @@ export function ds_grid_add_region(id: number, x1: number, y1: number, x2: numbe
     const g = _get(id)
     for (let y = y1; y <= y2; y++) {
         for (let x = x1; x <= x2; x++) {
-            if (_in_bounds(g, x, y)) g.data[_idx(g, x, y)] += val
+            if (_in_bounds(g, x, y)) { const i = _idx(g, x, y); g.data[i] = g.data[i]! + val }
         }
     }
 }
@@ -211,7 +213,7 @@ export function ds_grid_multiply_region(id: number, x1: number, y1: number, x2: 
     const g = _get(id)
     for (let y = y1; y <= y2; y++) {
         for (let x = x1; x <= x2; x++) {
-            if (_in_bounds(g, x, y)) g.data[_idx(g, x, y)] *= factor
+            if (_in_bounds(g, x, y)) { const i = _idx(g, x, y); g.data[i] = g.data[i]! * factor }
         }
     }
 }
@@ -229,7 +231,7 @@ export function ds_grid_get_max(id: number, x1: number, y1: number, x2: number, 
     let max = -Infinity
     for (let y = y1; y <= y2; y++) {
         for (let x = x1; x <= x2; x++) {
-            if (_in_bounds(g, x, y)) max = Math.max(max, g.data[_idx(g, x, y)])
+            if (_in_bounds(g, x, y)) max = Math.max(max, g.data[_idx(g, x, y)]!)
         }
     }
     return max
@@ -248,7 +250,7 @@ export function ds_grid_get_min(id: number, x1: number, y1: number, x2: number, 
     let min = Infinity
     for (let y = y1; y <= y2; y++) {
         for (let x = x1; x <= x2; x++) {
-            if (_in_bounds(g, x, y)) min = Math.min(min, g.data[_idx(g, x, y)])
+            if (_in_bounds(g, x, y)) min = Math.min(min, g.data[_idx(g, x, y)]!)
         }
     }
     return min
@@ -267,7 +269,7 @@ export function ds_grid_get_sum(id: number, x1: number, y1: number, x2: number, 
     let sum = 0
     for (let y = y1; y <= y2; y++) {
         for (let x = x1; x <= x2; x++) {
-            if (_in_bounds(g, x, y)) sum += g.data[_idx(g, x, y)]
+            if (_in_bounds(g, x, y)) sum += g.data[_idx(g, x, y)]!
         }
     }
     return sum

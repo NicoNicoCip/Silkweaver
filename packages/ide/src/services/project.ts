@@ -8,41 +8,14 @@
  */
 
 // =========================================================================
-// Types
+// Types — the canonical project format lives in @silkweaver/project
 // =========================================================================
 
-export interface project_settings {
-    roomSpeed:     number    // target steps per second
-    windowWidth:   number
-    windowHeight:  number
-    startRoom:     string    // name of the first room
-    displayColor:  string    // CSS hex background clear colour, e.g. '#000000'
-}
+import type { project_settings, project_resources, resource_ref, project_file } from '@silkweaver/project'
+export type { project_settings, project_resources, resource_ref }
 
-export interface resource_ref {
-    name: string            // unique identifier
-    [key: string]: unknown  // type-specific extra fields
-}
-
-export interface project_resources {
-    sprites:     Record<string, resource_ref>
-    sounds:      Record<string, resource_ref>
-    backgrounds: Record<string, resource_ref>
-    paths:       Record<string, resource_ref>
-    scripts:     Record<string, resource_ref>
-    fonts:       Record<string, resource_ref>
-    timelines:   Record<string, resource_ref>
-    objects:     Record<string, resource_ref>
-    rooms:       Record<string, resource_ref>
-}
-
-export interface project_state {
-    name:          string
-    version:       string
-    engineVersion: string
-    settings:      project_settings
-    resources:     project_resources
-}
+/** The in-memory project (== the project.json manifest). */
+export type project_state = project_file
 
 // =========================================================================
 // Backend detection
@@ -282,15 +255,19 @@ export async function project_write_file(rel_path: string, content: string): Pro
 }
 
 /**
- * Writes a binary file (from a File/Blob object) relative to the project folder.
+ * Writes a binary file relative to the project folder.
+ * Accepts a Blob/File or a raw byte array; the data is normalized to an
+ * ArrayBuffer (Uint8Array has no .arrayBuffer(), so it is copied explicitly).
  * @param dest_path - Relative destination path
- * @param file      - Binary File object
+ * @param data      - Binary contents (Blob/File or Uint8Array)
  */
-export async function project_write_binary(dest_path: string, file: File): Promise<void> {
+export async function project_write_binary(dest_path: string, data: Blob | Uint8Array): Promise<void> {
+    const buf: ArrayBuffer = data instanceof Uint8Array
+        ? new Uint8Array(data).buffer   // copy into a fresh ArrayBuffer-backed array
+        : await data.arrayBuffer()
     if (_has_electron()) {
         const fs = _el()!
         if (!_folder_path) throw new Error('No project folder open')
-        const buf = await file.arrayBuffer()
         return fs.write_binary(fs.join(_folder_path, ...dest_path.split('/')), buf)
     }
     const dir = _dir_handle
@@ -302,7 +279,7 @@ export async function project_write_binary(dest_path: string, file: File): Promi
     }
     const fh       = await current.getFileHandle(parts[parts.length - 1]!, { create: true })
     const writable = await (fh as any).createWritable()
-    await writable.write(await file.arrayBuffer())
+    await writable.write(buf)
     await writable.close()
 }
 

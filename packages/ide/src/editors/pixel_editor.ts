@@ -35,10 +35,10 @@ type Tool = 'pencil' | 'eraser' | 'fill' | 'eyedropper'
 
 class PixelEditor {
     private _win: FloatingWindow
-    private _canvas: HTMLCanvasElement
-    private _display_canvas: HTMLCanvasElement  // Separate zoomed display canvas
-    private _ctx: CanvasRenderingContext2D
-    private _display_ctx: CanvasRenderingContext2D
+    private _canvas!: HTMLCanvasElement
+    private _display_canvas!: HTMLCanvasElement  // Separate zoomed display canvas
+    private _ctx!: CanvasRenderingContext2D
+    private _display_ctx!: CanvasRenderingContext2D
     private _width: number
     private _height: number
     private _zoom: number = 20  // pixels per grid cell
@@ -49,8 +49,8 @@ class PixelEditor {
 
     // UI elements
     private _tool_btns: Map<Tool, HTMLElement> = new Map()
-    private _color_input: HTMLInputElement
-    private _color_preview: HTMLElement
+    private _color_input!: HTMLInputElement
+    private _color_preview!: HTMLElement
 
     constructor(
         workspace: HTMLElement,
@@ -294,7 +294,7 @@ class PixelEditor {
 
     private _pick_color(px: number, py: number): void {
         const imageData = this._ctx.getImageData(px, py, 1, 1)
-        const [r, g, b] = imageData.data
+        const [r = 0, g = 0, b = 0] = imageData.data
         this._color = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
         this._color_input.value = this._color
         this._color_preview.style.background = this._color
@@ -334,7 +334,7 @@ class PixelEditor {
 
     private _get_pixel_color(data: Uint8ClampedArray, x: number, y: number): [number, number, number, number] {
         const idx = (y * this._width + x) * 4
-        return [data[idx], data[idx + 1], data[idx + 2], data[idx + 3]]
+        return [data[idx]!, data[idx + 1]!, data[idx + 2]!, data[idx + 3]!]
     }
 
     private _set_pixel_color(data: Uint8ClampedArray, x: number, y: number, color: [number, number, number, number]): void {

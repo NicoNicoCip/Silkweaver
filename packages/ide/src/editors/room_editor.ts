@@ -5,57 +5,18 @@
 
 import { FloatingWindow }                                          from '../window_manager.js'
 import { project_read_file, project_write_file }                   from '../services/project.js'
+import type {
+    room_instance, room_background_layer, room_view, room_file,
+} from '@silkweaver/project'
 
 // =========================================================================
-// Types
+// Types — the canonical room format lives in @silkweaver/project
 // =========================================================================
 
-interface room_instance {
-    id:          number    // unique within this room
-    object_name: string
-    x:           number
-    y:           number
-    scale_x:     number
-    scale_y:     number
-    rotation:    number
-    creation_code: string
-}
+export type { room_instance, room_background_layer, room_view }
 
-interface room_background_layer {
-    enabled:    boolean
-    bg_name:    string    // background resource name
-    tile_x:     boolean
-    tile_y:     boolean
-    stretch:    boolean
-    visible_in_editor: boolean
-}
-
-interface room_view {
-    enabled:   boolean
-    view_x:    number
-    view_y:    number
-    view_w:    number
-    view_h:    number
-    port_x:    number
-    port_y:    number
-    port_w:    number
-    port_h:    number
-    follow:    string   // object name to follow, or ""
-}
-
-interface room_data {
-    width:       number
-    height:      number
-    room_speed:  number
-    persistent:  boolean
-    creation_code: string
-    instances:   room_instance[]
-    backgrounds: room_background_layer[]
-    views:       room_view[]
-    physics_world:     boolean
-    physics_gravity_x: number
-    physics_gravity_y: number
-}
+/** The in-memory room (== the room.json file shape, fully populated). */
+type room_data = room_file
 
 type tool_mode = 'select' | 'place' | 'delete'
 type panel_tab = 'settings' | 'instances' | 'views' | 'backgrounds' | 'physics'

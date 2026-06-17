@@ -70,7 +70,7 @@ function _eval_path(path: path_def, t: number): { x: number; y: number; speed: n
     const n   = pts.length
 
     if (n === 0) return { x: 0, y: 0, speed: 1 }
-    if (n === 1) return { x: pts[0].x, y: pts[0].y, speed: pts[0].speed }
+    if (n === 1) { const p = pts[0]!; return { x: p.x, y: p.y, speed: p.speed } }
 
     // Clamp or wrap t
     if (path.closed) {
@@ -85,8 +85,8 @@ function _eval_path(path: path_def, t: number): { x: number; y: number; speed: n
     const local_t   = seg_t - seg_i
 
     if (path.kind === path_kind_linear) {
-        const a = pts[seg_i]
-        const b = pts[(seg_i + 1) % n]
+        const a = pts[seg_i]!
+        const b = pts[(seg_i + 1) % n]!
         return {
             x:     a.x     + (b.x     - a.x)     * local_t,
             y:     a.y     + (b.y     - a.y)      * local_t,
@@ -96,10 +96,10 @@ function _eval_path(path: path_def, t: number): { x: number; y: number; speed: n
 
     // Smooth (Catmull-Rom): get 4 control points, wrapping if closed
     const wrap = (i: number) => ((i % n) + n) % n
-    const p0 = pts[path.closed ? wrap(seg_i - 1) : Math.max(seg_i - 1, 0)]
-    const p1 = pts[seg_i]
-    const p2 = pts[(seg_i + 1) % n]
-    const p3 = pts[path.closed ? wrap(seg_i + 2) : Math.min(seg_i + 2, n - 1)]
+    const p0 = pts[path.closed ? wrap(seg_i - 1) : Math.max(seg_i - 1, 0)]!
+    const p1 = pts[seg_i]!
+    const p2 = pts[(seg_i + 1) % n]!
+    const p3 = pts[path.closed ? wrap(seg_i + 2) : Math.min(seg_i + 2, n - 1)]!
 
     return {
         x:     _catmull_rom(p0.x,     p1.x,     p2.x,     p3.x,     local_t),

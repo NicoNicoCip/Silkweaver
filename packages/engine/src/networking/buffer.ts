@@ -328,7 +328,7 @@ export function buffer_base64_encode(buffer_id: number, offset: number = 0, size
     const end   = size < 0 ? buf.size : Math.min(offset + size, buf.size)
     const chunk = buf.data.slice(offset, end)
     let binary  = ''
-    for (let i = 0; i < chunk.length; i++) binary += String.fromCharCode(chunk[i])
+    for (let i = 0; i < chunk.length; i++) binary += String.fromCharCode(chunk[i]!)
     return btoa(binary)
 }
 

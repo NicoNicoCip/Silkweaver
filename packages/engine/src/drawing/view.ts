@@ -49,6 +49,17 @@ function make_default_view(port_w: number = 800, port_h: number = 600): view_con
 const MAX_VIEWS = 8
 const _views: view_config[] = Array.from({ length: MAX_VIEWS }, () => make_default_view())
 
+/**
+ * Returns the view config for a slot, throwing if the index is out of range.
+ * Centralizes bounds-checking so every accessor below is guaranteed a defined view.
+ * @param view_index - View slot (0–7)
+ */
+function _get_view(view_index: number): view_config {
+    const v = _views[view_index]
+    if (!v) throw new Error(`view: index out of range (0–${MAX_VIEWS - 1})`)
+    return v
+}
+
 // =========================================================================
 // Public GMS-style API
 // =========================================================================
@@ -58,8 +69,7 @@ const _views: view_config[] = Array.from({ length: MAX_VIEWS }, () => make_defau
  * @param view_index - View slot (0–7)
  */
 export function view_get(view_index: number): view_config {
-    if (view_index < 0 || view_index >= MAX_VIEWS) throw new Error(`view_get: index out of range (0–${MAX_VIEWS - 1})`)
-    return _views[view_index]
+    return _get_view(view_index)
 }
 
 /**
@@ -68,7 +78,7 @@ export function view_get(view_index: number): view_config {
  * @param enabled - True to enable
  */
 export function view_set_enabled(view_index: number, enabled: boolean): void {
-    _views[view_index].enabled = enabled
+    _get_view(view_index).enabled = enabled
 }
 
 /**
@@ -78,8 +88,9 @@ export function view_set_enabled(view_index: number, enabled: boolean): void {
  * @param y - Room Y
  */
 export function view_set_position(view_index: number, x: number, y: number): void {
-    _views[view_index].x = x
-    _views[view_index].y = y
+    const v = _get_view(view_index)
+    v.x = x
+    v.y = y
 }
 
 /**
@@ -89,8 +100,9 @@ export function view_set_position(view_index: number, x: number, y: number): voi
  * @param h - Height in room pixels
  */
 export function view_set_size(view_index: number, w: number, h: number): void {
-    _views[view_index].w = w
-    _views[view_index].h = h
+    const v = _get_view(view_index)
+    v.w = w
+    v.h = h
 }
 
 /**
@@ -102,7 +114,7 @@ export function view_set_size(view_index: number, w: number, h: number): void {
  * @param ph - Viewport height (screen pixels)
  */
 export function view_set_port(view_index: number, px: number, py: number, pw: number, ph: number): void {
-    Object.assign(_views[view_index], { port_x: px, port_y: py, port_w: pw, port_h: ph })
+    Object.assign(_get_view(view_index), { port_x: px, port_y: py, port_w: pw, port_h: ph })
 }
 
 /**
@@ -111,7 +123,7 @@ export function view_set_port(view_index: number, px: number, py: number, pw: nu
  * @param angle - Rotation angle (degrees, counter-clockwise)
  */
 export function view_set_angle(view_index: number, angle: number): void {
-    _views[view_index].angle = angle
+    _get_view(view_index).angle = angle
 }
 
 /**
@@ -124,7 +136,7 @@ export function view_set_angle(view_index: number, angle: number): void {
  * @param view_index - View slot to apply
  */
 export function view_apply(view_index: number): void {
-    const v  = _views[view_index]
+    const v  = _get_view(view_index)
     const gl = renderer.get_gl()
 
     // Flush any pending draw calls before changing the projection
@@ -158,9 +170,10 @@ export function view_apply(view_index: number): void {
  * @param y - Camera/view Y in room space
  */
 export function camera_set_view_pos(x: number, y: number): void {
-    _views[0].x = x
-    _views[0].y = y
-    _views[0].enabled = true
+    const v = _get_view(0)
+    v.x = x
+    v.y = y
+    v.enabled = true
 }
 
 /**
@@ -169,9 +182,10 @@ export function camera_set_view_pos(x: number, y: number): void {
  * @param h - Height in room pixels
  */
 export function camera_set_view_size(w: number, h: number): void {
-    _views[0].w = w
-    _views[0].h = h
-    _views[0].enabled = true
+    const v = _get_view(0)
+    v.w = w
+    v.h = h
+    v.enabled = true
 }
 
 /**
@@ -179,7 +193,7 @@ export function camera_set_view_size(w: number, h: number): void {
  * @param view_index - View slot (default 0)
  */
 export function view_get_x(view_index: number = 0): number {
-    return _views[view_index].x
+    return _get_view(view_index).x
 }
 
 /**
@@ -187,5 +201,5 @@ export function view_get_x(view_index: number = 0): number {
  * @param view_index - View slot (default 0)
  */
 export function view_get_y(view_index: number = 0): number {
-    return _views[view_index].y
+    return _get_view(view_index).y
 }

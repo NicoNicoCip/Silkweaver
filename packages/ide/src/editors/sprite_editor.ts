@@ -76,9 +76,9 @@ class sprite_editor_window {
     private _project:     string
 
     // UI refs
-    private _frame_list:  HTMLElement
-    private _canvas:      HTMLCanvasElement
-    private _ctx:         CanvasRenderingContext2D
+    private _frame_list!:  HTMLElement
+    private _canvas!:      HTMLCanvasElement
+    private _ctx!:         CanvasRenderingContext2D
     private _anim_timer:  ReturnType<typeof setInterval> | null = null
     private _anim_frame   = 0
     private _on_closed_cb: (() => void) | null = null
@@ -572,7 +572,7 @@ class sprite_editor_window {
         if (new_idx < 0) new_idx = 0
         if (new_idx >= zoom_levels.length) new_idx = zoom_levels.length - 1
 
-        this._zoom = zoom_levels[new_idx]
+        this._zoom = zoom_levels[new_idx]!
         this._update_canvas_size()
         this._redraw()
 

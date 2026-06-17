@@ -31,7 +31,7 @@ export function mat4_mul(a: mat4, b: mat4): mat4 {
         for (let row = 0; row < 4; row++) {
             let sum = 0
             for (let k = 0; k < 4; k++) {
-                sum += a[k * 4 + row] * b[col * 4 + k]
+                sum += a[k * 4 + row]! * b[col * 4 + k]!
             }
             r[col * 4 + row] = sum
         }
@@ -138,7 +138,7 @@ export function mat4_ortho(left: number, right: number, bottom: number, top: num
 // =========================================================================
 
 const _stack: mat4[] = [mat4_identity()]  // Stack of model matrices
-let _current: mat4   = _stack[0]          // Top of stack (current transform)
+let _current: mat4   = _stack[0]!         // Top of stack (current transform)
 
 /** Returns the current model matrix (top of stack). */
 export function d3d_transform_get(): mat4 {
@@ -222,13 +222,13 @@ export function d3d_transform_add_rotation_z(deg: number): void {
 /** Pushes the current transform onto the stack (save state). */
 export function d3d_transform_stack_push(): void {
     _stack.push(new Float32Array(_current))
-    _current = _stack[_stack.length - 1]
+    _current = _stack[_stack.length - 1]!
 }
 
 /** Pops the transform stack (restore state). */
 export function d3d_transform_stack_pop(): void {
     if (_stack.length > 1) _stack.pop()
-    _current = _stack[_stack.length - 1]
+    _current = _stack[_stack.length - 1]!
 }
 
 /** Clears the stack back to a single identity matrix. */

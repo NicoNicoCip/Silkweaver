@@ -8,7 +8,7 @@
 // =========================================================================
 // Core
 // =========================================================================
-export { game_loop } from './core/game_loop.js'
+export { game_loop, game_end, game_restart } from './core/game_loop.js'
 export { instance, with_object } from './core/instance.js'
 export { room } from './core/room.js'
 export { resource } from './core/resource.js'
@@ -39,14 +39,20 @@ export {
 // =========================================================================
 // Collision
 // =========================================================================
-export { MASK_RECT, MASK_CIRCLE, MASK_ELLIPSE, get_bbox, update_bbox, instances_collide, point_in_instance, rect_in_instance, circle_in_instance } from './collision/collision.js'
+export { MASK_RECT, MASK_CIRCLE, MASK_ELLIPSE, get_bbox, update_bbox, instances_collide, point_in_instance, rect_in_instance, circle_in_instance, line_in_instance } from './collision/collision.js'
+
+// Collision query functions (operate on the current room)
+export {
+    collision_point, collision_rectangle, collision_circle, collision_line,
+    position_meeting, position_destroy,
+} from './core/instance.js'
 
 // =========================================================================
 // Drawing
 // =========================================================================
 export { renderer } from './drawing/renderer.js'
 export type { surface } from './drawing/renderer.js'
-export { sprite, sprite_get_width, sprite_get_height, sprite_get_xoffset, sprite_get_yoffset, sprite_get_number } from './drawing/sprite.js'
+export { sprite, sprite_get_width, sprite_get_height, sprite_get_xoffset, sprite_get_yoffset, sprite_get_number, sprite_register_name, sprite_get_index } from './drawing/sprite.js'
 export { background, background_get_width, background_get_height } from './drawing/background.js'
 export { font_resource } from './drawing/font.js'
 export { texture_manager } from './drawing/texture_manager.js'

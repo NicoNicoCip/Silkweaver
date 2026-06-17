@@ -30,13 +30,13 @@ class MinHeap {
     public get empty(): boolean { return this._data.length === 0 }
 
     private _swap(i: number, j: number): void {
-        ;[this._data[i], this._data[j]] = [this._data[j], this._data[i]]
+        ;[this._data[i], this._data[j]] = [this._data[j]!, this._data[i]!]
     }
 
     private _sift_up(i: number): void {
         while (i > 0) {
             const parent = (i - 1) >> 1
-            if (this._data[parent].priority <= this._data[i].priority) break
+            if (this._data[parent]!.priority <= this._data[i]!.priority) break
             this._swap(i, parent)
             i = parent
         }
@@ -48,8 +48,8 @@ class MinHeap {
             let smallest = i
             const l = 2 * i + 1
             const r = 2 * i + 2
-            if (l < n && this._data[l].priority < this._data[smallest].priority) smallest = l
-            if (r < n && this._data[r].priority < this._data[smallest].priority) smallest = r
+            if (l < n && this._data[l]!.priority < this._data[smallest]!.priority) smallest = l
+            if (r < n && this._data[r]!.priority < this._data[smallest]!.priority) smallest = r
             if (smallest === i) break
             this._swap(i, smallest)
             i = smallest
@@ -70,10 +70,10 @@ class MinHeap {
     public peek_max(): pq_entry | undefined {
         if (this._data.length === 0) return undefined
         // For a min-heap, the maximum is in the second half (leaf nodes)
-        let max = this._data[0]
+        let max = this._data[0]!
         const start = Math.floor(this._data.length / 2)
         for (let i = start; i < this._data.length; i++) {
-            if (this._data[i].priority > max.priority) max = this._data[i]
+            if (this._data[i]!.priority > max.priority) max = this._data[i]!
         }
         return max
     }

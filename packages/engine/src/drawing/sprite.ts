@@ -104,3 +104,24 @@ export function sprite_get_yoffset(spr: sprite): number {
 export function sprite_get_number(spr: sprite): number {
     return spr.get_number()
 }
+
+// =========================================================================
+// Sprite name registry — resolve a sprite resource by its project name
+// =========================================================================
+
+/** Maps a sprite's project name to its resource id (populated by the game bootstrap). */
+const _sprite_names: Map<string, number> = new Map()
+
+/** Registers a sprite resource under a name so it can be looked up by name. */
+export function sprite_register_name(name: string, id: number): void {
+    _sprite_names.set(name, id)
+}
+
+/**
+ * Returns the resource id of a sprite by its project name, or -1 if unknown.
+ * GMS-style asset lookup — e.g. resolving `static sprite = 'spr_player'`.
+ * @param name - Sprite resource name
+ */
+export function sprite_get_index(name: string): number {
+    return _sprite_names.get(name) ?? -1
+}

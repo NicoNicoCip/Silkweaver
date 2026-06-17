@@ -5771,6 +5771,9 @@ function keyboard_check(key) {
 function keyboard_check_pressed(key) {
   return keyboard_manager.check_pressed(key);
 }
+function keyboard_check_released(key) {
+  return keyboard_manager.check_released(key);
+}
 var mb_none = 0;
 var mb_left = 1;
 var mb_right = 2;
@@ -5952,6 +5955,18 @@ var mouse_manager = class _mouse_manager {
     return this._wheel_down;
   }
 };
+function mouse_check_button_pressed(button) {
+  return mouse_manager.check_pressed(button);
+}
+function mouse_check_button_released(button) {
+  return mouse_manager.check_released(button);
+}
+function window_mouse_get_x() {
+  return mouse_manager.window_x;
+}
+function window_mouse_get_y() {
+  return mouse_manager.window_y;
+}
 var BUTTON_THRESHOLD = 0.5;
 var gamepad_manager = class {
   static {
@@ -6171,6 +6186,7 @@ var touch_manager = class _touch_manager {
   static _handle_start(e) {
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
+      if (!t) continue;
       const slot = this._alloc_slot(t.identifier);
       if (slot < 0) continue;
       const pos = this._to_canvas(t);
@@ -6184,6 +6200,7 @@ var touch_manager = class _touch_manager {
   static _handle_end(e) {
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
+      if (!t) continue;
       const slot = this._free_slot(t.identifier);
       if (slot < 0) continue;
       const pos = this._to_canvas(t);
@@ -6197,16 +6214,19 @@ var touch_manager = class _touch_manager {
   static _handle_move(e) {
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
+      if (!t) continue;
       const slot = this._id_to_slot.get(t.identifier) ?? -1;
       if (slot < 0) continue;
       const pos = this._to_canvas(t);
-      this._points[slot].x = pos.x;
-      this._points[slot].y = pos.y;
+      const pt = this._points[slot];
+      pt.x = pos.x;
+      pt.y = pos.y;
     }
   }
   static _handle_cancel(e) {
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
+      if (!t) continue;
       const slot = this._free_slot(t.identifier);
       if (slot < 0) continue;
       const pt = this._points[slot];
@@ -6284,6 +6304,15 @@ var game_loop = class {
     this._canvas = null;
   }
   static {
+    this._pending_game_start = false;
+  }
+  static {
+    this._pending_room_start = false;
+  }
+  static {
+    this._stopped = false;
+  }
+  static {
     this.update_events = /* @__PURE__ */ new Map();
   }
   static {
@@ -6304,11 +6333,14 @@ var game_loop = class {
    * Starts the game loop.
    * Initializes timing values and begins the requestAnimationFrame cycle.
    */
-  static start(room3) {
-    if (room3) {
-      this.room = room3;
-      this.room_first = room3.id;
+  static start(room2) {
+    if (room2) {
+      this.room = room2;
+      this.room_first = room2.id;
     }
+    this._pending_game_start = true;
+    this._pending_room_start = true;
+    this._stopped = false;
     this.last_delta = performance.now();
     requestAnimationFrame(this.tick.bind(this));
   }
@@ -6318,6 +6350,7 @@ var game_loop = class {
    * @param current - The current timestamp provided by requestAnimationFrame
    */
   static tick(current) {
+    if (this._stopped) return;
     this.room_delta = current - this.last_delta;
     this.last_delta = current;
     this.accumulator += this.room_delta;
@@ -6342,6 +6375,14 @@ var game_loop = class {
     ) ?? []];
     this.update_events.set("CREATE", []);
     createEvents.forEach((e) => e.run());
+    if (this._pending_game_start) {
+      this._pending_game_start = false;
+      this._dispatch_lifecycle("on_game_start");
+    }
+    if (this._pending_room_start) {
+      this._pending_room_start = false;
+      this._dispatch_lifecycle("on_room_start");
+    }
     this.update_events.get(
       "STEP_BEGIN"
       /* step_begin */
@@ -6427,19 +6468,53 @@ var game_loop = class {
    * Transitions to a new room, clearing current events and loading the new room's state.
    * @param room - The room to transition to
    */
-  static change_room(room3) {
+  static change_room(room2) {
+    this._dispatch_lifecycle("on_room_end");
     if (this.room && this.room.room_persistent) {
     }
     this.update_events.clear();
     this.draw_events.clear();
-    this.room = room3;
-    this.room_speed = room3.room_speed;
-    room3.register_all_instances();
+    this.room = room2;
+    this.room_speed = room2.room_speed;
+    room2.register_all_instances();
+    this._pending_room_start = true;
+  }
+  /**
+   * Ends the game: fires the Game End event for all instances, then halts the loop.
+   */
+  static end() {
+    this._dispatch_lifecycle("on_game_end");
+    this._stopped = true;
+  }
+  /**
+   * Restarts the game by returning to the first room.
+   */
+  static restart() {
+    const first = resource.findByID(this.room_first);
+    if (first instanceof room) this.change_room(first);
+  }
+  /**
+   * Calls a lifecycle event method on every active instance in the current room.
+   * @param method - Name of the lifecycle method to invoke
+   */
+  static _dispatch_lifecycle(method) {
+    if (!this.room) return;
+    for (const inst of this.room.instance_get_all()) {
+      if (inst.active) inst[method]();
+    }
   }
 };
 function get_bbox(inst, x, y) {
   const px = x ?? inst.x;
   const py = y ?? inst.y;
+  if (inst.mask_manual) {
+    return {
+      left: px + inst.mask_off_left,
+      top: py + inst.mask_off_top,
+      right: px + inst.mask_off_right,
+      bottom: py + inst.mask_off_bottom
+    };
+  }
   const sprite2 = get_sprite_for_instance(inst);
   if (!sprite2) {
     return { left: px, top: py, right: px + 1, bottom: py + 1 };
@@ -6497,6 +6572,7 @@ function point_in_instance(px, py, b) {
   const bbox = get_bbox(b);
   return px >= bbox.left && px < bbox.right && py >= bbox.top && py < bbox.bottom;
 }
+var ALARM_COUNT = 12;
 var _renderer_draw_sprite_ext = null;
 function set_draw_sprite_ext(fn) {
   _renderer_draw_sprite_ext = fn;
@@ -6506,7 +6582,7 @@ var instance = class _instance extends resource {
    * Creates a new instance in the specified room.
    * @param room - The room this instance will belong to
    */
-  constructor(room3) {
+  constructor(room2) {
     super();
     this.x = 0;
     this.y = 0;
@@ -6535,10 +6611,17 @@ var instance = class _instance extends resource {
     this.solid = false;
     this.persistent = false;
     this.active = true;
+    this.alarm = new Array(ALARM_COUNT).fill(-1);
+    this._destroyed = false;
     this.bbox_left = 0;
     this.bbox_top = 0;
     this.bbox_right = 0;
     this.bbox_bottom = 0;
+    this.mask_manual = false;
+    this.mask_off_left = 0;
+    this.mask_off_top = 0;
+    this.mask_off_right = 0;
+    this.mask_off_bottom = 0;
     this._bound_step_begin = () => {
     };
     this._bound_step = () => {
@@ -6549,7 +6632,7 @@ var instance = class _instance extends resource {
     };
     this._bound_draw_gui = () => {
     };
-    this.room = room3;
+    this.room = room2;
     this._bound_step_begin = this.on_step_begin.bind(this);
     this._bound_step = this.internal_step.bind(this);
     this._bound_step_end = this.on_step_end.bind(this);
@@ -6598,6 +6681,8 @@ var instance = class _instance extends resource {
    * Queues the destroy event to run at the end of the current step.
    */
   instance_destroy() {
+    if (this._destroyed) return;
+    this._destroyed = true;
     game_loop.register("DESTROY", this.on_destroy.bind(this));
     this.unregister_events();
     this.room.instance_remove(this.id);
@@ -6632,12 +6717,17 @@ var instance = class _instance extends resource {
     game_loop.unregister("DRAW_GUI", this._bound_draw_gui);
   }
   /**
-   * Internal step: physics, animation, bbox update, then calls on_step().
+   * Internal step: alarms, input events, physics, animation, bbox, collision
+   * events, then on_step(). Bails out early if an event destroys the instance.
    */
   internal_step() {
-    if (!this.active) return;
+    if (!this.active || this._destroyed) return;
     this.xprevious = this.x;
     this.yprevious = this.y;
+    this._process_alarms();
+    if (this._destroyed) return;
+    this._process_input_events();
+    if (this._destroyed) return;
     if (this.gravity !== 0) {
       const grav_rad = this.gravity_direction * (Math.PI / 180);
       this.hspeed += Math.cos(grav_rad) * this.gravity;
@@ -6659,16 +6749,79 @@ var instance = class _instance extends resource {
     }
     this.x += this.hspeed;
     this.y += this.vspeed;
-    if (this.image_speed !== 0 && this.sprite_index >= 0) {
-      const spr = resource.findByID(this.sprite_index);
-      const frame_count = spr && "frames" in spr ? spr.frames.length : 1;
-      if (frame_count > 0) {
-        this.image_index = (this.image_index + this.image_speed) % frame_count;
-        if (this.image_index < 0) this.image_index += frame_count;
+    this._advance_animation();
+    update_bbox(this);
+    this._process_collisions();
+    if (this._destroyed) return;
+    this.on_step();
+  }
+  /** Decrements active alarms; fires on_alarm(i) when one reaches zero. */
+  _process_alarms() {
+    for (let i = 0; i < ALARM_COUNT; i++) {
+      const a = this.alarm[i] ?? -1;
+      if (a > 0) {
+        const next = a - 1;
+        this.alarm[i] = next;
+        if (next === 0) {
+          this.alarm[i] = -1;
+          this.on_alarm(i);
+        }
+        if (this._destroyed) return;
       }
     }
-    update_bbox(this);
-    this.on_step();
+  }
+  /** Fires keyboard and mouse-over-instance events for this step. */
+  _process_input_events() {
+    if (keyboard_check_pressed(vk_anykey)) {
+      this.on_key_press();
+      if (this._destroyed) return;
+    }
+    if (keyboard_check_released(vk_anykey)) {
+      this.on_key_release();
+      if (this._destroyed) return;
+    }
+    if (keyboard_check(vk_anykey)) {
+      this.on_key_held();
+      if (this._destroyed) return;
+    }
+    const mx = window_mouse_get_x();
+    const my = window_mouse_get_y();
+    if (point_in_instance(mx, my, this)) {
+      if (mouse_check_button_pressed(mb_left)) {
+        this.on_mouse_left_press();
+        if (this._destroyed) return;
+      }
+      if (mouse_check_button_released(mb_left)) {
+        this.on_mouse_left_release();
+        if (this._destroyed) return;
+      }
+      if (mouse_check_button_pressed(mb_right)) {
+        this.on_mouse_right_press();
+      }
+    }
+  }
+  /** Advances the sprite animation, firing on_animation_end() on each loop. */
+  _advance_animation() {
+    if (this.image_speed === 0 || this.sprite_index < 0) return;
+    const spr = resource.findByID(this.sprite_index);
+    const frame_count = spr && "frames" in spr ? spr.frames.length : 1;
+    if (frame_count <= 0) return;
+    const prev = this.image_index;
+    this.image_index = (this.image_index + this.image_speed) % frame_count;
+    if (this.image_index < 0) this.image_index += frame_count;
+    const looped = this.image_speed > 0 ? this.image_index < prev : this.image_index > prev;
+    if (looped) this.on_animation_end();
+  }
+  /** Fires on_collision(other) for each instance this one overlaps (collision-event objects only). */
+  _process_collisions() {
+    if (this.on_collision === _instance.prototype.on_collision) return;
+    for (const other of this.room.instance_get_all()) {
+      if (other === this || !other.active) continue;
+      if (instances_collide(this, this.x, this.y, other)) {
+        this.on_collision(other);
+        if (this._destroyed) return;
+      }
+    }
   }
   /**
    * Internal draw: skips hidden instances, then calls on_draw().
@@ -6900,6 +7053,55 @@ var instance = class _instance extends resource {
     return true;
   }
   /**
+   * Like place_meeting, but returns the first instance collided with at (x, y),
+   * or undefined if none.
+   * @param x - X position to test
+   * @param y - Y position to test
+   * @param obj - Object class to check against (pass the base `instance` for "all")
+   */
+  instance_place(x, y, obj) {
+    const rm = game_loop.room;
+    if (!rm) return void 0;
+    for (const other of rm.instance_get_all()) {
+      if (other === this || !other.active) continue;
+      if (!(other instanceof obj)) continue;
+      if (instances_collide(this, x, y, other)) return other;
+    }
+    return void 0;
+  }
+  // =========================================================================
+  // Collision mask (manual)
+  // =========================================================================
+  /**
+   * Sets a manual rectangular collision mask, as offsets from the instance
+   * origin (x, y). Use this for spriteless objects so collision functions work.
+   * @param left - Left offset from x
+   * @param top - Top offset from y
+   * @param right - Right offset from x
+   * @param bottom - Bottom offset from y
+   */
+  mask_set_rectangle(left, top, right, bottom) {
+    this.mask_manual = true;
+    this.mask_off_left = left;
+    this.mask_off_top = top;
+    this.mask_off_right = right;
+    this.mask_off_bottom = bottom;
+    update_bbox(this);
+  }
+  /**
+   * Convenience: sets a manual width×height mask with its top-left at the origin.
+   * @param width - Mask width
+   * @param height - Mask height
+   */
+  mask_set_size(width, height) {
+    this.mask_set_rectangle(0, 0, width, height);
+  }
+  /** Removes the manual mask, reverting to the sprite/mask_index-derived bbox. */
+  mask_clear() {
+    this.mask_manual = false;
+    update_bbox(this);
+  }
+  /**
    * Moves the instance by the given amount, stopping when it hits a solid.
    * @param hspd - Horizontal movement
    * @param vspd - Vertical movement
@@ -7066,6 +7268,54 @@ var instance = class _instance extends resource {
   }
   /** Called every frame to draw GUI elements (fixed to the screen, not the room). */
   on_draw_gui() {
+  }
+  // ── Alarm ────────────────────────────────────────────────────────────────
+  /** Called when alarm[index] counts down to zero. */
+  on_alarm(_index) {
+  }
+  // ── Keyboard (generic — check specific keys with keyboard_check* inside) ──
+  /** Called the step any key is pressed. */
+  on_key_press() {
+  }
+  /** Called the step any key is released. */
+  on_key_release() {
+  }
+  /** Called every step any key is held down. */
+  on_key_held() {
+  }
+  // ── Mouse (fired only while the pointer is over this instance) ────────────
+  /** Called when the left mouse button is pressed over this instance. */
+  on_mouse_left_press() {
+  }
+  /** Called when the left mouse button is released over this instance. */
+  on_mouse_left_release() {
+  }
+  /** Called when the right mouse button is pressed over this instance. */
+  on_mouse_right_press() {
+  }
+  // ── Collision ─────────────────────────────────────────────────────────────
+  /** Called for each other instance this one overlaps this step. */
+  on_collision(_other) {
+  }
+  // ── Room / Game lifecycle ────────────────────────────────────────────────
+  /** Called when the room this instance is in starts. */
+  on_room_start() {
+  }
+  /** Called when the room this instance is in ends (before leaving it). */
+  on_room_end() {
+  }
+  /** Called once when the game starts, for instances present in the first room. */
+  on_game_start() {
+  }
+  /** Called once when the game ends. */
+  on_game_end() {
+  }
+  // ── Other ─────────────────────────────────────────────────────────────────
+  /** Called when the sprite animation completes a loop. */
+  on_animation_end() {
+  }
+  /** Called when path following ends (requires path_start; not yet wired). */
+  on_path_end() {
   }
 };
 var gm_object = class extends instance {
@@ -7587,7 +7837,15 @@ var font_renderer = class {
     this.cache.clear();
   }
 };
+var c_black = 0;
+var c_white = 16777215;
 var bm_normal = 0;
+function make_color_rgb(r, g, b) {
+  r = Math.max(0, Math.min(255, Math.round(r)));
+  g = Math.max(0, Math.min(255, Math.round(g)));
+  b = Math.max(0, Math.min(255, Math.round(b)));
+  return b << 16 | g << 8 | r;
+}
 function color_get_red(col) {
   return col & 255;
 }
@@ -8001,10 +8259,27 @@ var renderer = class {
    */
   static draw_background_ext(bg, x, y, xscale, yscale, rot, color, alpha) {
     if (!bg || !bg.texture) return;
-    const w = bg.width * xscale;
-    const h = bg.height * yscale;
     const [r, g, b] = color_to_rgb_normalized(color);
-    this.batch.add_quad_rotated(x, y, w, h, rot, 0, 0, 1, 1, r, g, b, alpha, bg.texture.texture);
+    this.batch.add_quad_transformed(
+      x,
+      y,
+      bg.width,
+      bg.height,
+      0,
+      0,
+      xscale,
+      yscale,
+      rot,
+      0,
+      0,
+      1,
+      1,
+      r,
+      g,
+      b,
+      alpha,
+      bg.texture.texture
+    );
   }
   /**
    * Draws a background stretched to fill a specified region.
@@ -8030,8 +8305,8 @@ var renderer = class {
   static draw_background_tiled(bg, x, y, tile_x, tile_y) {
     if (!bg || !bg.texture) return;
     const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    const view_w = this.canvas_width;
-    const view_h = this.canvas_height;
+    const view_w = this.canvas.width;
+    const view_h = this.canvas.height;
     const tiles_x = Math.ceil(view_w / bg.width) + 1;
     const tiles_y = Math.ceil(view_h / bg.height) + 1;
     const start_x = x - tile_x % bg.width;
@@ -8385,65 +8660,6 @@ var renderer = class {
     this.gl.deleteProgram(this.program);
   }
 };
-var sprite = class extends resource {
-  // Height of the first frame
-  constructor() {
-    super();
-    this.frames = [];
-    this.xoffset = 0;
-    this.yoffset = 0;
-    this.width = 0;
-    this.height = 0;
-  }
-  /**
-   * Adds a frame to this sprite.
-   * @param frame - The frame to add
-   */
-  add_frame(frame) {
-    this.frames.push(frame);
-    if (this.frames.length === 1) {
-      this.width = frame.width;
-      this.height = frame.height;
-    }
-  }
-  /**
-   * Returns the number of frames in this sprite.
-   */
-  get_number() {
-    return this.frames.length;
-  }
-  /**
-   * Returns the frame at the given index, wrapping around if out of range.
-   * @param index - Frame index
-   * @returns sprite_frame or undefined if the sprite has no frames
-   */
-  get_frame(index) {
-    if (this.frames.length === 0) return void 0;
-    const i = Math.floor(index) % this.frames.length;
-    return this.frames[i < 0 ? i + this.frames.length : i];
-  }
-};
-var background = class extends resource {
-  // Use smooth filtering
-  constructor() {
-    super();
-    this.texture = null;
-    this.width = 0;
-    this.height = 0;
-    this.tile_h = false;
-    this.tile_v = false;
-    this.smooth = false;
-  }
-  /**
-   * Sets the texture for this background.
-   * @param texture - The texture entry to use
-   */
-  set_texture(texture) {
-    this.texture = texture;
-    this.width = texture.width;
-    this.height = texture.height;
-  }
-};
 function make_default_view(port_w = 800, port_h = 600) {
   return {
     enabled: false,
@@ -8460,6 +8676,18 @@ function make_default_view(port_w = 800, port_h = 600) {
 }
 var MAX_VIEWS = 8;
 var _views = Array.from({ length: MAX_VIEWS }, () => make_default_view());
+function draw_set_color(col) {
+  renderer.set_color(col);
+}
+function draw_rectangle(x1, y1, x2, y2, outline) {
+  renderer.draw_rectangle(x1, y1, x2, y2, outline);
+}
+function draw_circle(x, y, r, outline) {
+  renderer.draw_circle(x, y, r, outline);
+}
+function draw_text(x, y, text) {
+  renderer.draw_text(x, y, String(text));
+}
 var audio_system = class {
   static {
     this._ctx = null;
@@ -8594,364 +8822,349 @@ var _lights = Array.from({ length: MAX_LIGHTS }, _default_light);
 var DEG2RAD = Math.PI / 180;
 var RAD2DEG = 180 / Math.PI;
 
-// ../Jump-Clone/_entry.ts
-var o_player = class extends gm_object {
-  static object_name = "o_player";
+// ../../Silkweaver/_entry.ts
+var obj_platform = class extends gm_object {
+  static object_name = "obj_platform";
   on_create() {
-    this.sprite_index = _sprite_map["s_player"] ?? -1;
-    this.bbox_left = this.x - 16;
-    this.bbox_top = this.y - 16;
-    this.bbox_right = this.x + 16;
-    this.bbox_bottom = this.y + 16;
+    this.pw = 96;
+    this.ph = 24;
+    this.bbox_left = this.x;
+    this.bbox_top = this.y;
+    this.bbox_right = this.x + 96;
+    this.bbox_bottom = this.y + 24;
+  }
+  on_step_begin() {
+    const pw = this.pw;
+    const ph = this.ph;
+    this.bbox_left = this.x;
+    this.bbox_top = this.y;
+    this.bbox_right = this.x + pw;
+    this.bbox_bottom = this.y + ph;
   }
   on_step() {
-    let move = 0;
-    if (keyboard_check(vk_left)) {
-      move = -1;
+  }
+  on_draw() {
+    const pw = this.pw;
+    const ph = this.ph;
+    draw_set_color(make_color_rgb(60, 140, 60));
+    draw_rectangle(this.x, this.y, this.x + pw, this.y + ph, false);
+    draw_set_color(make_color_rgb(100, 200, 100));
+    draw_rectangle(this.x, this.y, this.x + pw, this.y + ph, true);
+  }
+};
+var obj_coin = class extends gm_object {
+  static object_name = "obj_coin";
+  on_create() {
+    ;
+    this.cr = 8;
+    this.bbox_left = this.x - 8;
+    this.bbox_top = this.y - 8;
+    this.bbox_right = this.x + 8;
+    this.bbox_bottom = this.y + 8;
+  }
+  on_step() {
+    this.bbox_left = this.x - 8;
+    this.bbox_top = this.y - 8;
+    this.bbox_right = this.x + 8;
+    this.bbox_bottom = this.y + 8;
+  }
+  on_draw() {
+    draw_set_color(make_color_rgb(255, 215, 0));
+    draw_circle(this.x, this.y, 8, false);
+    draw_set_color(make_color_rgb(255, 165, 0));
+    draw_circle(this.x, this.y, 8, true);
+  }
+};
+var obj_enemy = class extends gm_object {
+  static object_name = "obj_enemy";
+  on_create() {
+    ;
+    this.ew = 32;
+    this.eh = 32;
+    this.patrol_left = this.x - 80;
+    this.patrol_right = this.x + 80;
+    this.hspeed = 1.5;
+  }
+  on_step() {
+    const ew = this.ew;
+    const eh = this.eh;
+    const pl = this.patrol_left;
+    const pr = this.patrol_right;
+    if (this.x <= pl) {
+      this.x = pl;
+      this.hspeed = 1.5;
     }
-    if (keyboard_check(vk_right)) {
-      move = 1;
+    if (this.x + ew >= pr) {
+      this.x = pr - ew;
+      this.hspeed = -1.5;
     }
-    const move_speed = 4;
-    this.hspeed = move * move_speed;
-    this.vspeed += 0.5;
-    if (this.vspeed > 15) {
-      this.vspeed = 15;
+    this.bbox_left = this.x;
+    this.bbox_top = this.y;
+    this.bbox_right = this.x + ew;
+    this.bbox_bottom = this.y + eh;
+  }
+  on_draw() {
+    const ew = this.ew;
+    const eh = this.eh;
+    draw_set_color(make_color_rgb(200, 50, 50));
+    draw_rectangle(this.x, this.y, this.x + ew, this.y + eh, false);
+    draw_set_color(make_color_rgb(255, 255, 255));
+    const eye_y = this.y + 8;
+    if (this.hspeed > 0) {
+      draw_circle(this.x + 22, eye_y, 5, false);
+      draw_set_color(make_color_rgb(0, 0, 0));
+      draw_circle(this.x + 23, eye_y, 2, false);
+    } else {
+      draw_circle(this.x + 10, eye_y, 5, false);
+      draw_set_color(make_color_rgb(0, 0, 0));
+      draw_circle(this.x + 9, eye_y, 2, false);
     }
-    const on_ground = this.place_meeting(this.x, this.y + this.vspeed, o_wall);
-    if (keyboard_check_pressed(vk_space) && on_ground) {
+  }
+};
+var obj_player = class extends gm_object {
+  static object_name = "obj_player";
+  on_create() {
+    ;
+    this.pw = 28;
+    this.ph = 40;
+    this.on_ground = false;
+    this.score = 0;
+    this.dead = false;
+    this.gravity = 0;
+  }
+  on_step() {
+    if (this.dead) return;
+    const pw = this.pw;
+    const ph = this.ph;
+    const platforms = [];
+    for (const other of this.room.instance_get_all()) {
+      if (other === this || !other.active || !other.solid) continue;
+      const opw = other.pw;
+      const oph = other.ph;
+      if (opw !== void 0 && oph !== void 0) {
+        platforms.push({ left: other.x, top: other.y, right: other.x + opw, bottom: other.y + oph });
+      } else {
+        platforms.push({ left: other.bbox_left, top: other.bbox_top, right: other.bbox_right, bottom: other.bbox_bottom });
+      }
+    }
+    function bbox_overlap_check(xl, yt, xr, yb, p) {
+      return xl < p.right && xr > p.left && yt < p.bottom && yb > p.top;
+    }
+    {
+      const xl = this.x, yt = this.y + 2, xr = this.x + pw, yb = this.y + ph - 2;
+      for (const p of platforms) {
+        if (bbox_overlap_check(xl, yt, xr, yb, p)) {
+          if (this.hspeed > 0) this.x = p.left - pw;
+          else if (this.hspeed < 0) this.x = p.right;
+          this.hspeed = 0;
+          break;
+        }
+      }
+    }
+    ;
+    this.on_ground = false;
+    {
+      const xl = this.x + 2, yt = this.y, xr = this.x + pw - 2, yb = this.y + ph;
+      for (const p of platforms) {
+        if (bbox_overlap_check(xl, yt, xr, yb, p)) {
+          if (this.vspeed > 0) {
+            this.y = p.top - ph;
+            this.on_ground = true;
+          } else {
+            this.y = p.bottom;
+          }
+          this.vspeed = 0;
+          break;
+        }
+      }
+    }
+    this.bbox_left = this.x;
+    this.bbox_top = this.y;
+    this.bbox_right = this.x + pw;
+    this.bbox_bottom = this.y + ph;
+    if (this.x < 0) {
+      this.x = 0;
+      this.hspeed = 0;
+    }
+    if (this.x + pw > this.room.room_width) {
+      this.x = this.room.room_width - pw;
+      this.hspeed = 0;
+    }
+    if (this.y > this.room.room_height + 64) {
+      this.x = this.xstart;
+      this.y = this.ystart;
+      this.vspeed = 0;
+      this.hspeed = 0;
+    }
+    const move_spd = 3;
+    if (keyboard_check(vk_left)) this.hspeed = -move_spd;
+    else if (keyboard_check(vk_right)) this.hspeed = move_spd;
+    else this.hspeed = 0;
+    if (keyboard_check_pressed(vk_space) && this.on_ground) {
       this.vspeed = -10;
     }
-    if (this.place_meeting(this.x + this.hspeed, this.y, o_wall)) {
-      while (!this.place_meeting(this.x + sign2(this.hspeed), this.y, o_wall)) {
-        this.x += sign2(this.hspeed);
-      }
-      this.hspeed = 0;
+    if (!this.on_ground) {
+      this.vspeed += 0.5;
+      if (this.vspeed > 12) this.vspeed = 12;
     }
-    this.x += this.hspeed;
-    if (this.place_meeting(this.x, this.y + this.vspeed, o_wall)) {
-      while (!this.place_meeting(this.x, this.y + sign2(this.vspeed), o_wall)) {
-        this.y += sign2(this.vspeed);
-      }
-      this.vspeed = 0;
-    }
-    this.y += this.vspeed;
-    if (this.place_meeting(this.x, this.y, o_coin)) {
-      const coin = instance.instance_nearest(this.x, this.y, o_coin);
-      if (coin) {
-        coin.instance_destroy();
+    for (const other of this.room.instance_get_all()) {
+      if (!other.active) continue;
+      if (!(other instanceof obj_coin)) continue;
+      const cr = other.cr ?? 8;
+      const ol = other.x - cr, ot = other.y - cr;
+      const or_ = other.x + cr, ob = other.y + cr;
+      if (this.bbox_left < or_ && this.bbox_right > ol && this.bbox_top < ob && this.bbox_bottom > ot) {
+        ;
+        this.score = this.score + 1;
+        other.instance_destroy();
       }
     }
-    if (this.place_meeting(this.x, this.y, o_enemy)) {
-      this.x = 64;
-      this.y = 64;
-    }
-    function sign2(value) {
-      if (value > 0) return 1;
-      if (value < 0) return -1;
-      return 0;
+    for (const other of this.room.instance_get_all()) {
+      if (!other.active) continue;
+      if (!(other instanceof obj_enemy)) continue;
+      const oew = other.ew ?? 32;
+      const oeh = other.eh ?? 32;
+      const el = other.x, et = other.y;
+      const er = other.x + oew, eb = other.y + oeh;
+      if (this.bbox_left < er && this.bbox_right > el && this.bbox_top < eb && this.bbox_bottom > et) {
+        if (this.vspeed >= 0 && this.bbox_bottom <= et + 12) {
+          other.instance_destroy();
+          this.vspeed = -7;
+        } else {
+          ;
+          this.score = 0;
+          this.x = this.xstart;
+          this.y = this.ystart;
+          this.hspeed = 0;
+          this.vspeed = 0;
+        }
+      }
     }
   }
   on_draw() {
-    this.draw_self();
+    const pw = this.pw;
+    const ph = this.ph;
+    const score = this.score;
+    draw_set_color(make_color_rgb(60, 100, 220));
+    draw_rectangle(this.x, this.y, this.x + pw, this.y + ph, false);
+    draw_set_color(make_color_rgb(100, 150, 240));
+    draw_rectangle(this.x + 4, this.y, this.x + pw - 4, this.y + 16, false);
+    draw_set_color(c_white);
+    draw_circle(this.x + 8, this.y + 6, 3, false);
+    draw_circle(this.x + 20, this.y + 6, 3, false);
+    draw_set_color(c_black);
+    draw_circle(this.x + 9, this.y + 7, 1, false);
+    draw_circle(this.x + 21, this.y + 7, 1, false);
+    draw_set_color(c_white);
+    draw_text(8, 8, "Coins: " + String(score));
   }
 };
-var o_wall = class extends gm_object {
-  static object_name = "o_wall";
-  on_draw() {
-    this.draw_self();
-  }
-  on_create() {
-    this.sprite_index = _sprite_map["s_wall"] ?? -1;
-  }
-};
-var o_enemy = class extends gm_object {
-  static object_name = "o_enemy";
-  on_create() {
-    this.sprite_index = _sprite_map["s_enemy"] ?? -1;
-    this.hspeed = 2;
-    this.move_direction = 1;
-  }
-  on_step() {
-    this.vspeed += 0.5;
-    if (this.vspeed > 15) {
-      this.vspeed = 15;
-    }
-    this.hspeed = this.move_direction * 2;
-    const wall_ahead = this.place_meeting(this.x + this.hspeed * 2, this.y, o_wall);
-    const ledge_ahead = !this.place_meeting(this.x + this.hspeed * 8, this.y + 16, o_wall);
-    if (wall_ahead || ledge_ahead) {
-      this.move_direction *= -1;
-    }
-    if (this.place_meeting(this.x + this.hspeed, this.y, o_wall)) {
-      while (!this.place_meeting(this.x + sign2(this.hspeed), this.y, o_wall)) {
-        this.x += sign2(this.hspeed);
-      }
-      this.hspeed = 0;
-    }
-    this.x += this.hspeed;
-    if (this.place_meeting(this.x, this.y + this.vspeed, o_wall)) {
-      while (!this.place_meeting(this.x, this.y + sign2(this.vspeed), o_wall)) {
-        this.y += sign2(this.vspeed);
-      }
-      this.vspeed = 0;
-    }
-    this.y += this.vspeed;
-    function sign2(value) {
-      if (value > 0) return 1;
-      if (value < 0) return -1;
-      return 0;
-    }
-  }
-  on_draw() {
-    this.draw_self();
-  }
-};
-var o_coin = class extends gm_object {
-  static object_name = "o_coin";
-  on_create() {
-    this.sprite_index = _sprite_map["s_coin"] ?? -1;
-    this.float_offset = 0;
-    this.float_speed = 0.1;
-    this.start_y = this.y;
-  }
-  on_step() {
-    this.float_offset += this.float_speed;
-    this.y = this.start_y + Math.sin(this.float_offset) * 4;
-  }
-  on_draw() {
-    this.draw_self();
-  }
-};
-var _sprite_map = {};
-async function _load_sprite(name, meta_path, img_dir) {
-  try {
-    const meta = await fetch("file://" + meta_path).then((r) => r.json());
-    const spr = new sprite();
-    spr.width = meta.width || 32;
-    spr.height = meta.height || 32;
-    spr.xoffset = meta.origin_x || 0;
-    spr.yoffset = meta.origin_y || 0;
-    const frames = meta.frames || [];
-    if (frames.length === 0) {
-      console.warn(`[Sprite] ${name} has no frames defined in meta.json`);
-      return;
-    }
-    for (const frame_meta of frames) {
-      const frame_name = frame_meta.name || frame_meta;
-      const frame_url = "file://" + img_dir.replace(/\\/g, "/") + "/" + frame_name;
-      try {
-        const tex_entry = await renderer.tex_mgr.load(frame_url, false);
-        spr.add_frame({
-          texture: tex_entry,
-          width: tex_entry.width,
-          height: tex_entry.height
-        });
-      } catch (err) {
-        console.warn(`[Sprite] Failed to load frame ${frame_name} for ${name}:`, err);
-      }
-    }
-    if (spr.frames.length > 0) {
-      _sprite_map[name] = spr.id;
-    } else {
-      console.warn(`[Sprite] ${name} has no valid frames`);
-    }
-  } catch (err) {
-    console.warn(`[Sprite] Failed to load ${name}:`, err);
-  }
-}
-var _background_map = {};
-async function _load_background(name, meta_path, img_dir) {
-  try {
-    const meta = await fetch("file://" + meta_path).then((r) => r.json());
-    if (!meta.file_name) {
-      console.warn(`[Background] ${name} has no file_name in meta.json`);
-      return;
-    }
-    const bg = new background();
-    bg.tile_h = meta.tile_h ?? false;
-    bg.tile_v = meta.tile_v ?? false;
-    bg.smooth = meta.smooth ?? false;
-    const img_url = "file://" + img_dir.replace(/\\/g, "/") + "/" + meta.file_name;
-    try {
-      const tex_entry = await renderer.tex_mgr.load(img_url, bg.smooth);
-      bg.set_texture(tex_entry);
-      _background_map[name] = bg.id;
-    } catch (err) {
-      console.warn(`[Background] Failed to load image for ${name}:`, err);
-    }
-  } catch (err) {
-    console.warn(`[Background] Failed to load ${name}:`, err);
-  }
-}
 async function init(canvas) {
   renderer.init(canvas, 640, 480);
   game_loop.init_input(canvas);
-  await _load_sprite("s_player", "D:/Projects/TypeScript/Jump-Clone/sprites/s_player/meta.json", "D:/Projects/TypeScript/Jump-Clone/sprites/s_player");
-  await _load_sprite("s_wall", "D:/Projects/TypeScript/Jump-Clone/sprites/s_wall/meta.json", "D:/Projects/TypeScript/Jump-Clone/sprites/s_wall");
-  await _load_sprite("s_enemy", "D:/Projects/TypeScript/Jump-Clone/sprites/s_enemy/meta.json", "D:/Projects/TypeScript/Jump-Clone/sprites/s_enemy");
-  await _load_sprite("s_coin", "D:/Projects/TypeScript/Jump-Clone/sprites/s_coin/meta.json", "D:/Projects/TypeScript/Jump-Clone/sprites/s_coin");
-  await _load_background("bg_test", "D:/Projects/TypeScript/Jump-Clone/backgrounds/bg_test/meta.json", "D:/Projects/TypeScript/Jump-Clone/backgrounds/bg_test");
-  const _room_r_main = new room();
-  _room_r_main.room_width = 640;
-  _room_r_main.room_height = 480;
-  _room_r_main.room_speed = 60;
-  _room_r_main.room_persistent = false;
-  const _inst_o_player_0 = new o_player(_room_r_main);
-  _room_r_main.room_instance_add(64, 64, _inst_o_player_0);
-  _inst_o_player_0.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_player_0.on_create.bind(_inst_o_player_0));
-  const _inst_o_wall_1 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(0, 448, _inst_o_wall_1);
-  _inst_o_wall_1.solid = true;
-  _inst_o_wall_1.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_1.on_create.bind(_inst_o_wall_1));
-  const _inst_o_wall_2 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(32, 448, _inst_o_wall_2);
-  _inst_o_wall_2.solid = true;
-  _inst_o_wall_2.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_2.on_create.bind(_inst_o_wall_2));
-  const _inst_o_wall_3 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(64, 448, _inst_o_wall_3);
-  _inst_o_wall_3.solid = true;
-  _inst_o_wall_3.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_3.on_create.bind(_inst_o_wall_3));
-  const _inst_o_wall_4 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(96, 448, _inst_o_wall_4);
-  _inst_o_wall_4.solid = true;
-  _inst_o_wall_4.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_4.on_create.bind(_inst_o_wall_4));
-  const _inst_o_wall_5 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(128, 448, _inst_o_wall_5);
-  _inst_o_wall_5.solid = true;
-  _inst_o_wall_5.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_5.on_create.bind(_inst_o_wall_5));
-  const _inst_o_wall_6 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(160, 448, _inst_o_wall_6);
-  _inst_o_wall_6.solid = true;
-  _inst_o_wall_6.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_6.on_create.bind(_inst_o_wall_6));
-  const _inst_o_wall_7 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(192, 448, _inst_o_wall_7);
-  _inst_o_wall_7.solid = true;
-  _inst_o_wall_7.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_7.on_create.bind(_inst_o_wall_7));
-  const _inst_o_wall_8 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(224, 448, _inst_o_wall_8);
-  _inst_o_wall_8.solid = true;
-  _inst_o_wall_8.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_8.on_create.bind(_inst_o_wall_8));
-  const _inst_o_wall_9 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(256, 448, _inst_o_wall_9);
-  _inst_o_wall_9.solid = true;
-  _inst_o_wall_9.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_9.on_create.bind(_inst_o_wall_9));
-  const _inst_o_wall_10 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(288, 448, _inst_o_wall_10);
-  _inst_o_wall_10.solid = true;
-  _inst_o_wall_10.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_10.on_create.bind(_inst_o_wall_10));
-  const _inst_o_wall_11 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(320, 448, _inst_o_wall_11);
-  _inst_o_wall_11.solid = true;
-  _inst_o_wall_11.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_11.on_create.bind(_inst_o_wall_11));
-  const _inst_o_wall_12 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(352, 448, _inst_o_wall_12);
-  _inst_o_wall_12.solid = true;
-  _inst_o_wall_12.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_12.on_create.bind(_inst_o_wall_12));
-  const _inst_o_wall_13 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(384, 448, _inst_o_wall_13);
-  _inst_o_wall_13.solid = true;
-  _inst_o_wall_13.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_13.on_create.bind(_inst_o_wall_13));
-  const _inst_o_wall_14 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(416, 448, _inst_o_wall_14);
-  _inst_o_wall_14.solid = true;
-  _inst_o_wall_14.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_14.on_create.bind(_inst_o_wall_14));
-  const _inst_o_wall_15 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(448, 448, _inst_o_wall_15);
-  _inst_o_wall_15.solid = true;
-  _inst_o_wall_15.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_15.on_create.bind(_inst_o_wall_15));
-  const _inst_o_wall_16 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(480, 448, _inst_o_wall_16);
-  _inst_o_wall_16.solid = true;
-  _inst_o_wall_16.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_16.on_create.bind(_inst_o_wall_16));
-  const _inst_o_wall_17 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(512, 448, _inst_o_wall_17);
-  _inst_o_wall_17.solid = true;
-  _inst_o_wall_17.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_17.on_create.bind(_inst_o_wall_17));
-  const _inst_o_wall_18 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(544, 448, _inst_o_wall_18);
-  _inst_o_wall_18.solid = true;
-  _inst_o_wall_18.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_18.on_create.bind(_inst_o_wall_18));
-  const _inst_o_wall_19 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(576, 448, _inst_o_wall_19);
-  _inst_o_wall_19.solid = true;
-  _inst_o_wall_19.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_19.on_create.bind(_inst_o_wall_19));
-  const _inst_o_wall_20 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(608, 448, _inst_o_wall_20);
-  _inst_o_wall_20.solid = true;
-  _inst_o_wall_20.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_20.on_create.bind(_inst_o_wall_20));
-  const _inst_o_wall_21 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(200, 320, _inst_o_wall_21);
-  _inst_o_wall_21.solid = true;
-  _inst_o_wall_21.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_21.on_create.bind(_inst_o_wall_21));
-  const _inst_o_wall_22 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(232, 320, _inst_o_wall_22);
-  _inst_o_wall_22.solid = true;
-  _inst_o_wall_22.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_22.on_create.bind(_inst_o_wall_22));
-  const _inst_o_wall_23 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(264, 320, _inst_o_wall_23);
-  _inst_o_wall_23.solid = true;
-  _inst_o_wall_23.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_23.on_create.bind(_inst_o_wall_23));
-  const _inst_o_wall_24 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(400, 240, _inst_o_wall_24);
-  _inst_o_wall_24.solid = true;
-  _inst_o_wall_24.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_24.on_create.bind(_inst_o_wall_24));
-  const _inst_o_wall_25 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(432, 240, _inst_o_wall_25);
-  _inst_o_wall_25.solid = true;
-  _inst_o_wall_25.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_25.on_create.bind(_inst_o_wall_25));
-  const _inst_o_wall_26 = new o_wall(_room_r_main);
-  _room_r_main.room_instance_add(464, 240, _inst_o_wall_26);
-  _inst_o_wall_26.solid = true;
-  _inst_o_wall_26.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_wall_26.on_create.bind(_inst_o_wall_26));
-  const _inst_o_enemy_27 = new o_enemy(_room_r_main);
-  _room_r_main.room_instance_add(300, 400, _inst_o_enemy_27);
-  _inst_o_enemy_27.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_enemy_27.on_create.bind(_inst_o_enemy_27));
-  const _inst_o_enemy_28 = new o_enemy(_room_r_main);
-  _room_r_main.room_instance_add(430, 200, _inst_o_enemy_28);
-  _inst_o_enemy_28.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_enemy_28.on_create.bind(_inst_o_enemy_28));
-  const _inst_o_coin_29 = new o_coin(_room_r_main);
-  _room_r_main.room_instance_add(230, 280, _inst_o_coin_29);
-  _inst_o_coin_29.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_coin_29.on_create.bind(_inst_o_coin_29));
-  const _inst_o_coin_30 = new o_coin(_room_r_main);
-  _room_r_main.room_instance_add(430, 200, _inst_o_coin_30);
-  _inst_o_coin_30.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_coin_30.on_create.bind(_inst_o_coin_30));
-  const _inst_o_coin_31 = new o_coin(_room_r_main);
-  _room_r_main.room_instance_add(500, 400, _inst_o_coin_31);
-  _inst_o_coin_31.register_events();
-  game_loop.register(EVENT_TYPE.create, _inst_o_coin_31.on_create.bind(_inst_o_coin_31));
-  const start = _room_r_main;
+  const _room_room_level1 = new room();
+  _room_room_level1.room_width = 640;
+  _room_room_level1.room_height = 480;
+  _room_room_level1.room_speed = 60;
+  _room_room_level1.room_persistent = false;
+  const _inst_obj_platform_0 = new obj_platform(_room_room_level1);
+  _room_room_level1.room_instance_add(0, 448, _inst_obj_platform_0);
+  _inst_obj_platform_0.solid = true;
+  _inst_obj_platform_0.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_0.on_create.bind(_inst_obj_platform_0));
+  const _inst_obj_platform_1 = new obj_platform(_room_room_level1);
+  _room_room_level1.room_instance_add(96, 448, _inst_obj_platform_1);
+  _inst_obj_platform_1.solid = true;
+  _inst_obj_platform_1.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_1.on_create.bind(_inst_obj_platform_1));
+  const _inst_obj_platform_2 = new obj_platform(_room_room_level1);
+  _room_room_level1.room_instance_add(192, 448, _inst_obj_platform_2);
+  _inst_obj_platform_2.solid = true;
+  _inst_obj_platform_2.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_2.on_create.bind(_inst_obj_platform_2));
+  const _inst_obj_platform_3 = new obj_platform(_room_room_level1);
+  _room_room_level1.room_instance_add(288, 448, _inst_obj_platform_3);
+  _inst_obj_platform_3.solid = true;
+  _inst_obj_platform_3.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_3.on_create.bind(_inst_obj_platform_3));
+  const _inst_obj_platform_4 = new obj_platform(_room_room_level1);
+  _room_room_level1.room_instance_add(384, 448, _inst_obj_platform_4);
+  _inst_obj_platform_4.solid = true;
+  _inst_obj_platform_4.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_4.on_create.bind(_inst_obj_platform_4));
+  const _inst_obj_platform_5 = new obj_platform(_room_room_level1);
+  _room_room_level1.room_instance_add(480, 448, _inst_obj_platform_5);
+  _inst_obj_platform_5.solid = true;
+  _inst_obj_platform_5.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_5.on_create.bind(_inst_obj_platform_5));
+  const _inst_obj_platform_6 = new obj_platform(_room_room_level1);
+  _room_room_level1.room_instance_add(544, 448, _inst_obj_platform_6);
+  _inst_obj_platform_6.solid = true;
+  _inst_obj_platform_6.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_6.on_create.bind(_inst_obj_platform_6));
+  const _inst_obj_platform_7 = new obj_platform(_room_room_level1);
+  _room_room_level1.room_instance_add(100, 360, _inst_obj_platform_7);
+  _inst_obj_platform_7.solid = true;
+  _inst_obj_platform_7.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_7.on_create.bind(_inst_obj_platform_7));
+  const _inst_obj_platform_8 = new obj_platform(_room_room_level1);
+  _room_room_level1.room_instance_add(196, 360, _inst_obj_platform_8);
+  _inst_obj_platform_8.solid = true;
+  _inst_obj_platform_8.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_8.on_create.bind(_inst_obj_platform_8));
+  const _inst_obj_platform_9 = new obj_platform(_room_room_level1);
+  _room_room_level1.room_instance_add(300, 280, _inst_obj_platform_9);
+  _inst_obj_platform_9.solid = true;
+  _inst_obj_platform_9.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_9.on_create.bind(_inst_obj_platform_9));
+  const _inst_obj_platform_10 = new obj_platform(_room_room_level1);
+  _room_room_level1.room_instance_add(470, 320, _inst_obj_platform_10);
+  _inst_obj_platform_10.solid = true;
+  _inst_obj_platform_10.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_10.on_create.bind(_inst_obj_platform_10));
+  const _inst_obj_platform_11 = new obj_platform(_room_room_level1);
+  _room_room_level1.room_instance_add(185, 220, _inst_obj_platform_11);
+  _inst_obj_platform_11.solid = true;
+  _inst_obj_platform_11.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_11.on_create.bind(_inst_obj_platform_11));
+  const _inst_obj_platform_12 = new obj_platform(_room_room_level1);
+  _room_room_level1.room_instance_add(390, 190, _inst_obj_platform_12);
+  _inst_obj_platform_12.solid = true;
+  _inst_obj_platform_12.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_platform_12.on_create.bind(_inst_obj_platform_12));
+  const _inst_obj_coin_13 = new obj_coin(_room_room_level1);
+  _room_room_level1.room_instance_add(148, 330, _inst_obj_coin_13);
+  _inst_obj_coin_13.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_coin_13.on_create.bind(_inst_obj_coin_13));
+  const _inst_obj_coin_14 = new obj_coin(_room_room_level1);
+  _room_room_level1.room_instance_add(244, 330, _inst_obj_coin_14);
+  _inst_obj_coin_14.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_coin_14.on_create.bind(_inst_obj_coin_14));
+  const _inst_obj_coin_15 = new obj_coin(_room_room_level1);
+  _room_room_level1.room_instance_add(348, 250, _inst_obj_coin_15);
+  _inst_obj_coin_15.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_coin_15.on_create.bind(_inst_obj_coin_15));
+  const _inst_obj_coin_16 = new obj_coin(_room_room_level1);
+  _room_room_level1.room_instance_add(233, 190, _inst_obj_coin_16);
+  _inst_obj_coin_16.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_coin_16.on_create.bind(_inst_obj_coin_16));
+  const _inst_obj_coin_17 = new obj_coin(_room_room_level1);
+  _room_room_level1.room_instance_add(438, 160, _inst_obj_coin_17);
+  _inst_obj_coin_17.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_coin_17.on_create.bind(_inst_obj_coin_17));
+  const _inst_obj_coin_18 = new obj_coin(_room_room_level1);
+  _room_room_level1.room_instance_add(518, 290, _inst_obj_coin_18);
+  _inst_obj_coin_18.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_coin_18.on_create.bind(_inst_obj_coin_18));
+  const _inst_obj_enemy_19 = new obj_enemy(_room_room_level1);
+  _room_room_level1.room_instance_add(310, 248, _inst_obj_enemy_19);
+  _inst_obj_enemy_19.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_enemy_19.on_create.bind(_inst_obj_enemy_19));
+  const _inst_obj_player_20 = new obj_player(_room_room_level1);
+  _room_room_level1.room_instance_add(50, 396, _inst_obj_player_20);
+  _inst_obj_player_20.register_events();
+  game_loop.register(EVENT_TYPE.create, _inst_obj_player_20.on_create.bind(_inst_obj_player_20));
+  const start = _room_room_level1;
   if (!start) {
     console.error("[Game] No rooms defined.");
     return;
@@ -8960,10 +9173,10 @@ async function init(canvas) {
 }
 export {
   init as default,
-  o_coin,
-  o_enemy,
-  o_player,
-  o_wall
+  obj_coin,
+  obj_enemy,
+  obj_platform,
+  obj_player
 };
 /*! Bundled license information:
 

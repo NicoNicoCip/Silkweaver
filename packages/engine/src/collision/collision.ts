@@ -36,9 +36,19 @@ export function get_bbox(inst: instance, x?: number, y?: number): { left: number
     const px = x ?? inst.x
     const py = y ?? inst.y
 
-    // Attempt to use the sprite resource for dimensions
-    // The engine stores sprite resources in resource registry; access via sprite_index
-    // If no sprite, fall back to a 1×1 box centred on the instance
+    // A manual mask (set via mask_set_rectangle/mask_set_size) overrides the
+    // sprite-derived box — this is what makes spriteless objects collide.
+    if (inst.mask_manual) {
+        return {
+            left:   px + inst.mask_off_left,
+            top:    py + inst.mask_off_top,
+            right:  px + inst.mask_off_right,
+            bottom: py + inst.mask_off_bottom,
+        }
+    }
+
+    // Otherwise use the mask/sprite resource for dimensions.
+    // If there is no sprite, fall back to a 1×1 box at the instance position.
     const sprite = get_sprite_for_instance(inst)
     if (!sprite) {
         return { left: px, top: py, right: px + 1, bottom: py + 1 }
@@ -186,6 +196,51 @@ export function circle_in_instance(cx: number, cy: number, cr: number, b: instan
     const dx = cx - nearest_x
     const dy = cy - nearest_y
     return (dx * dx + dy * dy) < (cr * cr)
+}
+
+/**
+ * Returns true if a line segment crosses instance b's bounding box.
+ * @param x1 - Segment start X
+ * @param y1 - Segment start Y
+ * @param x2 - Segment end X
+ * @param y2 - Segment end Y
+ * @param b - Target instance
+ */
+export function line_in_instance(x1: number, y1: number, x2: number, y2: number, b: instance): boolean {
+    if (!b.active) return false
+    const bbox = get_bbox(b)
+    return seg_intersects_aabb(x1, y1, x2, y2, bbox.left, bbox.top, bbox.right, bbox.bottom)
+}
+
+/**
+ * Segment vs axis-aligned box intersection (Liang–Barsky clipping).
+ * Returns true if any part of the segment lies within the box.
+ */
+function seg_intersects_aabb(
+    x1: number, y1: number, x2: number, y2: number,
+    left: number, top: number, right: number, bottom: number
+): boolean {
+    // Trivially inside: either endpoint within the box.
+    if ((x1 >= left && x1 <= right && y1 >= top && y1 <= bottom) ||
+        (x2 >= left && x2 <= right && y2 >= top && y2 <= bottom)) return true
+
+    const dx = x2 - x1
+    const dy = y2 - y1
+    // Parametric clip against each slab; the segment hits the box iff t enters
+    // before it exits across all four edges.
+    let t0 = 0, t1 = 1
+    const clip = (p: number, q: number): boolean => {
+        if (p === 0) return q >= 0          // parallel: inside the slab iff q >= 0
+        const r = q / p
+        if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r }
+        else       { if (r < t0) return false; if (r < t1) t1 = r }
+        return true
+    }
+    if (!clip(-dx, x1 - left))   return false
+    if (!clip( dx, right - x1))  return false
+    if (!clip(-dy, y1 - top))    return false
+    if (!clip( dy, bottom - y1)) return false
+    return t0 <= t1
 }
 
 // =========================================================================

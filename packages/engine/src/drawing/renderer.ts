@@ -438,10 +438,16 @@ export class renderer {
         rot: number, color: number, alpha: number
     ): void {
         if (!bg || !bg.texture) return
-        const w = bg.width * xscale
-        const h = bg.height * yscale
         const [r, g, b] = color_to_rgb_normalized(color)
-        this.batch.add_quad_rotated(x, y, w, h, rot, 0, 0, 1, 1, r, g, b, alpha, bg.texture.texture)
+        this.batch.add_quad_transformed(
+            x, y,
+            bg.width, bg.height,
+            0, 0,
+            xscale, yscale, rot,
+            0, 0, 1, 1,
+            r, g, b, alpha,
+            bg.texture.texture
+        )
     }
 
     /**
@@ -471,8 +477,8 @@ export class renderer {
         // For tiled backgrounds, we need to repeat the texture across the view
         // This is a simplified version - full tiling would need to account for view bounds
         const [r, g, b] = color_to_rgb_normalized(this.draw_color)
-        const view_w = this.canvas_width
-        const view_h = this.canvas_height
+        const view_w = this.canvas.width
+        const view_h = this.canvas.height
 
         // Calculate number of tiles needed
         const tiles_x = Math.ceil(view_w / bg.width) + 1

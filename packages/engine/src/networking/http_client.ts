@@ -53,7 +53,7 @@ function _extract_headers(resp: Response): Record<string, string> {
  */
 export async function http_get(url: string, headers?: Record<string, string>): Promise<http_response> {
     try {
-        const resp = await fetch(url, { method: 'GET', headers })
+        const resp = await fetch(url, { method: 'GET', ...(headers && { headers }) })
         const text = await resp.text()
         return { status: resp.status, ok: resp.ok, text, headers: _extract_headers(resp) }
     } catch (e) {
@@ -112,7 +112,7 @@ export async function http_post_json(
  */
 export async function http_get_bytes(url: string, headers?: Record<string, string>): Promise<http_binary_response> {
     try {
-        const resp  = await fetch(url, { method: 'GET', headers })
+        const resp  = await fetch(url, { method: 'GET', ...(headers && { headers }) })
         const buf   = await resp.arrayBuffer()
         const bytes = new Uint8Array(buf)
         return { status: resp.status, ok: resp.ok, bytes, headers: _extract_headers(resp) }
@@ -136,7 +136,7 @@ export async function http_request(
     body:    string | Uint8Array | null = null,
 ): Promise<http_response> {
     try {
-        const resp = await fetch(url, { method, headers, body: body ?? undefined })
+        const resp = await fetch(url, { method, headers, ...(body != null && { body: body as BodyInit }) })
         const text = await resp.text()
         return { status: resp.status, ok: resp.ok, text, headers: _extract_headers(resp) }
     } catch (e) {

@@ -117,10 +117,11 @@ export class touch_manager {
     private static _handle_start(e: TouchEvent): void {
         for (let i = 0; i < e.changedTouches.length; i++) {
             const t = e.changedTouches[i]
+            if (!t) continue
             const slot = this._alloc_slot(t.identifier)
             if (slot < 0) continue
             const pos = this._to_canvas(t)
-            const pt = this._points[slot]
+            const pt = this._points[slot]!
             pt.x = pos.x
             pt.y = pos.y
             pt.held    = true
@@ -132,10 +133,11 @@ export class touch_manager {
     private static _handle_end(e: TouchEvent): void {
         for (let i = 0; i < e.changedTouches.length; i++) {
             const t = e.changedTouches[i]
+            if (!t) continue
             const slot = this._free_slot(t.identifier)
             if (slot < 0) continue
             const pos = this._to_canvas(t)
-            const pt = this._points[slot]
+            const pt = this._points[slot]!
             pt.x = pos.x
             pt.y = pos.y
             pt.held     = false
@@ -146,11 +148,13 @@ export class touch_manager {
     private static _handle_move(e: TouchEvent): void {
         for (let i = 0; i < e.changedTouches.length; i++) {
             const t = e.changedTouches[i]
+            if (!t) continue
             const slot = this._id_to_slot.get(t.identifier) ?? -1
             if (slot < 0) continue
             const pos = this._to_canvas(t)
-            this._points[slot].x = pos.x
-            this._points[slot].y = pos.y
+            const pt = this._points[slot]!
+            pt.x = pos.x
+            pt.y = pos.y
         }
     }
 
@@ -158,9 +162,10 @@ export class touch_manager {
         // Treat as release for all cancelled touches
         for (let i = 0; i < e.changedTouches.length; i++) {
             const t = e.changedTouches[i]
+            if (!t) continue
             const slot = this._free_slot(t.identifier)
             if (slot < 0) continue
-            const pt = this._points[slot]
+            const pt = this._points[slot]!
             pt.held     = false
             pt.released = true
         }

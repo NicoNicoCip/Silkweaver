@@ -168,10 +168,10 @@ class font_editor_window {
             row.className = 'sw-font-range-row'
 
             const from_inp = this._small_number_input(range.from, 0, 65535, (v) => {
-                this._data.ranges[idx].from = v; this._save()
+                range.from = v; this._save()
             })
             const to_inp = this._small_number_input(range.to, 0, 65535, (v) => {
-                this._data.ranges[idx].to = v; this._save()
+                range.to = v; this._save()
             })
 
             const sep = document.createElement('span')

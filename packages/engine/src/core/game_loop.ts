@@ -1,5 +1,6 @@
 import { EVENT_TYPE, game_event } from "./game_event.js"
 import { room } from "./room.js"
+import { resource } from "./resource.js"
 import { keyboard_manager } from "../input/keyboard.js"
 import { mouse_manager } from "../input/mouse.js"
 import { gamepad_manager } from "../input/gamepad.js"
@@ -32,6 +33,9 @@ export abstract class game_loop {
     public static room_first: number = -1           // ID of the first room in the game
     public static room_last: number = 0             // ID of the last room in the game
     private static _canvas: HTMLCanvasElement | null = null  // Canvas for mouse/touch attachment
+    private static _pending_game_start: boolean = false      // Fire Game Start at the next update
+    private static _pending_room_start: boolean = false      // Fire Room Start at the next update
+    private static _stopped: boolean = false                 // Set by end() to halt the loop
 
     // Map of update event types to their registered event handlers
     private static update_events: Map<EVENT_TYPE, game_event[]> = new Map()
@@ -60,6 +64,11 @@ export abstract class game_loop {
             this.room_first = room.id
         }
 
+        // Game Start + Room Start fire on the first update (after Create events).
+        this._pending_game_start = true
+        this._pending_room_start = true
+        this._stopped = false
+
         this.last_delta = performance.now()
 
         requestAnimationFrame(this.tick.bind(this));
@@ -71,6 +80,7 @@ export abstract class game_loop {
      * @param current - The current timestamp provided by requestAnimationFrame
      */
     private static tick(current: number): void {
+        if (this._stopped) return
         this.room_delta = current - this.last_delta
         this.last_delta = current
         this.accumulator += this.room_delta
@@ -99,6 +109,10 @@ export abstract class game_loop {
         const createEvents = [...(this.update_events.get(EVENT_TYPE.create) ?? [])]
         this.update_events.set(EVENT_TYPE.create, [])
         createEvents.forEach(e => e.run())
+
+        // Game Start then Room Start fire once, after Create events have run.
+        if (this._pending_game_start) { this._pending_game_start = false; this._dispatch_lifecycle('on_game_start') }
+        if (this._pending_room_start) { this._pending_room_start = false; this._dispatch_lifecycle('on_room_start') }
 
         this.update_events.get(EVENT_TYPE.step_begin)?.forEach(e => e.run())
         this.update_events.get(EVENT_TYPE.step)?.forEach(e => e.run())
@@ -166,6 +180,9 @@ export abstract class game_loop {
      * @param room - The room to transition to
      */
     public static change_room(room: room) {
+        // Room End fires for the outgoing room's instances before we leave.
+        this._dispatch_lifecycle('on_room_end')
+
         if (this.room && this.room.room_persistent) {
             // TODO: save the room data somewhere as cache.
         }
@@ -178,6 +195,52 @@ export abstract class game_loop {
         // Register events for all instances in the new room
         room.register_all_instances()
 
+        // Room Start fires on the next update, after the new room's Create events.
+        this._pending_room_start = true
+
         // TODO: load room cache if it exists
     }
+
+    /**
+     * Ends the game: fires the Game End event for all instances, then halts the loop.
+     */
+    public static end(): void {
+        this._dispatch_lifecycle('on_game_end')
+        this._stopped = true
+    }
+
+    /**
+     * Restarts the game by returning to the first room.
+     */
+    public static restart(): void {
+        const first = resource.findByID(this.room_first)
+        if (first instanceof room) this.change_room(first)
+    }
+
+    /**
+     * Calls a lifecycle event method on every active instance in the current room.
+     * @param method - Name of the lifecycle method to invoke
+     */
+    private static _dispatch_lifecycle(
+        method: 'on_room_start' | 'on_room_end' | 'on_game_start' | 'on_game_end',
+    ): void {
+        if (!this.room) return
+        for (const inst of this.room.instance_get_all()) {
+            if (inst.active) inst[method]()
+        }
+    }
+}
+
+// =========================================================================
+// Game lifecycle (GMS-style free functions)
+// =========================================================================
+
+/** Ends the game: fires Game End events, then stops the loop. */
+export function game_end(): void {
+    game_loop.end()
+}
+
+/** Restarts the game from the first room. */
+export function game_restart(): void {
+    game_loop.restart()
 }

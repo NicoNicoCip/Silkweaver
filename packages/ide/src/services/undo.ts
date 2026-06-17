@@ -45,7 +45,7 @@ export function undo_push(cmd: undo_command): void {
  */
 export function undo_undo(): boolean {
     if (_cursor < 0) return false
-    _stack[_cursor].unexecute()
+    _stack[_cursor]!.unexecute()
     _cursor--
     return true
 }
@@ -57,7 +57,7 @@ export function undo_undo(): boolean {
 export function undo_redo(): boolean {
     if (_cursor >= _stack.length - 1) return false
     _cursor++
-    _stack[_cursor].execute()
+    _stack[_cursor]!.execute()
     return true
 }
 
