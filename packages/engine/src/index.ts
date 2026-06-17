@@ -9,8 +9,32 @@
 // Core
 // =========================================================================
 export { game_loop, game_end, game_restart } from './core/game_loop.js'
+export {
+    fps, fps_real, delta_time, get_timer, current_time,
+    show_debug_message, show_message, show_question, get_string, get_integer, set_application_title,
+} from './core/system.js'
+export {
+    date_current_datetime, date_create_datetime, date_create_date,
+    date_get_year, date_get_month, date_get_day, date_get_hour, date_get_minute, date_get_second,
+    date_get_weekday, date_get_day_of_year,
+    current_year, current_month, current_day, current_hour, current_minute, current_second, current_weekday,
+    date_inc_year, date_inc_month, date_inc_week, date_inc_day, date_inc_hour, date_inc_minute, date_inc_second,
+    date_compare_datetime, date_second_span, date_minute_span, date_hour_span, date_day_span,
+    date_days_in_month, date_leap_year, date_days_in_year,
+    date_datetime_string, date_date_string, date_time_string,
+} from './utils/datetime.js'
 export { instance, with_object } from './core/instance.js'
+export {
+    mp_grid_create, mp_grid_destroy, mp_grid_clear_all, mp_grid_clear_cell, mp_grid_add_cell,
+    mp_grid_get_cell, mp_grid_add_rectangle, mp_grid_clear_rectangle, mp_grid_add_instances,
+    mp_grid_path, mp_potential_settings,
+} from './core/motion_planning.js'
 export { room } from './core/room.js'
+export {
+    tile_add, tile_delete, tile_exists, tile_get_x, tile_get_y, tile_get_depth, tile_get_visible,
+    tile_set_position, tile_set_depth, tile_set_visible, tile_set_scale, tile_set_alpha, tile_set_background,
+    tile_layer_delete, tile_layer_shift, tile_layer_find,
+} from './core/tiles.js'
 export { resource } from './core/resource.js'
 export { EVENT_TYPE, game_event } from './core/game_event.js'
 export { gm_object, object_exists, object_get_name, object_get_sprite, object_get_parent, object_is_ancestor } from './core/gm_object.js'
@@ -24,6 +48,7 @@ export {
     path_get_point_x, path_get_point_y, path_get_point_speed,
     path_set_closed, path_set_kind, path_set_precision,
     path_flip, path_mirror, path_reverse,
+    path_action_stop, path_action_restart, path_action_continue, path_action_reverse,
 } from './core/path.js'
 
 // Timelines
@@ -52,7 +77,7 @@ export {
 // =========================================================================
 export { renderer } from './drawing/renderer.js'
 export type { surface } from './drawing/renderer.js'
-export { sprite, sprite_get_width, sprite_get_height, sprite_get_xoffset, sprite_get_yoffset, sprite_get_number, sprite_register_name, sprite_get_index } from './drawing/sprite.js'
+export { sprite, sprite_get_width, sprite_get_height, sprite_get_xoffset, sprite_get_yoffset, sprite_get_number, sprite_register_name, sprite_get_index, sprite_exists, sprite_set_offset, sprite_duplicate, sprite_add } from './drawing/sprite.js'
 export { background, background_get_width, background_get_height } from './drawing/background.js'
 export { font_resource } from './drawing/font.js'
 export { texture_manager } from './drawing/texture_manager.js'
@@ -123,6 +148,11 @@ export {
     vk_numpad5, vk_numpad6, vk_numpad7, vk_numpad8, vk_numpad9,
     vk_multiply, vk_add, vk_subtract, vk_decimal, vk_divide, vk_printscreen,
 } from './input/keyboard.js'
+export { io_clear } from './input/io.js'
+export {
+    base64_encode, base64_decode, sha1_string_utf8, md5_string_utf8,
+    clipboard_set_text, clipboard_get_text, clipboard_has_text,
+} from './utils/encoding.js'
 
 // Mouse
 export {
@@ -163,6 +193,7 @@ export {
     ds_list_find_value, ds_list_find_index, ds_list_replace, ds_list_delete,
     ds_list_size, ds_list_empty, ds_list_clear, ds_list_copy,
     ds_list_sort, ds_list_shuffle, ds_list_exists,
+    ds_list_write, ds_list_read,
 } from './data/ds_list.js'
 
 export {
@@ -170,7 +201,7 @@ export {
     ds_map_find_value, ds_map_exists, ds_map_delete, ds_map_size,
     ds_map_empty, ds_map_clear, ds_map_copy,
     ds_map_find_first, ds_map_find_next, ds_map_find_last, ds_map_find_previous,
-    ds_map_exists_id,
+    ds_map_exists_id, ds_map_write, ds_map_read,
 } from './data/ds_map.js'
 
 export {
@@ -179,7 +210,7 @@ export {
     ds_grid_width, ds_grid_height, ds_grid_copy,
     ds_grid_region_get, ds_grid_set_region, ds_grid_add_region, ds_grid_multiply_region,
     ds_grid_get_max, ds_grid_get_min, ds_grid_get_sum, ds_grid_get_mean,
-    ds_grid_exists,
+    ds_grid_exists, ds_grid_write, ds_grid_read,
 } from './data/ds_grid.js'
 
 export {
@@ -256,6 +287,7 @@ export {
     physics_fixture_set_restitution, physics_fixture_set_friction,
     physics_fixture_set_sensor, physics_fixture_bind, physics_fixture_delete,
     physics_body_destroy, physics_body_apply_force, physics_body_apply_impulse,
+    physics_body_apply_force_at, physics_body_apply_torque,
     physics_body_set_velocity, physics_body_set_position, physics_body_set_angular_velocity,
     physics_body_set_static, physics_body_get_x, physics_body_get_y,
     physics_body_get_angle, physics_body_get_vx, physics_body_get_vy,
@@ -264,8 +296,10 @@ export {
 
 export {
     physics_joint_distance_create, physics_joint_revolute_create,
-    physics_joint_weld_create, physics_joint_spring_create,
+    physics_joint_weld_create, physics_joint_spring_create, physics_joint_rope_create,
     physics_joint_destroy, physics_joint_exists, physics_joint_get_raw,
+    physics_joint_get_value, physics_joint_set_value,
+    physics_test_overlap, physics_raycast,
 } from './physics/physics_joint.js'
 
 // =========================================================================

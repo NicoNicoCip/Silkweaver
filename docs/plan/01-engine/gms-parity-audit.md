@@ -114,9 +114,10 @@ let GMS-sourced code paste in unchanged.
 
 ### 2.2 🟡 Rooms
 `room_goto/next/previous/restart` exist as methods
-([room.ts:90-128](../../../packages/engine/src/core/room.ts#L90)). Missing:
-view-follows-instance (`view_object`), per-room tile/background layers, room
-creation code, readable `room_width/height/speed` globals.
+([room.ts:90-128](../../../packages/engine/src/core/room.ts#L90)). Room **creation code** is now
+wired (`room.creation_code`, run on room start; the build emits it from `room.json`). Still missing:
+view-follows-instance (`view_object`) applied by the loop, per-room tile/background **layers** drawn
+on screen (deferred to the UI pass — visual), readable `room_width/height/speed` globals.
 
 ### 2.3 🟡 Sprites at runtime
 `image_*` vars present and animated ([instance.ts:233-240](../../../packages/engine/src/core/instance.ts#L233)).
@@ -146,8 +147,9 @@ timelines, instance lifecycle/queries/motion vars.
    keyboard/mouse-over-instance events, collision events (gated, with `other`),
    room_start/room_end/game_start/game_end, animation_end, and a `_destroyed` guard
    so events can safely destroy mid-step. `game_end()` / `game_restart()` exported.
-   Remaining: `path_end` needs instance path-following (`path_start`); mouse/collision
-   accuracy on spriteless objects depends on Tier 0.2 (manual masks).
+   Path End is now wired: `path_start`/`path_end` + per-step path-following in `internal_step`
+   (stop/restart/continue/reverse end actions), firing `on_path_end`. Remaining: mouse/collision
+   accuracy on spriteless objects depends on Tier 0.2 (manual masks — done).
 2. ✅ **Usable collision** (Tier 0.2 + 1.3) — **DONE.** Added a manual collision
    mask (`mask_set_rectangle`/`mask_set_size`/`mask_clear`) that `get_bbox` honors,
    so spriteless objects now collide (place_meeting/instance_place/mouse/collision

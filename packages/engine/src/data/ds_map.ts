@@ -44,6 +44,20 @@ export function ds_map_destroy(id: number): void {
     _maps.delete(id)
 }
 
+/** Serializes a map to a string (GMS `ds_map_write`). */
+export function ds_map_write(id: number): string {
+    const m = _maps.get(id)
+    return JSON.stringify(m ? Array.from(m.entries()) : [])
+}
+
+/** Restores a map from a `ds_map_write` string, replacing its contents. */
+export function ds_map_read(id: number, str: string): void {
+    const m = _maps.get(id)
+    if (!m) return
+    m.clear()
+    try { const e = JSON.parse(str); if (Array.isArray(e)) for (const [k, v] of e) m.set(k, v) } catch { /* invalid */ }
+}
+
 /**
  * Adds a key/value pair if the key does not already exist.
  * @param id - Map ID

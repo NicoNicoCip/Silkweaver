@@ -42,6 +42,19 @@ export function ds_list_destroy(id: number): void {
     _lists.delete(id)
 }
 
+/** Serializes a list to a string (GMS `ds_list_write`). */
+export function ds_list_write(id: number): string {
+    return JSON.stringify(_lists.get(id) ?? [])
+}
+
+/** Restores a list from a `ds_list_write` string, replacing its contents. */
+export function ds_list_read(id: number, str: string): void {
+    const list = _lists.get(id)
+    if (!list) return
+    list.length = 0
+    try { const arr = JSON.parse(str); if (Array.isArray(arr)) for (const v of arr) list.push(v) } catch { /* invalid */ }
+}
+
 /**
  * Adds a value to the end of the list.
  * @param id - List ID

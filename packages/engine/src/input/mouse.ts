@@ -180,6 +180,16 @@ export class mouse_manager {
         this._released.delete(btn)
     }
 
+    /** Clears all mouse button + wheel state. */
+    public static clear_all(): void {
+        this._held.clear()
+        this._pressed.clear()
+        this._released.clear()
+        this._wheel_up = false
+        this._wheel_down = false
+        this.mouse_button = mb_none
+    }
+
     /** Returns true if the wheel scrolled up this step. */
     public static wheel_up(): boolean   { return this._wheel_up }
     /** Returns true if the wheel scrolled down this step. */

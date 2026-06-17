@@ -257,6 +257,26 @@ export function physics_body_apply_impulse(body_id: number, ix: number, iy: numb
 }
 
 /**
+ * Applies a force to a body at a world-space point (off-centre forces induce rotation).
+ * @param px - World X of the application point
+ * @param py - World Y of the application point
+ * @param fx - Force X · @param fy - Force Y
+ */
+export function physics_body_apply_force_at(body_id: number, px: number, py: number, fx: number, fy: number): void {
+    const body = _bodies.get(body_id)
+    if (body) Matter.Body.applyForce(body, { x: px, y: py }, { x: fx, y: fy })
+}
+
+/**
+ * Applies a torque (rotational force) to a body.
+ * @param torque - Torque to add this step (positive = clockwise in screen space)
+ */
+export function physics_body_apply_torque(body_id: number, torque: number): void {
+    const body = _bodies.get(body_id)
+    if (body) body.torque += torque
+}
+
+/**
  * Sets the velocity of a body directly.
  * @param body_id - Body ID
  * @param vx - Velocity X in pixels/step

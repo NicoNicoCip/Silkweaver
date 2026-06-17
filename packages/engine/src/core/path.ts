@@ -130,6 +130,12 @@ function _compute_length(path: path_def): number {
 // Public GMS-style API
 // =========================================================================
 
+/** Path end actions for `path_start`. */
+export const path_action_stop     = 0   // Stop at the end of the path
+export const path_action_restart  = 1   // Jump back to the start position and continue
+export const path_action_continue = 2   // Continue the path from the current location
+export const path_action_reverse  = 3   // Reverse direction along the path
+
 /**
  * Creates a new empty path.
  * @returns Path ID

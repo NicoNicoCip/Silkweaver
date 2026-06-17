@@ -60,6 +60,22 @@ export function ds_grid_destroy(id: number): void {
     _grids.delete(id)
 }
 
+/** Serializes a grid to a string (GMS `ds_grid_write`). */
+export function ds_grid_write(id: number): string {
+    const g = _grids.get(id)
+    return JSON.stringify(g ? { w: g.w, h: g.h, data: g.data } : null)
+}
+
+/** Restores a grid from a `ds_grid_write` string, replacing its size and contents. */
+export function ds_grid_read(id: number, str: string): void {
+    const g = _grids.get(id)
+    if (!g) return
+    try {
+        const o = JSON.parse(str)
+        if (o && typeof o.w === 'number' && Array.isArray(o.data)) { g.w = o.w; g.h = o.h; g.data = o.data }
+    } catch { /* invalid */ }
+}
+
 /**
  * Returns the value at grid cell (x, y).
  * @param id - Grid ID

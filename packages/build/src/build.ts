@@ -76,10 +76,15 @@ async function generate_entry_code(
         // Build room setup code
         const room_setups: string[] = []
         const room_var_names: string[] = []
+        const room_physics: Record<string, { gx: number; gy: number } | null> = {}
         for (const room_name of room_names) {
             const rm_json_path = path.join(project_folder, 'rooms', room_name, 'room.json')
             let rm_data: Partial<room_file> = {}
             try { rm_data = JSON.parse(await fs.promises.readFile(rm_json_path, 'utf8')) } catch { /* empty */ }
+
+            room_physics[room_name] = rm_data.physics_world
+                ? { gx: rm_data.physics_gravity_x ?? 0, gy: rm_data.physics_gravity_y ?? 10 }
+                : null
 
             const instances = rm_data.instances ?? []
             const var_name = `_room_${room_name}`
@@ -100,7 +105,11 @@ async function generate_entry_code(
 ${var_name}.room_width  = ${rm_data.width  ?? 640}
 ${var_name}.room_height = ${rm_data.height ?? 480}
 ${var_name}.room_speed  = ${rm_data.room_speed ?? 60}
-${var_name}.room_persistent = ${rm_data.persistent ?? false}
+${var_name}.room_persistent = ${rm_data.persistent ?? false}${
+    rm_data.creation_code && rm_data.creation_code.trim()
+        ? `\n${var_name}.creation_code = () => {\n${rm_data.creation_code}\n}`
+        : ''
+}
 ${inst_lines}`)
         }
 
@@ -259,7 +268,7 @@ export default async function init(canvas: HTMLCanvasElement): Promise<void> {
 
     const start = ${start_var}
     if (!start) { console.error('[Game] No rooms defined.'); return }
-    game_loop.start(start)
+${room_physics[start_room] ? `    physics_world_create(${room_physics[start_room]!.gx}, ${room_physics[start_room]!.gy})\n` : ''}    game_loop.start(start)
 }
 `
         return entry_code

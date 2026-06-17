@@ -41,6 +41,15 @@ export abstract class gm_object extends instance {
     public static depth:      number  = 0            // Draw depth (lower = on top)
     public static sprite:     string | null = null   // Sprite resource name (resolved to sprite_index)
 
+    // Physics metadata. `static physics = true` makes every instance a matter.js body
+    // (created on the first physics step). density ≤ 0 ⇒ static (immovable) body.
+    public static physics:            boolean = false
+    public static physics_shape:      'box' | 'circle' = 'box'
+    public static physics_density:    number  = 0.5
+    public static physics_restitution: number = 0.1
+    public static physics_friction:   number  = 0.2
+    public static physics_sensor:     boolean = false
+
     /**
      * Applies this object's static metadata defaults to the new instance.
      * @param room - The room this instance belongs to
@@ -56,6 +65,10 @@ export abstract class gm_object extends instance {
         // instances are created). Falls back to the class's default_sprite object.
         if (cls.sprite) this.sprite_index = sprite_get_index(cls.sprite)
         else if (cls.default_sprite) this.sprite_index = cls.default_sprite.id
+        // Physics: register intent; the body is created lazily on the first step.
+        if (cls.physics) {
+            this.phy_request(cls.physics_shape, cls.physics_density, cls.physics_restitution, cls.physics_friction, cls.physics_sensor)
+        }
     }
 
     /**

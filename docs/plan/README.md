@@ -1,6 +1,20 @@
 # Silkweaver Implementation Plan
 
-This folder contains the complete implementation plan for Silkweaver, a GMS 1.4.9999-inspired game engine and IDE.
+This folder contains the implementation plans for Silkweaver, a GMS 1.4.9999-inspired game engine and IDE.
+
+## 📍 Start here — current status (living docs)
+
+These track what is **actually built** right now and what's next. Read these first:
+
+- [`00-overview/modular-architecture.md`](00-overview/modular-architecture.md) — the package split
+  (`@silkweaver/{engine,project,build,cli}`), authoring model, and migration progress. **The split is done.**
+- [`01-engine/gms-parity-audit.md`](01-engine/gms-parity-audit.md) — GMS 1.4 parity gap checklist (done / partial / missing).
+- [`00-overview/gms-1.4-feature-checklist.md`](00-overview/gms-1.4-feature-checklist.md) — the **full GMS 1.4
+  feature catalogue** (engine + IDE + export) to triage for inclusion (tick the boxes to queue work).
+
+The per-subsystem documents below (`01-engine/core.md`, `02-ide/*`, etc.) and `00-overview/phases.md`
+are the **original design/reference plans** — useful background, but the living docs above are the
+source of truth for current state.
 
 ## Folder Structure
 

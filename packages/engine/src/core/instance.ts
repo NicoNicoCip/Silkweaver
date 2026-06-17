@@ -3,6 +3,20 @@ import { game_loop } from "./game_loop.js"
 import { resource } from "./resource.js"
 import type { room } from "./room.js"
 import { instances_collide, update_bbox, point_in_instance, rect_in_instance, circle_in_instance, line_in_instance } from "../collision/collision.js"
+import { _mp_potential_settings } from "./motion_planning.js"
+import {
+    path_exists, path_get_x, path_get_y, path_get_length,
+    path_action_stop, path_action_restart, path_action_continue, path_action_reverse,
+} from "./path.js"
+import { physics_world_get_engine } from "../physics/physics_world.js"
+import {
+    physics_fixture_create, physics_fixture_set_box, physics_fixture_set_circle,
+    physics_fixture_set_density, physics_fixture_set_restitution, physics_fixture_set_friction,
+    physics_fixture_set_sensor, physics_fixture_bind, physics_fixture_delete,
+    physics_body_destroy, physics_body_get_x, physics_body_get_y, physics_body_get_angle,
+    physics_body_get_vx, physics_body_get_vy, physics_body_set_velocity,
+    physics_body_apply_force, physics_body_apply_impulse, physics_body_set_position,
+} from "../physics/physics_body.js"
 import type { sprite } from "../drawing/sprite.js"
 import { keyboard_check, keyboard_check_pressed, keyboard_check_released, vk_anykey } from "../input/keyboard.js"
 import {
@@ -110,6 +124,30 @@ export class instance extends resource {
     public mask_off_right:  number = 0
     public mask_off_bottom: number = 0
 
+    // Physics (matter.js). phy_body_id < 0 = not a physics instance. Configured from
+    // `static physics` on the object; the body is created lazily on the first physics
+    // step (once x/y and any mask are set) and then drives x/y/image_angle.
+    public  phy_body_id:      number = -1
+    private _phy_wants:       boolean = false
+    private _phy_shape:       'box' | 'circle' = 'box'
+    private _phy_density:     number = 0.5
+    private _phy_restitution: number = 0.1
+    private _phy_friction:    number = 0.2
+    private _phy_sensor:      boolean = false
+
+    private _mp_dir: number = NaN   // Persisted heading for mp_potential_step (radians, screen-space)
+
+    // Path following (GMS path_*). path_index < 0 = not following a path.
+    public  path_index:            number = -1
+    public  path_position:         number = 0    // 0..1 along the path
+    public  path_positionprevious: number = 0
+    public  path_speed:            number = 0    // pixels per step along the path
+    public  path_scale:            number = 1
+    public  path_orientation:      number = 0
+    public  path_endaction:        number = 0    // path_action_* (stop/restart/continue/reverse)
+    private _path_off_x:           number = 0
+    private _path_off_y:           number = 0
+
     // Bound event handlers — stored so unregister() can match the exact same function reference
     private _bound_step_begin: Function = () => {}
     private _bound_step:       Function = () => {}
@@ -184,6 +222,7 @@ export class instance extends resource {
     public instance_destroy(): void {
         if (this._destroyed) return
         this._destroyed = true
+        if (this.phy_body_id >= 0) { physics_body_destroy(this.phy_body_id); this.phy_body_id = -1 }
         game_loop.register(EVENT_TYPE.destroy, this.on_destroy.bind(this))
         this.unregister_events()
         this.room.instance_remove(this.id)
@@ -267,12 +306,19 @@ export class instance extends resource {
         this.x += this.hspeed
         this.y += this.vspeed
 
+        // Path following drives position when a path is active (overrides motion).
+        if (this.path_index >= 0) { this._advance_path(); if (this._destroyed) return }
+
         // Advance animation (fires on_animation_end on loop) and update bbox
         this._advance_animation()
         update_bbox(this)
 
         // Collision events (only scanned for objects with a collision event)
         this._process_collisions()
+        if (this._destroyed) return
+
+        // Outside Room / Intersect Boundary events
+        this._process_boundary_events()
         if (this._destroyed) return
 
         this.on_step()
@@ -633,6 +679,95 @@ export class instance extends resource {
         update_bbox(this)
     }
 
+    // =========================================================================
+    // Physics (matter.js body binding)
+    // =========================================================================
+
+    /**
+     * Marks this instance as physics-enabled (called from `gm_object` when the object
+     * declares `static physics = true`). The matter.js body is created lazily on the
+     * first physics step, so x/y and any collision mask are already in place. A density
+     * of ≤ 0 makes the body static (immovable) — e.g. for floors and walls.
+     * @param shape - 'box' or 'circle'
+     * @param density - Mass density; ≤ 0 ⇒ static body
+     * @param restitution - Bounciness, 0–1
+     * @param friction - Surface friction
+     * @param sensor - True = detects overlaps without a physical response
+     */
+    public phy_request(shape: 'box' | 'circle', density: number, restitution: number, friction: number, sensor: boolean): void {
+        this._phy_wants       = true
+        this._phy_shape       = shape
+        this._phy_density     = density
+        this._phy_restitution = restitution
+        this._phy_friction    = friction
+        this._phy_sensor      = sensor
+    }
+
+    /**
+     * Creates the matter.js body if this instance wants physics, has none yet, and a
+     * physics world exists. Called by the game loop each step (a no-op once bound).
+     */
+    public phy_ensure_body(): void {
+        if (!this._phy_wants || this.phy_body_id >= 0) return
+        if (!physics_world_get_engine()) return
+        const { w, h } = this._phy_extent()
+        const fix = physics_fixture_create()
+        if (this._phy_shape === 'circle') physics_fixture_set_circle(fix, Math.max(w, h) / 2)
+        else                              physics_fixture_set_box(fix, w, h)
+        physics_fixture_set_density(fix, Math.max(0, this._phy_density))
+        physics_fixture_set_restitution(fix, this._phy_restitution)
+        physics_fixture_set_friction(fix, this._phy_friction)
+        physics_fixture_set_sensor(fix, this._phy_sensor)
+        this.phy_body_id = physics_fixture_bind(fix, this.x, this.y, this._phy_density <= 0)
+        physics_fixture_delete(fix)
+    }
+
+    /** Syncs x/y/image_angle from the physics body. Called by the loop after stepping. */
+    public phy_sync_from_body(): void {
+        if (this.phy_body_id < 0) return
+        this.x           = physics_body_get_x(this.phy_body_id)
+        this.y           = physics_body_get_y(this.phy_body_id)
+        this.image_angle = physics_body_get_angle(this.phy_body_id)
+    }
+
+    /** The body's pixel extent: manual mask, else sprite bbox, else a 32×32 default. */
+    private _phy_extent(): { w: number; h: number } {
+        if (this.mask_manual) {
+            const w = this.mask_off_right - this.mask_off_left
+            const h = this.mask_off_bottom - this.mask_off_top
+            if (w > 0 && h > 0) return { w, h }
+        }
+        const bw = this.bbox_right - this.bbox_left
+        const bh = this.bbox_bottom - this.bbox_top
+        if (bw > 0 && bh > 0) return { w: bw, h: bh }
+        return { w: 32, h: 32 }
+    }
+
+    /** Applies a continuous force at the body's centre (pixel-space units). */
+    public phy_apply_force(fx: number, fy: number): void {
+        if (this.phy_body_id >= 0) physics_body_apply_force(this.phy_body_id, fx, fy)
+    }
+
+    /** Applies an instantaneous impulse at the body's centre. */
+    public phy_apply_impulse(fx: number, fy: number): void {
+        if (this.phy_body_id >= 0) physics_body_apply_impulse(this.phy_body_id, fx, fy)
+    }
+
+    /** Teleports the physics body (and the instance) to a position. */
+    public phy_set_position(x: number, y: number): void {
+        if (this.phy_body_id >= 0) physics_body_set_position(this.phy_body_id, x, y)
+        this.x = x
+        this.y = y
+    }
+
+    /** Horizontal velocity of the physics body (pixels/step). */
+    public get phy_speed_x(): number { return this.phy_body_id >= 0 ? physics_body_get_vx(this.phy_body_id) : 0 }
+    public set phy_speed_x(v: number) { if (this.phy_body_id >= 0) physics_body_set_velocity(this.phy_body_id, v, physics_body_get_vy(this.phy_body_id)) }
+
+    /** Vertical velocity of the physics body (pixels/step). */
+    public get phy_speed_y(): number { return this.phy_body_id >= 0 ? physics_body_get_vy(this.phy_body_id) : 0 }
+    public set phy_speed_y(v: number) { if (this.phy_body_id >= 0) physics_body_set_velocity(this.phy_body_id, physics_body_get_vx(this.phy_body_id), v) }
+
     /**
      * Moves the instance by the given amount, stopping when it hits a solid.
      * @param hspd - Horizontal movement
@@ -734,6 +869,198 @@ export class instance extends resource {
     public move_towards_point(x: number, y: number, spd: number): void {
         const dir = Math.atan2(-(y - this.y), x - this.x) * (180 / Math.PI)
         this.motion_set(dir < 0 ? dir + 360 : dir, spd)
+    }
+
+    // =========================================================================
+    // Motion planning steppers (GMS mp_*_step)
+    // =========================================================================
+
+    /** True if (x,y) is clear: `checkall` ⇒ no instances at all, else no solids. */
+    private _mp_free(x: number, y: number, checkall: boolean): boolean {
+        return checkall ? this.place_empty(x, y) : this.place_free(x, y)
+    }
+
+    /**
+     * Moves up to `stepsize` straight toward (x, y), stopping if the step is blocked.
+     * @param checkall - True = treat all instances as obstacles; false = only solids
+     * @returns True once the instance is at the target
+     */
+    public mp_linear_step(x: number, y: number, stepsize: number, checkall: boolean): boolean {
+        const dx = x - this.x, dy = y - this.y
+        const dist = Math.hypot(dx, dy)
+        if (dist < 1e-6) return true
+        const step = Math.min(stepsize, dist)
+        const nx = this.x + (dx / dist) * step
+        const ny = this.y + (dy / dist) * step
+        if (this._mp_free(nx, ny, checkall)) { this.x = nx; this.y = ny }
+        return Math.hypot(x - this.x, y - this.y) < 1e-6
+    }
+
+    /** Like `mp_linear_step`, but only instances of `obj` block the move. */
+    public mp_linear_step_object(x: number, y: number, stepsize: number, obj: typeof instance): boolean {
+        const dx = x - this.x, dy = y - this.y
+        const dist = Math.hypot(dx, dy)
+        if (dist < 1e-6) return true
+        const step = Math.min(stepsize, dist)
+        const nx = this.x + (dx / dist) * step
+        const ny = this.y + (dy / dist) * step
+        if (!this.place_meeting(nx, ny, obj)) { this.x = nx; this.y = ny }
+        return Math.hypot(x - this.x, y - this.y) < 1e-6
+    }
+
+    /**
+     * Steps `stepsize` toward (x, y) while steering around obstacles (potential field).
+     * Sweeps outward from the direct heading (see `mp_potential_settings`) for a free step.
+     * @returns True once near the target
+     */
+    public mp_potential_step(x: number, y: number, stepsize: number, checkall: boolean): boolean {
+        return this._mp_potential(x, y, stepsize, (nx, ny) => this._mp_free(nx, ny, checkall))
+    }
+
+    /** Like `mp_potential_step`, but only instances of `obj` block the move. */
+    public mp_potential_step_object(x: number, y: number, stepsize: number, obj: typeof instance): boolean {
+        return this._mp_potential(x, y, stepsize, (nx, ny) => !this.place_meeting(nx, ny, obj))
+    }
+
+    private _mp_potential(x: number, y: number, stepsize: number, is_free: (nx: number, ny: number) => boolean): boolean {
+        const dx = x - this.x, dy = y - this.y
+        const dist = Math.hypot(dx, dy)
+        if (dist < 1e-6) return true
+        const step = Math.min(stepsize, dist)
+        const { maxrot, rotstep } = _mp_potential_settings()
+        const rstep   = rotstep * (Math.PI / 180)
+        const max_rad = maxrot  * (Math.PI / 180)
+        const desired = Math.atan2(dy, dx)   // screen-space heading toward target (y-down)
+        let dir = Number.isNaN(this._mp_dir) ? desired : this._mp_dir
+        const free_at = (d: number): boolean => is_free(this.x + Math.cos(d) * step, this.y + Math.sin(d) * step)
+
+        // Steer toward the target by a limited turn if that step is free; otherwise keep heading
+        // momentum and search outward from the current heading for the smallest free turn. The
+        // momentum (persisted _mp_dir) is what lets it wall-follow around an obstacle instead of
+        // oscillating against it.
+        const want = this._approach_angle(dir, desired, rstep)
+        if (free_at(want)) {
+            dir = want
+        } else {
+            let found = false
+            for (let a = rstep; a <= max_rad + 1e-6 && !found; a += rstep) {
+                for (const sgn of [1, -1]) {
+                    if (free_at(dir + sgn * a)) { dir += sgn * a; found = true; break }
+                }
+            }
+            if (!found) { this._mp_dir = dir; return false }   // boxed in
+        }
+
+        this._mp_dir = dir
+        this.x += Math.cos(dir) * step
+        this.y += Math.sin(dir) * step
+        this.direction = (((-dir * 180) / Math.PI) % 360 + 360) % 360
+        return Math.hypot(x - this.x, y - this.y) < stepsize
+    }
+
+    /** Rotates `from` toward `to` by at most `max_step` radians, the short way. */
+    private _approach_angle(from: number, to: number, max_step: number): number {
+        let diff = to - from
+        while (diff >  Math.PI) diff -= 2 * Math.PI
+        while (diff < -Math.PI) diff += 2 * Math.PI
+        if (Math.abs(diff) <= max_step) return to
+        return from + Math.sign(diff) * max_step
+    }
+
+    // =========================================================================
+    // Path following (GMS path_start / path_end + the Path End event)
+    // =========================================================================
+
+    /**
+     * Makes this instance follow a path.
+     * @param path_id - The path resource to follow
+     * @param speed - Pixels per step along the path
+     * @param endaction - `path_action_*` (stop / restart / continue / reverse)
+     * @param absolute - True = the path's own coordinates; false = offset so it starts at the instance
+     */
+    public path_start(path_id: number, speed: number, endaction: number = path_action_stop, absolute: boolean = true): void {
+        if (!path_exists(path_id)) return
+        this.path_index            = path_id
+        this.path_speed            = speed
+        this.path_endaction        = endaction
+        this.path_position         = 0
+        this.path_positionprevious = 0
+        const sx = path_get_x(path_id, 0) * this.path_scale
+        const sy = path_get_y(path_id, 0) * this.path_scale
+        if (absolute) {
+            this._path_off_x = 0
+            this._path_off_y = 0
+            this.x = sx
+            this.y = sy
+        } else {
+            this._path_off_x = this.x - sx
+            this._path_off_y = this.y - sy
+        }
+    }
+
+    /** Stops following the current path (does not fire the Path End event). */
+    public path_end(): void {
+        this.path_index = -1
+        this.path_speed = 0
+    }
+
+    /** Advances along the current path by `path_speed`, applying the end action and firing on_path_end. */
+    private _advance_path(): void {
+        const path = this.path_index
+        const len  = path_get_length(path)
+        if (len <= 0) { this.path_end(); return }
+
+        this.path_positionprevious = this.path_position
+        this.path_position += this.path_speed / len
+
+        let ended = false
+        if (this.path_position >= 1) {
+            ended = true
+            switch (this.path_endaction) {
+                case path_action_restart:
+                    this.path_position = ((this.path_position % 1) + 1) % 1
+                    break
+                case path_action_continue:
+                    this.path_position = ((this.path_position % 1) + 1) % 1
+                    this._path_off_x = this.x - path_get_x(path, this.path_position) * this.path_scale
+                    this._path_off_y = this.y - path_get_y(path, this.path_position) * this.path_scale
+                    break
+                case path_action_reverse:
+                    this.path_speed = -Math.abs(this.path_speed)
+                    this.path_position = 1
+                    break
+                default: // path_action_stop
+                    this.path_position = 1
+            }
+        } else if (this.path_position <= 0 && this.path_speed < 0) {
+            ended = true
+            switch (this.path_endaction) {
+                case path_action_restart:
+                    this.path_position = ((this.path_position % 1) + 1) % 1
+                    break
+                case path_action_reverse:
+                    this.path_speed = Math.abs(this.path_speed)
+                    this.path_position = 0
+                    break
+                default: // stop / continue
+                    this.path_position = 0
+            }
+        }
+
+        const t = Math.max(0, Math.min(1, this.path_position))
+        this.x = path_get_x(path, t) * this.path_scale + this._path_off_x
+        this.y = path_get_y(path, t) * this.path_scale + this._path_off_y
+
+        if (ended) {
+            if (this.path_endaction === path_action_stop) this.path_end()
+            this.on_path_end()
+        }
+    }
+
+    /** Read-only: the number of sub-images (frames) of the current sprite (GMS `image_number`). */
+    public get image_number(): number {
+        const s: any = resource.findByID(this.sprite_index)
+        return s && Array.isArray(s.frames) ? s.frames.length : 0
     }
 
     /**
@@ -850,8 +1177,34 @@ export class instance extends resource {
     // ── Other ─────────────────────────────────────────────────────────────────
     /** Called when the sprite animation completes a loop. */
     public on_animation_end(): void {}
-    /** Called when path following ends (requires path_start; not yet wired). */
+    /** Called when path following ends. */
     public on_path_end(): void {}
+    /** Called each step while the instance's bbox is entirely outside the room. */
+    public on_outside_room(): void {}
+    /** Called each step while the instance's bbox crosses a room edge. */
+    public on_intersect_boundary(): void {}
+    /** A user-defined event (0–15), triggered by `event_user(index)`. */
+    public on_user(index: number): void { void index }
+
+    /** Triggers this instance's user event `index` (0–15) → `on_user(index)`. */
+    public event_user(index: number): void {
+        if (index >= 0 && index <= 15) this.on_user(index)
+    }
+
+    /** Fires the Outside Room / Intersect Boundary events when the bbox leaves/crosses the room. */
+    private _process_boundary_events(): void {
+        const rm = this.room
+        if (!rm) return
+        const outside = this.bbox_right < 0 || this.bbox_left > rm.room_width ||
+                        this.bbox_bottom < 0 || this.bbox_top > rm.room_height
+        if (outside) {
+            this.on_outside_room()
+            if (this._destroyed) return
+        } else if (this.bbox_left < 0 || this.bbox_top < 0 ||
+                   this.bbox_right > rm.room_width || this.bbox_bottom > rm.room_height) {
+            this.on_intersect_boundary()
+        }
+    }
 }
 
 // =========================================================================

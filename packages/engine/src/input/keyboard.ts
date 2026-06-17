@@ -180,6 +180,13 @@ export class keyboard_manager {
         this._released.delete(key)
     }
 
+    /** Clears all keyboard state (held + pressed + released). */
+    public static clear_all(): void {
+        this._held.clear()
+        this._pressed.clear()
+        this._released.clear()
+    }
+
     /** Simulates pressing a key. */
     public static key_press(key: number): void {
         if (!this._held.has(key)) this._pressed.add(key)

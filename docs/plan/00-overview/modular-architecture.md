@@ -138,8 +138,14 @@ IDE's sprite picker / checkboxes read & write the `static` fields via a small TS
    Demo's 4 objects are now class files (`objects/<name>.ts`); the snippet-folder codegen path is
    removed (the codegen just imports the classes). Added an engine sprite-name registry
    (`sprite_register_name` / `sprite_get_index`); `gm_object` resolves `static sprite = 'name'` to
-   `sprite_index` on construction. *Deferred:* physics metadata as static fields (bigger — needs
-   fixture creation/binding; the sample doesn't use physics).
+   `sprite_index` on construction.
+   ✅ **Physics metadata** is now done too: `static physics`/`physics_shape`/`physics_density`/
+   `physics_restitution`/`physics_friction`/`physics_sensor` on `gm_object`. An instance lazily binds
+   a matter.js body on its first physics step (size from the mask/bbox; density ≤ 0 ⇒ static), the
+   loop steps the world + syncs x/y/image_angle between Step and End Step, and the build creates the
+   world from the room's `physics_world`/gravity. `phy_apply_force/impulse`, `phy_set_position`,
+   `phy_speed_x/y` round out the instance API. Verified by Node sim (a box falls and rests on a
+   static floor) + codegen emission of `physics_world_create`.
 
 ## Migration path (incremental — green build at every step)
 
@@ -182,7 +188,8 @@ Each step compiles, type-checks, and builds before the next — no big-bang rewr
 **Status: the modular split is done.** `@silkweaver/{project, engine, build, cli}` are real,
 independently-usable packages with an explicit, acyclic dependency graph; electron + ide are
 front-ends over them. Remaining work is feature/polish, not architecture: the rich object-editor GUI
-(patch ops ready, needs GUI testing), physics metadata as static fields, and the big UI pass.
+(patch ops ready, needs GUI testing), GMS parity gaps (tiles, `mp_*`, global functions, room runtime
+wiring), and the big UI pass. (Physics metadata as static fields — done.)
 
 ## Key decisions & caveats
 

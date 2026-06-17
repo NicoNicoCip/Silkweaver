@@ -34,6 +34,7 @@ export class room extends resource {
     public room_persistent: boolean = false                     // Whether room state persists when leaving
     public room_previous: number = 0                            // ID of the previous room in order
     public room_next: number = 0                                // ID of the next room in order
+    public creation_code: (() => void) | null = null            // Room creation code, run once on room start
 
     public background_visible: boolean[] = []                   // Whether each background layer is visible
     public background_foreground: boolean[] = []                // Whether background draws in front of instances

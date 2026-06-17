@@ -1,11 +1,14 @@
 # Silkweaver Game Engine
 
-Web-based game engine + IDE inspired by GameMaker Studio 1.4.9999. Spiritual successor, not a clone.
+A **multi-platform game engine + IDE that modernizes GameMaker Studio 1.4.9999 in its own way** —
+*not* web-first. Spiritual successor, not a clone. HTML5 + desktop (Electron) ship today; mobile and
+console targets are planned. Platform/native features (Steam, IAP, achievements…) sit behind a thin
+capability layer the host provides, so the engine/runtime stays portable TS/WebGL2.
 
 ## Philosophy
-- Uses GMS function names and concepts
+- Uses GMS function names and concepts; aims for GMS 1.4's full capability surface (everything except drag-and-drop)
 - Applies TypeScript/JavaScript conventions where they make sense (0-based indexing, native arrays, Promises)
-- Not a 1:1 clone—modernized where appropriate
+- Not a 1:1 clone—modernized where appropriate; multi-platform, not web-only
 
 ## Tech Stack
 - **Language**: TypeScript (ES2020, strict mode)
@@ -42,9 +45,10 @@ Recent work:
 - **Standalone export** — `Run → Export HTML5 / Windows / macOS / Linux`: portable HTML5 folder + Electron-packaged executable.
 - **GMS parity** — all 24 object events + per-instance `alarm[]` wired; usable collision (manual masks for spriteless objects + `collision_*`/`instance_place`); instance-var ergonomics (index signature + class fields).
 - **Generated editor types** — Monaco autocomplete is generated from the engine (`npm run gen:types`), not hand-written; the code-gen imports the whole engine API (tree-shaken), so types ≡ availability.
-- **Modular split** — `@silkweaver/{engine, project, build, cli}` are real packages; the code-first CLI works end-to-end (`silkweaver new mygame && silkweaver run`).
+- **Modular split** — `@silkweaver/{engine, project, build, cli}` are real packages with explicit deps; electron is slimmed to the IDE host; the code-first CLI works end-to-end (`silkweaver new mygame && silkweaver run`). The split is complete.
+- **Physics metadata** — `static physics`/`physics_density`/… on `gm_object`; instances lazily bind a matter.js body (size from mask/bbox; density ≤ 0 ⇒ static), the loop steps + syncs them, and the build creates the world from the room's `physics_world`/gravity.
 
-Deferred: a rich object-editor GUI over the class (parse/patch ops are built + tested, just not wired — needs GUI testing); physics metadata as `static` fields; a large UI pass; finishing the split (slim electron, fold the IDE's `room_data` into `@silkweaver/project`).
+Deferred: a rich object-editor GUI over the class (parse/patch ops are built + tested, just not wired — needs GUI testing); GMS parity gaps (tiles/tilesets, `mp_*` pathfinding, global fns like `show_message`/`fps`/`delta_time`, room runtime wiring of views/backgrounds); a large UI pass.
 
 ### Strict TypeScript notes
 The build uses `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`.

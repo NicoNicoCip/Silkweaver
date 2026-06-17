@@ -170,6 +170,73 @@ export function physics_joint_spring_create(
 }
 
 /**
+ * Creates a rope joint — limits the distance between two anchors to `maxlength` (taut, non-stretchy).
+ * @param ax,ay - Anchor on body A (local pixels, 0 = centre) · @param bx,by - Anchor on body B
+ * @param maxlength - Maximum separation in pixels
+ * @returns Joint ID, or -1 on failure
+ */
+export function physics_joint_rope_create(
+    body_a_id: number, body_b_id: number,
+    ax: number, ay: number, bx: number, by: number, maxlength: number,
+): number {
+    const ba = physics_body_get_raw(body_a_id)
+    const bb = physics_body_get_raw(body_b_id)
+    if (!ba || !bb) return -1
+    const c = Matter.Constraint.create({
+        bodyA: ba, bodyB: bb,
+        pointA: { x: ax, y: ay }, pointB: { x: bx, y: by },
+        length: maxlength, stiffness: 1, damping: 0,
+    })
+    return _add_constraint(c)
+}
+
+/** Reads a joint property — `'length'`, `'stiffness'`, or `'damping'`. */
+export function physics_joint_get_value(joint_id: number, field: 'length' | 'stiffness' | 'damping'): number {
+    const c = _joints.get(joint_id)
+    return c ? ((c as any)[field] ?? 0) : 0
+}
+
+/** Sets a joint property — `'length'`, `'stiffness'`, or `'damping'`. */
+export function physics_joint_set_value(joint_id: number, field: 'length' | 'stiffness' | 'damping', value: number): void {
+    const c = _joints.get(joint_id)
+    if (c) (c as any)[field] = value
+}
+
+// =========================================================================
+// World queries
+// =========================================================================
+
+/** Returns true if two physics bodies' shapes overlap. */
+export function physics_test_overlap(body_a_id: number, body_b_id: number): boolean {
+    const a = physics_body_get_raw(body_a_id)
+    const b = physics_body_get_raw(body_b_id)
+    if (!a || !b) return false
+    const collides = (Matter as any).Collision?.collides
+    if (typeof collides === 'function') {
+        const col = collides(a, b)
+        return !!(col && col.collided)
+    }
+    return Matter.Bounds.overlaps(a.bounds, b.bounds)
+}
+
+/**
+ * Casts a ray through the physics world and returns the ids of the bodies it hits.
+ * @returns Hit body ids (as returned by `physics_fixture_bind`)
+ */
+export function physics_raycast(x1: number, y1: number, x2: number, y2: number): number[] {
+    const world = _get_world()
+    if (!world) return []
+    const hits = Matter.Query.ray(Matter.Composite.allBodies(world), { x: x1, y: y1 }, { x: x2, y: y2 })
+    const ids = new Set<number>()
+    for (const h of hits) {
+        const a = (h.bodyA as any)?._sw_id, b = (h.bodyB as any)?._sw_id
+        if (typeof a === 'number') ids.add(a)
+        if (typeof b === 'number') ids.add(b)
+    }
+    return [...ids]
+}
+
+/**
  * Destroys a joint and removes it from the world.
  * @param joint_id - Joint ID returned by physics_joint_*_create
  */

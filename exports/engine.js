@@ -72,7 +72,7 @@ var resource = class _resource {
 };
 
 // packages/engine/src/core/room.ts
-var room = class _room extends resource {
+var room = class _room2 extends resource {
   // Instances in this room, keyed by ID
   constructor() {
     super();
@@ -90,6 +90,8 @@ var room = class _room extends resource {
     // ID of the previous room in order
     this.room_next = 0;
     // ID of the next room in order
+    this.creation_code = null;
+    // Room creation code, run once on room start
     this.background_visible = [];
     // Whether each background layer is visible
     this.background_foreground = [];
@@ -314,7 +316,7 @@ var room = class _room extends resource {
    * @returns The unique ID of the created tile
    */
   room_tile_add_ext(x, y, background2, left, top, width, height, depth, xscale, yscale, alpha) {
-    const id = _room.next_tile_id++;
+    const id = _room2.next_tile_id++;
     this.tiles.push({
       id,
       x,
@@ -358,7 +360,7 @@ var room = class _room extends resource {
    * @returns The unique ID of the created tile
    */
   tile_add(background2, left, top, width, height, x, y, depth) {
-    const id = _room.next_tile_id++;
+    const id = _room2.next_tile_id++;
     this.tiles.push({
       id,
       x,
@@ -938,6 +940,12 @@ var keyboard_manager = class _keyboard_manager {
     this._pressed.delete(key);
     this._released.delete(key);
   }
+  /** Clears all keyboard state (held + pressed + released). */
+  static clear_all() {
+    this._held.clear();
+    this._pressed.clear();
+    this._released.clear();
+  }
   /** Simulates pressing a key. */
   static key_press(key) {
     if (!this._held.has(key)) this._pressed.add(key);
@@ -1177,6 +1185,15 @@ var mouse_manager = class _mouse_manager {
     this._held.delete(btn);
     this._pressed.delete(btn);
     this._released.delete(btn);
+  }
+  /** Clears all mouse button + wheel state. */
+  static clear_all() {
+    this._held.clear();
+    this._pressed.clear();
+    this._released.clear();
+    this._wheel_up = false;
+    this._wheel_down = false;
+    this.mouse_button = mb_none;
   }
   /** Returns true if the wheel scrolled up this step. */
   static wheel_up() {
@@ -1602,6 +1619,66 @@ function device_get_touch_count() {
   return touch_manager.get_count();
 }
 
+// packages/engine/src/physics/physics_world.ts
+import Matter from "matter-js";
+var _engine = null;
+var _world = null;
+var _px_per_m = 64;
+var _on_collision_start = null;
+var _on_collision_end = null;
+function physics_world_create(gx = 0, gy = 0.1, px_per_metre = 64) {
+  if (_engine) {
+    Matter.Engine.clear(_engine);
+  }
+  _px_per_m = px_per_metre;
+  _engine = Matter.Engine.create();
+  _world = _engine.world;
+  _engine.gravity.x = gx;
+  _engine.gravity.y = gy;
+  Matter.Events.on(_engine, "collisionStart", (event) => {
+    if (!_on_collision_start) return;
+    for (const pair of event.pairs) {
+      _on_collision_start(pair.bodyA, pair.bodyB);
+    }
+  });
+  Matter.Events.on(_engine, "collisionEnd", (event) => {
+    if (!_on_collision_end) return;
+    for (const pair of event.pairs) {
+      _on_collision_end(pair.bodyA, pair.bodyB);
+    }
+  });
+}
+function physics_world_step(delta_ms = 1e3 / 60) {
+  if (!_engine) return;
+  Matter.Engine.update(_engine, delta_ms);
+}
+function physics_world_gravity(gx, gy) {
+  if (!_engine) return;
+  _engine.gravity.x = gx;
+  _engine.gravity.y = gy;
+}
+function physics_world_destroy() {
+  if (!_engine) return;
+  Matter.Engine.clear(_engine);
+  _engine = null;
+  _world = null;
+}
+function physics_world_on_collision_start(cb) {
+  _on_collision_start = cb;
+}
+function physics_world_on_collision_end(cb) {
+  _on_collision_end = cb;
+}
+function physics_world_get_engine() {
+  return _engine;
+}
+function physics_get_scale() {
+  return _px_per_m;
+}
+function _get_world() {
+  return _world;
+}
+
 // packages/engine/src/core/game_loop.ts
 var _begin_frame = null;
 var _end_frame = null;
@@ -1627,6 +1704,26 @@ var game_loop = class {
   }
   static {
     // Accumulated time for fixed timestep updates
+    this.fps = 0;
+  }
+  static {
+    // Frames drawn in the last second (measured)
+    this.fps_real = 0;
+  }
+  static {
+    // Instantaneous uncapped FPS (1000 / frame time)
+    this.delta_time_us = 0;
+  }
+  static {
+    // Microseconds elapsed during the previous frame
+    this._fps_frames = 0;
+  }
+  static {
+    // Frame counter for the current fps sample window
+    this._fps_accum = 0;
+  }
+  static {
+    // Accumulated ms for the current fps sample window
     this.room = null;
   }
   static {
@@ -1698,6 +1795,15 @@ var game_loop = class {
     this.room_delta = current - this.last_delta;
     this.last_delta = current;
     this.accumulator += this.room_delta;
+    this.delta_time_us = this.room_delta * 1e3;
+    this.fps_real = this.room_delta > 0 ? Math.round(1e3 / this.room_delta) : 0;
+    this._fps_accum += this.room_delta;
+    this._fps_frames += 1;
+    if (this._fps_accum >= 1e3) {
+      this.fps = this._fps_frames;
+      this._fps_frames = 0;
+      this._fps_accum -= 1e3;
+    }
     const frameTime = 1e3 / this.room_speed;
     while (this.accumulator >= frameTime) {
       this.update();
@@ -1722,10 +1828,12 @@ var game_loop = class {
     }
     if (this._pending_room_start) {
       this._pending_room_start = false;
+      if (this.room?.creation_code) this.room.creation_code();
       this._dispatch_lifecycle("on_room_start");
     }
     this.update_events.get("STEP_BEGIN" /* step_begin */)?.forEach((e) => e.run());
     this.update_events.get("STEP" /* step */)?.forEach((e) => e.run());
+    this._step_physics();
     this.update_events.get("STEP_END" /* step_end */)?.forEach((e) => e.run());
     this.update_events.get("COLLISION" /* collision */)?.forEach((e) => e.run());
     this.update_events.get("KEYBOARD" /* keyboard */)?.forEach((e) => e.run());
@@ -1738,6 +1846,17 @@ var game_loop = class {
     keyboard_manager.end_step();
     mouse_manager.end_step();
     touch_manager.end_step();
+  }
+  /**
+   * Advances the physics world (if one exists) and syncs physics instances.
+   * Runs between Step and End Step, matching GMS ordering. No-op for non-physics games.
+   */
+  static _step_physics() {
+    if (!physics_world_get_engine() || !this.room) return;
+    const instances = this.room.instance_get_all();
+    for (const inst of instances) inst.phy_ensure_body();
+    physics_world_step();
+    for (const inst of instances) if (inst.active) inst.phy_sync_from_body();
   }
   /**
    * Runs all draw events in GMS order.
@@ -1817,6 +1936,174 @@ function game_end() {
 }
 function game_restart() {
   game_loop.restart();
+}
+
+// packages/engine/src/core/system.ts
+var _now = () => typeof performance !== "undefined" ? performance.now() : Date.now();
+var _start = _now();
+function fps() {
+  return game_loop.fps;
+}
+function fps_real() {
+  return game_loop.fps_real;
+}
+function delta_time() {
+  return game_loop.delta_time_us;
+}
+function get_timer() {
+  return Math.floor((_now() - _start) * 1e3);
+}
+function current_time() {
+  return Math.floor(_now() - _start);
+}
+function show_debug_message(message) {
+  console.log(typeof message === "string" ? message : String(message));
+}
+function set_application_title(title) {
+  if (typeof document !== "undefined") document.title = title;
+}
+function show_message(message) {
+  const s = String(message);
+  if (typeof window !== "undefined" && typeof window.alert === "function") window.alert(s);
+  else console.log("[show_message]", s);
+}
+function show_question(message) {
+  if (typeof window !== "undefined" && typeof window.confirm === "function") return window.confirm(String(message));
+  return false;
+}
+function get_string(message, default_value = "") {
+  if (typeof window !== "undefined" && typeof window.prompt === "function") {
+    return window.prompt(String(message), default_value) ?? default_value;
+  }
+  return default_value;
+}
+function get_integer(message, default_value = 0) {
+  if (typeof window !== "undefined" && typeof window.prompt === "function") {
+    const r = window.prompt(String(message), String(default_value));
+    if (r === null) return default_value;
+    const n = parseFloat(r);
+    return Number.isNaN(n) ? default_value : n;
+  }
+  return default_value;
+}
+
+// packages/engine/src/utils/datetime.ts
+var _d = (dt) => new Date(dt);
+function date_current_datetime() {
+  return Date.now();
+}
+function date_create_datetime(year, month, day, hour, minute, second) {
+  return new Date(year, month - 1, day, hour, minute, second).getTime();
+}
+function date_create_date(year, month, day) {
+  return new Date(year, month - 1, day).getTime();
+}
+function date_get_year(dt) {
+  return _d(dt).getFullYear();
+}
+function date_get_month(dt) {
+  return _d(dt).getMonth() + 1;
+}
+function date_get_day(dt) {
+  return _d(dt).getDate();
+}
+function date_get_hour(dt) {
+  return _d(dt).getHours();
+}
+function date_get_minute(dt) {
+  return _d(dt).getMinutes();
+}
+function date_get_second(dt) {
+  return _d(dt).getSeconds();
+}
+function date_get_weekday(dt) {
+  return _d(dt).getDay();
+}
+function date_get_day_of_year(dt) {
+  const d = _d(dt);
+  const start = new Date(d.getFullYear(), 0, 0).getTime();
+  return Math.floor((d.getTime() - start) / 864e5);
+}
+function current_year() {
+  return (/* @__PURE__ */ new Date()).getFullYear();
+}
+function current_month() {
+  return (/* @__PURE__ */ new Date()).getMonth() + 1;
+}
+function current_day() {
+  return (/* @__PURE__ */ new Date()).getDate();
+}
+function current_hour() {
+  return (/* @__PURE__ */ new Date()).getHours();
+}
+function current_minute() {
+  return (/* @__PURE__ */ new Date()).getMinutes();
+}
+function current_second() {
+  return (/* @__PURE__ */ new Date()).getSeconds();
+}
+function current_weekday() {
+  return (/* @__PURE__ */ new Date()).getDay();
+}
+function date_inc_year(dt, amount) {
+  const d = _d(dt);
+  d.setFullYear(d.getFullYear() + amount);
+  return d.getTime();
+}
+function date_inc_month(dt, amount) {
+  const d = _d(dt);
+  d.setMonth(d.getMonth() + amount);
+  return d.getTime();
+}
+function date_inc_week(dt, amount) {
+  return dt + amount * 7 * 864e5;
+}
+function date_inc_day(dt, amount) {
+  return dt + amount * 864e5;
+}
+function date_inc_hour(dt, amount) {
+  return dt + amount * 36e5;
+}
+function date_inc_minute(dt, amount) {
+  return dt + amount * 6e4;
+}
+function date_inc_second(dt, amount) {
+  return dt + amount * 1e3;
+}
+function date_compare_datetime(dt1, dt2) {
+  return dt1 < dt2 ? -1 : dt1 > dt2 ? 1 : 0;
+}
+function date_second_span(dt1, dt2) {
+  return Math.abs(dt2 - dt1) / 1e3;
+}
+function date_minute_span(dt1, dt2) {
+  return Math.abs(dt2 - dt1) / 6e4;
+}
+function date_hour_span(dt1, dt2) {
+  return Math.abs(dt2 - dt1) / 36e5;
+}
+function date_day_span(dt1, dt2) {
+  return Math.abs(dt2 - dt1) / 864e5;
+}
+function date_days_in_month(dt) {
+  const d = _d(dt);
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+}
+function date_leap_year(dt) {
+  const y = _d(dt).getFullYear();
+  return y % 4 === 0 && y % 100 !== 0 || y % 400 === 0;
+}
+function date_days_in_year(dt) {
+  return date_leap_year(dt) ? 366 : 365;
+}
+function date_datetime_string(dt) {
+  return _d(dt).toLocaleString();
+}
+function date_date_string(dt) {
+  return _d(dt).toLocaleDateString();
+}
+function date_time_string(dt) {
+  return _d(dt).toLocaleTimeString();
 }
 
 // packages/engine/src/collision/collision.ts
@@ -1934,6 +2221,467 @@ function seg_intersects_aabb(x1, y1, x2, y2, left, top, right, bottom) {
   return t0 <= t1;
 }
 
+// packages/engine/src/core/path.ts
+var path_kind_linear = 0;
+var path_kind_smooth = 1;
+var _paths = /* @__PURE__ */ new Map();
+var _next_path_id = 1;
+function _make_path() {
+  return { points: [], closed: false, kind: path_kind_linear, precision: 8 };
+}
+function _catmull_rom(p0, p1, p2, p3, t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+}
+function _eval_path(path, t) {
+  const pts = path.points;
+  const n = pts.length;
+  if (n === 0) return { x: 0, y: 0, speed: 1 };
+  if (n === 1) {
+    const p = pts[0];
+    return { x: p.x, y: p.y, speed: p.speed };
+  }
+  if (path.closed) {
+    t = (t % 1 + 1) % 1;
+  } else {
+    t = Math.max(0, Math.min(1, t));
+  }
+  const seg_count = path.closed ? n : n - 1;
+  const seg_t = t * seg_count;
+  const seg_i = Math.min(Math.floor(seg_t), seg_count - 1);
+  const local_t = seg_t - seg_i;
+  if (path.kind === path_kind_linear) {
+    const a = pts[seg_i];
+    const b = pts[(seg_i + 1) % n];
+    return {
+      x: a.x + (b.x - a.x) * local_t,
+      y: a.y + (b.y - a.y) * local_t,
+      speed: a.speed + (b.speed - a.speed) * local_t
+    };
+  }
+  const wrap2 = (i) => (i % n + n) % n;
+  const p0 = pts[path.closed ? wrap2(seg_i - 1) : Math.max(seg_i - 1, 0)];
+  const p1 = pts[seg_i];
+  const p2 = pts[(seg_i + 1) % n];
+  const p3 = pts[path.closed ? wrap2(seg_i + 2) : Math.min(seg_i + 2, n - 1)];
+  return {
+    x: _catmull_rom(p0.x, p1.x, p2.x, p3.x, local_t),
+    y: _catmull_rom(p0.y, p1.y, p2.y, p3.y, local_t),
+    speed: _catmull_rom(p0.speed, p1.speed, p2.speed, p3.speed, local_t)
+  };
+}
+function _compute_length(path) {
+  const steps = path.points.length * path.precision;
+  if (steps < 2) return 0;
+  let len = 0;
+  let prev = _eval_path(path, 0);
+  for (let i = 1; i <= steps; i++) {
+    const curr = _eval_path(path, i / steps);
+    const dx = curr.x - prev.x;
+    const dy = curr.y - prev.y;
+    len += Math.sqrt(dx * dx + dy * dy);
+    prev = curr;
+  }
+  return len;
+}
+var path_action_stop = 0;
+var path_action_restart = 1;
+var path_action_continue = 2;
+var path_action_reverse = 3;
+function path_create() {
+  const id = _next_path_id++;
+  _paths.set(id, _make_path());
+  return id;
+}
+function path_delete(path_id) {
+  _paths.delete(path_id);
+}
+function path_exists(path_id) {
+  return _paths.has(path_id);
+}
+function path_add_point(path_id, x, y, speed = 1) {
+  _paths.get(path_id)?.points.push({ x, y, speed });
+}
+function path_clear_points(path_id) {
+  const p = _paths.get(path_id);
+  if (p) p.points = [];
+}
+function path_get_number(path_id) {
+  return _paths.get(path_id)?.points.length ?? 0;
+}
+function path_get_x(path_id, t) {
+  const p = _paths.get(path_id);
+  return p ? _eval_path(p, t).x : 0;
+}
+function path_get_y(path_id, t) {
+  const p = _paths.get(path_id);
+  return p ? _eval_path(p, t).y : 0;
+}
+function path_get_speed(path_id, t) {
+  const p = _paths.get(path_id);
+  return p ? _eval_path(p, t).speed : 1;
+}
+function path_get_length(path_id) {
+  const p = _paths.get(path_id);
+  return p ? _compute_length(p) : 0;
+}
+function path_get_point_x(path_id, n) {
+  return _paths.get(path_id)?.points[n]?.x ?? 0;
+}
+function path_get_point_y(path_id, n) {
+  return _paths.get(path_id)?.points[n]?.y ?? 0;
+}
+function path_get_point_speed(path_id, n) {
+  return _paths.get(path_id)?.points[n]?.speed ?? 1;
+}
+function path_set_closed(path_id, closed) {
+  const p = _paths.get(path_id);
+  if (p) p.closed = closed;
+}
+function path_set_kind(path_id, kind) {
+  const p = _paths.get(path_id);
+  if (p) p.kind = kind;
+}
+function path_set_precision(path_id, precision) {
+  const p = _paths.get(path_id);
+  if (p) p.precision = Math.max(1, precision);
+}
+function path_flip(path_id) {
+  const p = _paths.get(path_id);
+  if (!p || p.points.length === 0) return;
+  const min_x = Math.min(...p.points.map((pt) => pt.x));
+  const max_x = Math.max(...p.points.map((pt) => pt.x));
+  const cx = (min_x + max_x) / 2;
+  for (const pt of p.points) pt.x = 2 * cx - pt.x;
+}
+function path_mirror(path_id) {
+  const p = _paths.get(path_id);
+  if (!p || p.points.length === 0) return;
+  const min_y = Math.min(...p.points.map((pt) => pt.y));
+  const max_y = Math.max(...p.points.map((pt) => pt.y));
+  const cy = (min_y + max_y) / 2;
+  for (const pt of p.points) pt.y = 2 * cy - pt.y;
+}
+function path_reverse(path_id) {
+  _paths.get(path_id)?.points.reverse();
+}
+
+// packages/engine/src/core/motion_planning.ts
+var _grids = /* @__PURE__ */ new Map();
+var _next_grid_id = 1;
+function _idx(g, h, v) {
+  return v * g.hcells + h;
+}
+function _cell_at(g, room_x, room_y) {
+  const h = Math.floor((room_x - g.left) / g.cellwidth);
+  const v = Math.floor((room_y - g.top) / g.cellheight);
+  if (h < 0 || v < 0 || h >= g.hcells || v >= g.vcells) return null;
+  return { h, v };
+}
+function _cell_center(g, h, v) {
+  return { x: g.left + (h + 0.5) * g.cellwidth, y: g.top + (v + 0.5) * g.cellheight };
+}
+function mp_grid_create(left, top, hcells, vcells, cellwidth, cellheight) {
+  const id = _next_grid_id++;
+  _grids.set(id, { left, top, hcells, vcells, cellwidth, cellheight, cells: new Uint8Array(hcells * vcells) });
+  return id;
+}
+function mp_grid_destroy(grid_id) {
+  _grids.delete(grid_id);
+}
+function mp_grid_clear_all(grid_id) {
+  _grids.get(grid_id)?.cells.fill(0);
+}
+function mp_grid_clear_cell(grid_id, h, v) {
+  const g = _grids.get(grid_id);
+  if (g && h >= 0 && v >= 0 && h < g.hcells && v < g.vcells) g.cells[_idx(g, h, v)] = 0;
+}
+function mp_grid_add_cell(grid_id, h, v) {
+  const g = _grids.get(grid_id);
+  if (g && h >= 0 && v >= 0 && h < g.hcells && v < g.vcells) g.cells[_idx(g, h, v)] = 1;
+}
+function mp_grid_get_cell(grid_id, h, v) {
+  const g = _grids.get(grid_id);
+  if (!g || h < 0 || v < 0 || h >= g.hcells || v >= g.vcells) return -1;
+  return g.cells[_idx(g, h, v)] ? -1 : 0;
+}
+function _rect_cells(g, x1, y1, x2, y2, value) {
+  const h1 = Math.max(0, Math.floor((Math.min(x1, x2) - g.left) / g.cellwidth));
+  const v1 = Math.max(0, Math.floor((Math.min(y1, y2) - g.top) / g.cellheight));
+  const h2 = Math.min(g.hcells - 1, Math.floor((Math.max(x1, x2) - g.left) / g.cellwidth));
+  const v2 = Math.min(g.vcells - 1, Math.floor((Math.max(y1, y2) - g.top) / g.cellheight));
+  for (let v = v1; v <= v2; v++) for (let h = h1; h <= h2; h++) g.cells[_idx(g, h, v)] = value;
+}
+function mp_grid_add_rectangle(grid_id, x1, y1, x2, y2) {
+  const g = _grids.get(grid_id);
+  if (g) _rect_cells(g, x1, y1, x2, y2, 1);
+}
+function mp_grid_clear_rectangle(grid_id, x1, y1, x2, y2) {
+  const g = _grids.get(grid_id);
+  if (g) _rect_cells(g, x1, y1, x2, y2, 0);
+}
+function mp_grid_add_instances(grid_id, obj, _prec = false) {
+  const g = _grids.get(grid_id);
+  const room2 = game_loop.room;
+  if (!g || !room2) return;
+  for (const inst of room2.instance_get_all()) {
+    if (!(inst instanceof obj) || !inst.active) continue;
+    _rect_cells(g, inst.bbox_left, inst.bbox_top, inst.bbox_right, inst.bbox_bottom, 1);
+  }
+}
+function mp_grid_path(grid_id, path_id, xstart, ystart, xgoal, ygoal, allowdiag) {
+  const g = _grids.get(grid_id);
+  if (!g) return false;
+  const start = _cell_at(g, xstart, ystart);
+  const goal = _cell_at(g, xgoal, ygoal);
+  if (!start || !goal) return false;
+  if (g.cells[_idx(g, goal.h, goal.v)]) return false;
+  const W = g.hcells, H = g.vcells;
+  const node = (h, v) => v * W + h;
+  const start_n = node(start.h, start.v);
+  const goal_n = node(goal.h, goal.v);
+  const came = /* @__PURE__ */ new Map();
+  const gcost = /* @__PURE__ */ new Map([[start_n, 0]]);
+  const open = /* @__PURE__ */ new Set([start_n]);
+  const hx = (n2) => {
+    const h = n2 % W, v = (n2 - h) / W;
+    return Math.hypot(h - goal.h, v - goal.v);
+  };
+  const neigh = allowdiag ? [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]] : [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1]];
+  while (open.size > 0) {
+    let cur = -1, best = Infinity;
+    for (const n2 of open) {
+      const f = (gcost.get(n2) ?? Infinity) + hx(n2);
+      if (f < best) {
+        best = f;
+        cur = n2;
+      }
+    }
+    if (cur === goal_n) break;
+    open.delete(cur);
+    const ch = cur % W, cv = (cur - ch) / W;
+    for (const [dh, dv, cost] of neigh) {
+      const nh = ch + dh, nv = cv + dv;
+      if (nh < 0 || nv < 0 || nh >= W || nv >= H) continue;
+      if (g.cells[_idx(g, nh, nv)]) continue;
+      const nn = node(nh, nv);
+      const tentative = (gcost.get(cur) ?? Infinity) + cost;
+      if (tentative < (gcost.get(nn) ?? Infinity)) {
+        came.set(nn, cur);
+        gcost.set(nn, tentative);
+        open.add(nn);
+      }
+    }
+  }
+  if (!came.has(goal_n) && start_n !== goal_n) return false;
+  const cells = [];
+  let n = goal_n;
+  cells.push(n);
+  while (n !== start_n) {
+    const p = came.get(n);
+    if (p === void 0) break;
+    n = p;
+    cells.push(n);
+  }
+  cells.reverse();
+  path_clear_points(path_id);
+  for (const c of cells) {
+    const h = c % W, v = (c - h) / W;
+    const ctr = _cell_center(g, h, v);
+    path_add_point(path_id, ctr.x, ctr.y, 1);
+  }
+  return true;
+}
+var _potential = { maxrot: 180, rotstep: 15 };
+function mp_potential_settings(maxrot, rotstep, _ahead = 0, _onspot = true) {
+  _potential.maxrot = Math.max(0, maxrot);
+  _potential.rotstep = Math.max(1, rotstep);
+}
+function _mp_potential_settings() {
+  return _potential;
+}
+
+// packages/engine/src/physics/physics_body.ts
+import Matter2 from "matter-js";
+var FIXTURE_SHAPE_RECT = 0;
+var FIXTURE_SHAPE_CIRCLE = 1;
+var FIXTURE_SHAPE_POLYGON = 2;
+var _fixtures = /* @__PURE__ */ new Map();
+var _next_fixture_id = 1;
+function _make_default_fixture() {
+  return {
+    shape: FIXTURE_SHAPE_RECT,
+    w: 16,
+    h: 16,
+    verts: [],
+    density: 1e-3,
+    restitution: 0,
+    friction: 0.1,
+    is_sensor: false
+  };
+}
+var _bodies = /* @__PURE__ */ new Map();
+var _next_body_id = 1;
+function physics_fixture_create() {
+  const id = _next_fixture_id++;
+  _fixtures.set(id, _make_default_fixture());
+  return id;
+}
+function physics_fixture_set_box(fixture_id, w, h) {
+  const f = _fixtures.get(fixture_id);
+  if (!f) return;
+  f.shape = FIXTURE_SHAPE_RECT;
+  f.w = w;
+  f.h = h;
+}
+function physics_fixture_set_circle(fixture_id, radius) {
+  const f = _fixtures.get(fixture_id);
+  if (!f) return;
+  f.shape = FIXTURE_SHAPE_CIRCLE;
+  f.w = radius;
+}
+function physics_fixture_set_polygon(fixture_id, verts) {
+  const f = _fixtures.get(fixture_id);
+  if (!f) return;
+  f.shape = FIXTURE_SHAPE_POLYGON;
+  f.verts = verts.map((v) => ({ x: v.x, y: v.y }));
+}
+function physics_fixture_set_density(fixture_id, density) {
+  const f = _fixtures.get(fixture_id);
+  if (f) f.density = density;
+}
+function physics_fixture_set_restitution(fixture_id, restitution) {
+  const f = _fixtures.get(fixture_id);
+  if (f) f.restitution = Math.max(0, Math.min(1, restitution));
+}
+function physics_fixture_set_friction(fixture_id, friction) {
+  const f = _fixtures.get(fixture_id);
+  if (f) f.friction = Math.max(0, friction);
+}
+function physics_fixture_set_sensor(fixture_id, is_sensor) {
+  const f = _fixtures.get(fixture_id);
+  if (f) f.is_sensor = is_sensor;
+}
+function physics_fixture_bind(fixture_id, x, y, is_static = false) {
+  const world = _get_world();
+  if (!world) return -1;
+  const f = _fixtures.get(fixture_id);
+  if (!f) return -1;
+  let body;
+  switch (f.shape) {
+    case FIXTURE_SHAPE_CIRCLE:
+      body = Matter2.Bodies.circle(x, y, f.w, {
+        density: f.density,
+        restitution: f.restitution,
+        friction: f.friction,
+        isStatic: is_static,
+        isSensor: f.is_sensor
+      });
+      break;
+    case FIXTURE_SHAPE_POLYGON:
+      body = Matter2.Bodies.fromVertices(x, y, [f.verts], {
+        density: f.density,
+        restitution: f.restitution,
+        friction: f.friction,
+        isStatic: is_static,
+        isSensor: f.is_sensor
+      });
+      break;
+    default:
+      body = Matter2.Bodies.rectangle(x, y, f.w, f.h, {
+        density: f.density,
+        restitution: f.restitution,
+        friction: f.friction,
+        isStatic: is_static,
+        isSensor: f.is_sensor
+      });
+  }
+  Matter2.World.add(world, body);
+  const id = _next_body_id++;
+  _bodies.set(id, body);
+  body._sw_id = id;
+  return id;
+}
+function physics_fixture_delete(fixture_id) {
+  _fixtures.delete(fixture_id);
+}
+function physics_body_destroy(body_id) {
+  const world = _get_world();
+  const body = _bodies.get(body_id);
+  if (!body) return;
+  if (world) Matter2.World.remove(world, body);
+  _bodies.delete(body_id);
+}
+function physics_body_apply_force(body_id, fx, fy) {
+  const body = _bodies.get(body_id);
+  if (!body) return;
+  Matter2.Body.applyForce(body, body.position, { x: fx, y: fy });
+}
+function physics_body_apply_impulse(body_id, ix, iy) {
+  const body = _bodies.get(body_id);
+  if (!body) return;
+  const inv_mass = body.mass > 0 ? 1 / body.mass : 0;
+  Matter2.Body.setVelocity(body, {
+    x: body.velocity.x + ix * inv_mass,
+    y: body.velocity.y + iy * inv_mass
+  });
+}
+function physics_body_apply_force_at(body_id, px, py, fx, fy) {
+  const body = _bodies.get(body_id);
+  if (body) Matter2.Body.applyForce(body, { x: px, y: py }, { x: fx, y: fy });
+}
+function physics_body_apply_torque(body_id, torque) {
+  const body = _bodies.get(body_id);
+  if (body) body.torque += torque;
+}
+function physics_body_set_velocity(body_id, vx, vy) {
+  const body = _bodies.get(body_id);
+  if (!body) return;
+  Matter2.Body.setVelocity(body, { x: vx, y: vy });
+}
+function physics_body_set_position(body_id, x, y) {
+  const body = _bodies.get(body_id);
+  if (!body) return;
+  Matter2.Body.setPosition(body, { x, y });
+}
+function physics_body_set_angular_velocity(body_id, omega) {
+  const body = _bodies.get(body_id);
+  if (!body) return;
+  Matter2.Body.setAngularVelocity(body, omega);
+}
+function physics_body_get_x(body_id) {
+  return _bodies.get(body_id)?.position.x ?? 0;
+}
+function physics_body_get_y(body_id) {
+  return _bodies.get(body_id)?.position.y ?? 0;
+}
+function physics_body_get_angle(body_id) {
+  const body = _bodies.get(body_id);
+  if (!body) return 0;
+  return body.angle * 180 / Math.PI;
+}
+function physics_body_get_vx(body_id) {
+  return _bodies.get(body_id)?.velocity.x ?? 0;
+}
+function physics_body_get_vy(body_id) {
+  return _bodies.get(body_id)?.velocity.y ?? 0;
+}
+function physics_body_get_angular_velocity(body_id) {
+  return _bodies.get(body_id)?.angularVelocity ?? 0;
+}
+function physics_body_set_static(body_id, is_static) {
+  const body = _bodies.get(body_id);
+  if (!body) return;
+  Matter2.Body.setStatic(body, is_static);
+}
+function physics_body_exists(body_id) {
+  return _bodies.has(body_id);
+}
+function physics_body_get_raw(body_id) {
+  return _bodies.get(body_id);
+}
+
 // packages/engine/src/core/instance.ts
 var ALARM_COUNT = 12;
 var _renderer_draw_sprite_ext = null;
@@ -2032,6 +2780,31 @@ var instance = class _instance extends resource {
     this.mask_off_top = 0;
     this.mask_off_right = 0;
     this.mask_off_bottom = 0;
+    // Physics (matter.js). phy_body_id < 0 = not a physics instance. Configured from
+    // `static physics` on the object; the body is created lazily on the first physics
+    // step (once x/y and any mask are set) and then drives x/y/image_angle.
+    this.phy_body_id = -1;
+    this._phy_wants = false;
+    this._phy_shape = "box";
+    this._phy_density = 0.5;
+    this._phy_restitution = 0.1;
+    this._phy_friction = 0.2;
+    this._phy_sensor = false;
+    this._mp_dir = NaN;
+    // Persisted heading for mp_potential_step (radians, screen-space)
+    // Path following (GMS path_*). path_index < 0 = not following a path.
+    this.path_index = -1;
+    this.path_position = 0;
+    // 0..1 along the path
+    this.path_positionprevious = 0;
+    this.path_speed = 0;
+    // pixels per step along the path
+    this.path_scale = 1;
+    this.path_orientation = 0;
+    this.path_endaction = 0;
+    // path_action_* (stop/restart/continue/reverse)
+    this._path_off_x = 0;
+    this._path_off_y = 0;
     // Bound event handlers — stored so unregister() can match the exact same function reference
     this._bound_step_begin = () => {
     };
@@ -2094,6 +2867,10 @@ var instance = class _instance extends resource {
   instance_destroy() {
     if (this._destroyed) return;
     this._destroyed = true;
+    if (this.phy_body_id >= 0) {
+      physics_body_destroy(this.phy_body_id);
+      this.phy_body_id = -1;
+    }
     game_loop.register("DESTROY" /* destroy */, this.on_destroy.bind(this));
     this.unregister_events();
     this.room.instance_remove(this.id);
@@ -2160,9 +2937,15 @@ var instance = class _instance extends resource {
     }
     this.x += this.hspeed;
     this.y += this.vspeed;
+    if (this.path_index >= 0) {
+      this._advance_path();
+      if (this._destroyed) return;
+    }
     this._advance_animation();
     update_bbox(this);
     this._process_collisions();
+    if (this._destroyed) return;
+    this._process_boundary_events();
     if (this._destroyed) return;
     this.on_step();
   }
@@ -2512,6 +3295,93 @@ var instance = class _instance extends resource {
     this.mask_manual = false;
     update_bbox(this);
   }
+  // =========================================================================
+  // Physics (matter.js body binding)
+  // =========================================================================
+  /**
+   * Marks this instance as physics-enabled (called from `gm_object` when the object
+   * declares `static physics = true`). The matter.js body is created lazily on the
+   * first physics step, so x/y and any collision mask are already in place. A density
+   * of ≤ 0 makes the body static (immovable) — e.g. for floors and walls.
+   * @param shape - 'box' or 'circle'
+   * @param density - Mass density; ≤ 0 ⇒ static body
+   * @param restitution - Bounciness, 0–1
+   * @param friction - Surface friction
+   * @param sensor - True = detects overlaps without a physical response
+   */
+  phy_request(shape, density, restitution, friction, sensor) {
+    this._phy_wants = true;
+    this._phy_shape = shape;
+    this._phy_density = density;
+    this._phy_restitution = restitution;
+    this._phy_friction = friction;
+    this._phy_sensor = sensor;
+  }
+  /**
+   * Creates the matter.js body if this instance wants physics, has none yet, and a
+   * physics world exists. Called by the game loop each step (a no-op once bound).
+   */
+  phy_ensure_body() {
+    if (!this._phy_wants || this.phy_body_id >= 0) return;
+    if (!physics_world_get_engine()) return;
+    const { w, h } = this._phy_extent();
+    const fix = physics_fixture_create();
+    if (this._phy_shape === "circle") physics_fixture_set_circle(fix, Math.max(w, h) / 2);
+    else physics_fixture_set_box(fix, w, h);
+    physics_fixture_set_density(fix, Math.max(0, this._phy_density));
+    physics_fixture_set_restitution(fix, this._phy_restitution);
+    physics_fixture_set_friction(fix, this._phy_friction);
+    physics_fixture_set_sensor(fix, this._phy_sensor);
+    this.phy_body_id = physics_fixture_bind(fix, this.x, this.y, this._phy_density <= 0);
+    physics_fixture_delete(fix);
+  }
+  /** Syncs x/y/image_angle from the physics body. Called by the loop after stepping. */
+  phy_sync_from_body() {
+    if (this.phy_body_id < 0) return;
+    this.x = physics_body_get_x(this.phy_body_id);
+    this.y = physics_body_get_y(this.phy_body_id);
+    this.image_angle = physics_body_get_angle(this.phy_body_id);
+  }
+  /** The body's pixel extent: manual mask, else sprite bbox, else a 32×32 default. */
+  _phy_extent() {
+    if (this.mask_manual) {
+      const w = this.mask_off_right - this.mask_off_left;
+      const h = this.mask_off_bottom - this.mask_off_top;
+      if (w > 0 && h > 0) return { w, h };
+    }
+    const bw = this.bbox_right - this.bbox_left;
+    const bh = this.bbox_bottom - this.bbox_top;
+    if (bw > 0 && bh > 0) return { w: bw, h: bh };
+    return { w: 32, h: 32 };
+  }
+  /** Applies a continuous force at the body's centre (pixel-space units). */
+  phy_apply_force(fx, fy) {
+    if (this.phy_body_id >= 0) physics_body_apply_force(this.phy_body_id, fx, fy);
+  }
+  /** Applies an instantaneous impulse at the body's centre. */
+  phy_apply_impulse(fx, fy) {
+    if (this.phy_body_id >= 0) physics_body_apply_impulse(this.phy_body_id, fx, fy);
+  }
+  /** Teleports the physics body (and the instance) to a position. */
+  phy_set_position(x, y) {
+    if (this.phy_body_id >= 0) physics_body_set_position(this.phy_body_id, x, y);
+    this.x = x;
+    this.y = y;
+  }
+  /** Horizontal velocity of the physics body (pixels/step). */
+  get phy_speed_x() {
+    return this.phy_body_id >= 0 ? physics_body_get_vx(this.phy_body_id) : 0;
+  }
+  set phy_speed_x(v) {
+    if (this.phy_body_id >= 0) physics_body_set_velocity(this.phy_body_id, v, physics_body_get_vy(this.phy_body_id));
+  }
+  /** Vertical velocity of the physics body (pixels/step). */
+  get phy_speed_y() {
+    return this.phy_body_id >= 0 ? physics_body_get_vy(this.phy_body_id) : 0;
+  }
+  set phy_speed_y(v) {
+    if (this.phy_body_id >= 0) physics_body_set_velocity(this.phy_body_id, physics_body_get_vx(this.phy_body_id), v);
+  }
   /**
    * Moves the instance by the given amount, stopping when it hits a solid.
    * @param hspd - Horizontal movement
@@ -2606,6 +3476,191 @@ var instance = class _instance extends resource {
   move_towards_point(x, y, spd) {
     const dir = Math.atan2(-(y - this.y), x - this.x) * (180 / Math.PI);
     this.motion_set(dir < 0 ? dir + 360 : dir, spd);
+  }
+  // =========================================================================
+  // Motion planning steppers (GMS mp_*_step)
+  // =========================================================================
+  /** True if (x,y) is clear: `checkall` ⇒ no instances at all, else no solids. */
+  _mp_free(x, y, checkall) {
+    return checkall ? this.place_empty(x, y) : this.place_free(x, y);
+  }
+  /**
+   * Moves up to `stepsize` straight toward (x, y), stopping if the step is blocked.
+   * @param checkall - True = treat all instances as obstacles; false = only solids
+   * @returns True once the instance is at the target
+   */
+  mp_linear_step(x, y, stepsize, checkall) {
+    const dx = x - this.x, dy = y - this.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1e-6) return true;
+    const step = Math.min(stepsize, dist);
+    const nx = this.x + dx / dist * step;
+    const ny = this.y + dy / dist * step;
+    if (this._mp_free(nx, ny, checkall)) {
+      this.x = nx;
+      this.y = ny;
+    }
+    return Math.hypot(x - this.x, y - this.y) < 1e-6;
+  }
+  /** Like `mp_linear_step`, but only instances of `obj` block the move. */
+  mp_linear_step_object(x, y, stepsize, obj) {
+    const dx = x - this.x, dy = y - this.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1e-6) return true;
+    const step = Math.min(stepsize, dist);
+    const nx = this.x + dx / dist * step;
+    const ny = this.y + dy / dist * step;
+    if (!this.place_meeting(nx, ny, obj)) {
+      this.x = nx;
+      this.y = ny;
+    }
+    return Math.hypot(x - this.x, y - this.y) < 1e-6;
+  }
+  /**
+   * Steps `stepsize` toward (x, y) while steering around obstacles (potential field).
+   * Sweeps outward from the direct heading (see `mp_potential_settings`) for a free step.
+   * @returns True once near the target
+   */
+  mp_potential_step(x, y, stepsize, checkall) {
+    return this._mp_potential(x, y, stepsize, (nx, ny) => this._mp_free(nx, ny, checkall));
+  }
+  /** Like `mp_potential_step`, but only instances of `obj` block the move. */
+  mp_potential_step_object(x, y, stepsize, obj) {
+    return this._mp_potential(x, y, stepsize, (nx, ny) => !this.place_meeting(nx, ny, obj));
+  }
+  _mp_potential(x, y, stepsize, is_free) {
+    const dx = x - this.x, dy = y - this.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1e-6) return true;
+    const step = Math.min(stepsize, dist);
+    const { maxrot, rotstep } = _mp_potential_settings();
+    const rstep = rotstep * (Math.PI / 180);
+    const max_rad = maxrot * (Math.PI / 180);
+    const desired = Math.atan2(dy, dx);
+    let dir = Number.isNaN(this._mp_dir) ? desired : this._mp_dir;
+    const free_at = (d) => is_free(this.x + Math.cos(d) * step, this.y + Math.sin(d) * step);
+    const want = this._approach_angle(dir, desired, rstep);
+    if (free_at(want)) {
+      dir = want;
+    } else {
+      let found = false;
+      for (let a = rstep; a <= max_rad + 1e-6 && !found; a += rstep) {
+        for (const sgn of [1, -1]) {
+          if (free_at(dir + sgn * a)) {
+            dir += sgn * a;
+            found = true;
+            break;
+          }
+        }
+      }
+      if (!found) {
+        this._mp_dir = dir;
+        return false;
+      }
+    }
+    this._mp_dir = dir;
+    this.x += Math.cos(dir) * step;
+    this.y += Math.sin(dir) * step;
+    this.direction = (-dir * 180 / Math.PI % 360 + 360) % 360;
+    return Math.hypot(x - this.x, y - this.y) < stepsize;
+  }
+  /** Rotates `from` toward `to` by at most `max_step` radians, the short way. */
+  _approach_angle(from, to, max_step) {
+    let diff = to - from;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+    if (Math.abs(diff) <= max_step) return to;
+    return from + Math.sign(diff) * max_step;
+  }
+  // =========================================================================
+  // Path following (GMS path_start / path_end + the Path End event)
+  // =========================================================================
+  /**
+   * Makes this instance follow a path.
+   * @param path_id - The path resource to follow
+   * @param speed - Pixels per step along the path
+   * @param endaction - `path_action_*` (stop / restart / continue / reverse)
+   * @param absolute - True = the path's own coordinates; false = offset so it starts at the instance
+   */
+  path_start(path_id, speed, endaction = path_action_stop, absolute = true) {
+    if (!path_exists(path_id)) return;
+    this.path_index = path_id;
+    this.path_speed = speed;
+    this.path_endaction = endaction;
+    this.path_position = 0;
+    this.path_positionprevious = 0;
+    const sx = path_get_x(path_id, 0) * this.path_scale;
+    const sy = path_get_y(path_id, 0) * this.path_scale;
+    if (absolute) {
+      this._path_off_x = 0;
+      this._path_off_y = 0;
+      this.x = sx;
+      this.y = sy;
+    } else {
+      this._path_off_x = this.x - sx;
+      this._path_off_y = this.y - sy;
+    }
+  }
+  /** Stops following the current path (does not fire the Path End event). */
+  path_end() {
+    this.path_index = -1;
+    this.path_speed = 0;
+  }
+  /** Advances along the current path by `path_speed`, applying the end action and firing on_path_end. */
+  _advance_path() {
+    const path = this.path_index;
+    const len = path_get_length(path);
+    if (len <= 0) {
+      this.path_end();
+      return;
+    }
+    this.path_positionprevious = this.path_position;
+    this.path_position += this.path_speed / len;
+    let ended = false;
+    if (this.path_position >= 1) {
+      ended = true;
+      switch (this.path_endaction) {
+        case path_action_restart:
+          this.path_position = (this.path_position % 1 + 1) % 1;
+          break;
+        case path_action_continue:
+          this.path_position = (this.path_position % 1 + 1) % 1;
+          this._path_off_x = this.x - path_get_x(path, this.path_position) * this.path_scale;
+          this._path_off_y = this.y - path_get_y(path, this.path_position) * this.path_scale;
+          break;
+        case path_action_reverse:
+          this.path_speed = -Math.abs(this.path_speed);
+          this.path_position = 1;
+          break;
+        default:
+          this.path_position = 1;
+      }
+    } else if (this.path_position <= 0 && this.path_speed < 0) {
+      ended = true;
+      switch (this.path_endaction) {
+        case path_action_restart:
+          this.path_position = (this.path_position % 1 + 1) % 1;
+          break;
+        case path_action_reverse:
+          this.path_speed = Math.abs(this.path_speed);
+          this.path_position = 0;
+          break;
+        default:
+          this.path_position = 0;
+      }
+    }
+    const t = Math.max(0, Math.min(1, this.path_position));
+    this.x = path_get_x(path, t) * this.path_scale + this._path_off_x;
+    this.y = path_get_y(path, t) * this.path_scale + this._path_off_y;
+    if (ended) {
+      if (this.path_endaction === path_action_stop) this.path_end();
+      this.on_path_end();
+    }
+  }
+  /** Read-only: the number of sub-images (frames) of the current sprite (GMS `image_number`). */
+  get image_number() {
+    const s = resource.findByID(this.sprite_index);
+    return s && Array.isArray(s.frames) ? s.frames.length : 0;
   }
   /**
    * Calculates the distance to a point.
@@ -2725,8 +3780,34 @@ var instance = class _instance extends resource {
   /** Called when the sprite animation completes a loop. */
   on_animation_end() {
   }
-  /** Called when path following ends (requires path_start; not yet wired). */
+  /** Called when path following ends. */
   on_path_end() {
+  }
+  /** Called each step while the instance's bbox is entirely outside the room. */
+  on_outside_room() {
+  }
+  /** Called each step while the instance's bbox crosses a room edge. */
+  on_intersect_boundary() {
+  }
+  /** A user-defined event (0–15), triggered by `event_user(index)`. */
+  on_user(index) {
+    void index;
+  }
+  /** Triggers this instance's user event `index` (0–15) → `on_user(index)`. */
+  event_user(index) {
+    if (index >= 0 && index <= 15) this.on_user(index);
+  }
+  /** Fires the Outside Room / Intersect Boundary events when the bbox leaves/crosses the room. */
+  _process_boundary_events() {
+    const rm = this.room;
+    if (!rm) return;
+    const outside = this.bbox_right < 0 || this.bbox_left > rm.room_width || this.bbox_bottom < 0 || this.bbox_top > rm.room_height;
+    if (outside) {
+      this.on_outside_room();
+      if (this._destroyed) return;
+    } else if (this.bbox_left < 0 || this.bbox_top < 0 || this.bbox_right > rm.room_width || this.bbox_bottom > rm.room_height) {
+      this.on_intersect_boundary();
+    }
   }
 };
 function with_object(obj, callback) {
@@ -2787,397 +3868,57 @@ function collision_line(x1, y1, x2, y2, obj) {
   return void 0;
 }
 
-// packages/engine/src/drawing/sprite.ts
-var sprite = class extends resource {
-  // Height of the first frame
-  constructor() {
-    super();
-    this.frames = [];
-    // Animation frames
-    this.xoffset = 0;
-    // Horizontal origin point (pixels from left)
-    this.yoffset = 0;
-    // Vertical origin point (pixels from top)
-    this.width = 0;
-    // Width of the first frame
-    this.height = 0;
-  }
-  /**
-   * Adds a frame to this sprite.
-   * @param frame - The frame to add
-   */
-  add_frame(frame) {
-    this.frames.push(frame);
-    if (this.frames.length === 1) {
-      this.width = frame.width;
-      this.height = frame.height;
-    }
-  }
-  /**
-   * Returns the number of frames in this sprite.
-   */
-  get_number() {
-    return this.frames.length;
-  }
-  /**
-   * Returns the frame at the given index, wrapping around if out of range.
-   * @param index - Frame index
-   * @returns sprite_frame or undefined if the sprite has no frames
-   */
-  get_frame(index) {
-    if (this.frames.length === 0) return void 0;
-    const i = Math.floor(index) % this.frames.length;
-    return this.frames[i < 0 ? i + this.frames.length : i];
-  }
-};
-function sprite_get_width(spr) {
-  return spr.width;
+// packages/engine/src/core/tiles.ts
+function _room() {
+  return game_loop.room;
 }
-function sprite_get_height(spr) {
-  return spr.height;
+function tile_add(background2, left, top, width, height, x, y, depth) {
+  return _room()?.tile_add(background2, left, top, width, height, x, y, depth) ?? -1;
 }
-function sprite_get_xoffset(spr) {
-  return spr.xoffset;
+function tile_delete(tile_id) {
+  return _room()?.tile_delete(tile_id) ?? false;
 }
-function sprite_get_yoffset(spr) {
-  return spr.yoffset;
+function tile_exists(tile_id) {
+  return _room()?.tile_exists(tile_id) ?? false;
 }
-function sprite_get_number(spr) {
-  return spr.get_number();
+function tile_get_x(tile_id) {
+  return _room()?.tile_get_x(tile_id) ?? 0;
 }
-var _sprite_names = /* @__PURE__ */ new Map();
-function sprite_register_name(name, id) {
-  _sprite_names.set(name, id);
+function tile_get_y(tile_id) {
+  return _room()?.tile_get_y(tile_id) ?? 0;
 }
-function sprite_get_index(name) {
-  return _sprite_names.get(name) ?? -1;
+function tile_get_depth(tile_id) {
+  return _room()?.tile_get_depth(tile_id) ?? 0;
 }
-
-// packages/engine/src/core/gm_object.ts
-var gm_object = class extends instance {
-  static {
-    /** Default sprite for instances of this object (can be overridden per-instance). */
-    this.default_sprite = null;
-  }
-  static {
-    /** Parent object class for inheritance queries (null = no parent). */
-    this.parent = null;
-  }
-  static {
-    /** Human-readable object name. Defaults to the class name. */
-    this.object_name = "";
-  }
-  static {
-    // Class-level metadata applied to every instance on construction. Subclasses
-    // override with `static solid = true` etc. (object-editor checkboxes write these).
-    this.solid = false;
-  }
-  static {
-    // Blocks movement / counts as a solid
-    this.visible = true;
-  }
-  static {
-    // Drawn by default
-    this.persistent = false;
-  }
-  static {
-    // Survives room changes
-    this.depth = 0;
-  }
-  static {
-    // Draw depth (lower = on top)
-    this.sprite = null;
-  }
-  // Sprite resource name (resolved to sprite_index)
-  /**
-   * Applies this object's static metadata defaults to the new instance.
-   * @param room - The room this instance belongs to
-   */
-  constructor(room2) {
-    super(room2);
-    const cls = this.constructor;
-    this.solid = cls.solid;
-    this.visible = cls.visible;
-    this.persistent = cls.persistent;
-    this.depth = cls.depth;
-    if (cls.sprite) this.sprite_index = sprite_get_index(cls.sprite);
-    else if (cls.default_sprite) this.sprite_index = cls.default_sprite.id;
-  }
-  /**
-   * Returns the object name. Falls back to the constructor name if not set.
-   */
-  static get_name() {
-    return this.object_name || this.name;
-  }
-  /**
-   * Checks whether this object type is an ancestor (direct or indirect) of another.
-   * @param child - The object type to test
-   * @returns True if this class is somewhere in child's prototype chain
-   */
-  static is_ancestor_of(child) {
-    let current = child.parent;
-    while (current !== null) {
-      if (current === this) return true;
-      current = current.parent;
-    }
-    return false;
-  }
-  /**
-   * Called once when the instance is created. Override in subclasses.
-   */
-  on_create() {
-    const cls = this.constructor;
-    if (this.sprite_index === -1 && cls.default_sprite !== null) {
-      this.sprite_index = cls.default_sprite.id;
-    }
-  }
-};
-function object_exists(obj) {
-  return obj != null;
+function tile_get_visible(tile_id) {
+  return _room()?.tile_get_visible(tile_id) ?? false;
 }
-function object_get_name(obj) {
-  return obj.get_name();
+function tile_set_position(tile_id, x, y) {
+  _room()?.tile_set_position(tile_id, x, y);
 }
-function object_get_sprite(obj) {
-  return obj.default_sprite;
+function tile_set_depth(tile_id, depth) {
+  _room()?.tile_set_depth(tile_id, depth);
 }
-function object_get_parent(obj) {
-  return obj.parent;
+function tile_set_visible(tile_id, visible) {
+  _room()?.tile_set_visible(tile_id, visible);
 }
-function object_is_ancestor(obj, parent) {
-  return parent.is_ancestor_of(obj);
+function tile_set_scale(tile_id, xscale, yscale) {
+  _room()?.tile_set_scale(tile_id, xscale, yscale);
 }
-
-// packages/engine/src/core/path.ts
-var path_kind_linear = 0;
-var path_kind_smooth = 1;
-var _paths = /* @__PURE__ */ new Map();
-var _next_path_id = 1;
-function _make_path() {
-  return { points: [], closed: false, kind: path_kind_linear, precision: 8 };
+function tile_set_alpha(tile_id, alpha) {
+  _room()?.tile_set_alpha(tile_id, alpha);
 }
-function _catmull_rom(p0, p1, p2, p3, t) {
-  const t2 = t * t;
-  const t3 = t2 * t;
-  return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+function tile_set_background(tile_id, background2, left, top, width, height) {
+  _room()?.tile_set_background(tile_id, background2, left, top, width, height);
 }
-function _eval_path(path, t) {
-  const pts = path.points;
-  const n = pts.length;
-  if (n === 0) return { x: 0, y: 0, speed: 1 };
-  if (n === 1) {
-    const p = pts[0];
-    return { x: p.x, y: p.y, speed: p.speed };
-  }
-  if (path.closed) {
-    t = (t % 1 + 1) % 1;
-  } else {
-    t = Math.max(0, Math.min(1, t));
-  }
-  const seg_count = path.closed ? n : n - 1;
-  const seg_t = t * seg_count;
-  const seg_i = Math.min(Math.floor(seg_t), seg_count - 1);
-  const local_t = seg_t - seg_i;
-  if (path.kind === path_kind_linear) {
-    const a = pts[seg_i];
-    const b = pts[(seg_i + 1) % n];
-    return {
-      x: a.x + (b.x - a.x) * local_t,
-      y: a.y + (b.y - a.y) * local_t,
-      speed: a.speed + (b.speed - a.speed) * local_t
-    };
-  }
-  const wrap2 = (i) => (i % n + n) % n;
-  const p0 = pts[path.closed ? wrap2(seg_i - 1) : Math.max(seg_i - 1, 0)];
-  const p1 = pts[seg_i];
-  const p2 = pts[(seg_i + 1) % n];
-  const p3 = pts[path.closed ? wrap2(seg_i + 2) : Math.min(seg_i + 2, n - 1)];
-  return {
-    x: _catmull_rom(p0.x, p1.x, p2.x, p3.x, local_t),
-    y: _catmull_rom(p0.y, p1.y, p2.y, p3.y, local_t),
-    speed: _catmull_rom(p0.speed, p1.speed, p2.speed, p3.speed, local_t)
-  };
+function tile_layer_delete(depth) {
+  _room()?.tile_layer_delete(depth);
 }
-function _compute_length(path) {
-  const steps = path.points.length * path.precision;
-  if (steps < 2) return 0;
-  let len = 0;
-  let prev = _eval_path(path, 0);
-  for (let i = 1; i <= steps; i++) {
-    const curr = _eval_path(path, i / steps);
-    const dx = curr.x - prev.x;
-    const dy = curr.y - prev.y;
-    len += Math.sqrt(dx * dx + dy * dy);
-    prev = curr;
-  }
-  return len;
+function tile_layer_shift(depth, x, y) {
+  _room()?.tile_layer_shift(depth, x, y);
 }
-function path_create() {
-  const id = _next_path_id++;
-  _paths.set(id, _make_path());
-  return id;
-}
-function path_delete(path_id) {
-  _paths.delete(path_id);
-}
-function path_exists(path_id) {
-  return _paths.has(path_id);
-}
-function path_add_point(path_id, x, y, speed = 1) {
-  _paths.get(path_id)?.points.push({ x, y, speed });
-}
-function path_clear_points(path_id) {
-  const p = _paths.get(path_id);
-  if (p) p.points = [];
-}
-function path_get_number(path_id) {
-  return _paths.get(path_id)?.points.length ?? 0;
-}
-function path_get_x(path_id, t) {
-  const p = _paths.get(path_id);
-  return p ? _eval_path(p, t).x : 0;
-}
-function path_get_y(path_id, t) {
-  const p = _paths.get(path_id);
-  return p ? _eval_path(p, t).y : 0;
-}
-function path_get_speed(path_id, t) {
-  const p = _paths.get(path_id);
-  return p ? _eval_path(p, t).speed : 1;
-}
-function path_get_length(path_id) {
-  const p = _paths.get(path_id);
-  return p ? _compute_length(p) : 0;
-}
-function path_get_point_x(path_id, n) {
-  return _paths.get(path_id)?.points[n]?.x ?? 0;
-}
-function path_get_point_y(path_id, n) {
-  return _paths.get(path_id)?.points[n]?.y ?? 0;
-}
-function path_get_point_speed(path_id, n) {
-  return _paths.get(path_id)?.points[n]?.speed ?? 1;
-}
-function path_set_closed(path_id, closed) {
-  const p = _paths.get(path_id);
-  if (p) p.closed = closed;
-}
-function path_set_kind(path_id, kind) {
-  const p = _paths.get(path_id);
-  if (p) p.kind = kind;
-}
-function path_set_precision(path_id, precision) {
-  const p = _paths.get(path_id);
-  if (p) p.precision = Math.max(1, precision);
-}
-function path_flip(path_id) {
-  const p = _paths.get(path_id);
-  if (!p || p.points.length === 0) return;
-  const min_x = Math.min(...p.points.map((pt) => pt.x));
-  const max_x = Math.max(...p.points.map((pt) => pt.x));
-  const cx = (min_x + max_x) / 2;
-  for (const pt of p.points) pt.x = 2 * cx - pt.x;
-}
-function path_mirror(path_id) {
-  const p = _paths.get(path_id);
-  if (!p || p.points.length === 0) return;
-  const min_y = Math.min(...p.points.map((pt) => pt.y));
-  const max_y = Math.max(...p.points.map((pt) => pt.y));
-  const cy = (min_y + max_y) / 2;
-  for (const pt of p.points) pt.y = 2 * cy - pt.y;
-}
-function path_reverse(path_id) {
-  _paths.get(path_id)?.points.reverse();
-}
-
-// packages/engine/src/core/timeline.ts
-var _timelines = /* @__PURE__ */ new Map();
-var _next_timeline_id = 1;
-function _compute_end(tl) {
-  return tl.moments.length > 0 ? tl.moments[tl.moments.length - 1].step : 0;
-}
-function timeline_create() {
-  const id = _next_timeline_id++;
-  _timelines.set(id, { moments: [], pos: 0, speed: 1, loop: false, playing: false, end_step: 0 });
-  return id;
-}
-function timeline_delete(timeline_id) {
-  _timelines.delete(timeline_id);
-}
-function timeline_exists(timeline_id) {
-  return _timelines.has(timeline_id);
-}
-function timeline_moment_add(timeline_id, step, cb) {
-  const tl = _timelines.get(timeline_id);
-  if (!tl) return;
-  tl.moments.push({ step, cb });
-  tl.moments.sort((a, b) => a.step - b.step);
-  tl.end_step = _compute_end(tl);
-}
-function timeline_moment_clear(timeline_id, step) {
-  const tl = _timelines.get(timeline_id);
-  if (!tl) return;
-  tl.moments = tl.moments.filter((m) => m.step !== step);
-  tl.end_step = _compute_end(tl);
-}
-function timeline_get_moment_count(timeline_id) {
-  return _timelines.get(timeline_id)?.moments.length ?? 0;
-}
-function timeline_set_speed(timeline_id, speed) {
-  const tl = _timelines.get(timeline_id);
-  if (tl) tl.speed = speed;
-}
-function timeline_set_loop(timeline_id, loop) {
-  const tl = _timelines.get(timeline_id);
-  if (tl) tl.loop = loop;
-}
-function timeline_play(timeline_id) {
-  const tl = _timelines.get(timeline_id);
-  if (tl) tl.playing = true;
-}
-function timeline_pause(timeline_id) {
-  const tl = _timelines.get(timeline_id);
-  if (tl) tl.playing = false;
-}
-function timeline_stop(timeline_id) {
-  const tl = _timelines.get(timeline_id);
-  if (!tl) return;
-  tl.playing = false;
-  tl.pos = 0;
-}
-function timeline_set_position(timeline_id, pos) {
-  const tl = _timelines.get(timeline_id);
-  if (tl) tl.pos = pos;
-}
-function timeline_get_position(timeline_id) {
-  return _timelines.get(timeline_id)?.pos ?? 0;
-}
-function timeline_step(timeline_id) {
-  const tl = _timelines.get(timeline_id);
-  if (!tl || !tl.playing || tl.moments.length === 0) return false;
-  const prev_pos = tl.pos;
-  const new_pos = tl.pos + tl.speed;
-  for (const m of tl.moments) {
-    if (m.step > prev_pos && m.step <= new_pos) {
-      m.cb();
-    }
-  }
-  tl.pos = new_pos;
-  if (tl.pos >= tl.end_step) {
-    if (tl.loop) {
-      tl.pos = tl.pos % (tl.end_step || 1);
-    } else {
-      tl.pos = tl.end_step;
-      tl.playing = false;
-      return false;
-    }
-  }
-  return true;
-}
-function timeline_step_all() {
-  for (const id of _timelines.keys()) {
-    timeline_step(id);
-  }
+function tile_layer_find(x, y, depth) {
+  return _room()?.tile_layer_find(x, y, depth) ?? -1;
 }
 
 // packages/engine/src/drawing/shader.ts
@@ -4604,6 +5345,318 @@ var renderer = class {
   }
 };
 
+// packages/engine/src/drawing/sprite.ts
+var sprite = class extends resource {
+  // Height of the first frame
+  constructor() {
+    super();
+    this.frames = [];
+    // Animation frames
+    this.xoffset = 0;
+    // Horizontal origin point (pixels from left)
+    this.yoffset = 0;
+    // Vertical origin point (pixels from top)
+    this.width = 0;
+    // Width of the first frame
+    this.height = 0;
+  }
+  /**
+   * Adds a frame to this sprite.
+   * @param frame - The frame to add
+   */
+  add_frame(frame) {
+    this.frames.push(frame);
+    if (this.frames.length === 1) {
+      this.width = frame.width;
+      this.height = frame.height;
+    }
+  }
+  /**
+   * Returns the number of frames in this sprite.
+   */
+  get_number() {
+    return this.frames.length;
+  }
+  /**
+   * Returns the frame at the given index, wrapping around if out of range.
+   * @param index - Frame index
+   * @returns sprite_frame or undefined if the sprite has no frames
+   */
+  get_frame(index) {
+    if (this.frames.length === 0) return void 0;
+    const i = Math.floor(index) % this.frames.length;
+    return this.frames[i < 0 ? i + this.frames.length : i];
+  }
+};
+function sprite_get_width(spr) {
+  return spr.width;
+}
+function sprite_get_height(spr) {
+  return spr.height;
+}
+function sprite_get_xoffset(spr) {
+  return spr.xoffset;
+}
+function sprite_get_yoffset(spr) {
+  return spr.yoffset;
+}
+function sprite_get_number(spr) {
+  return spr.get_number();
+}
+var _sprite_names = /* @__PURE__ */ new Map();
+function sprite_register_name(name, id) {
+  _sprite_names.set(name, id);
+}
+function sprite_get_index(name) {
+  return _sprite_names.get(name) ?? -1;
+}
+function _sprite_by_id(sprite_index) {
+  const res = resource.findByID(sprite_index);
+  return res instanceof sprite ? res : null;
+}
+function sprite_exists(sprite_index) {
+  return _sprite_by_id(sprite_index) !== null;
+}
+function sprite_set_offset(sprite_index, xoff, yoff) {
+  const s = _sprite_by_id(sprite_index);
+  if (s) {
+    s.xoffset = xoff;
+    s.yoffset = yoff;
+  }
+}
+function sprite_duplicate(sprite_index) {
+  const src = _sprite_by_id(sprite_index);
+  if (!src) return -1;
+  const dup = new sprite();
+  dup.width = src.width;
+  dup.height = src.height;
+  dup.xoffset = src.xoffset;
+  dup.yoffset = src.yoffset;
+  for (const f of src.frames) dup.add_frame({ texture: f.texture, width: f.width, height: f.height });
+  return dup.id;
+}
+async function sprite_add(fname, imgnumb = 1, _removeback = false, smooth = false, xorig = 0, yorig = 0) {
+  void imgnumb;
+  try {
+    const tex = await renderer.tex_mgr.load(fname, smooth);
+    const spr = new sprite();
+    spr.xoffset = xorig;
+    spr.yoffset = yorig;
+    spr.add_frame({ texture: tex, width: tex.width, height: tex.height });
+    return spr.id;
+  } catch {
+    return -1;
+  }
+}
+
+// packages/engine/src/core/gm_object.ts
+var gm_object = class extends instance {
+  static {
+    /** Default sprite for instances of this object (can be overridden per-instance). */
+    this.default_sprite = null;
+  }
+  static {
+    /** Parent object class for inheritance queries (null = no parent). */
+    this.parent = null;
+  }
+  static {
+    /** Human-readable object name. Defaults to the class name. */
+    this.object_name = "";
+  }
+  static {
+    // Class-level metadata applied to every instance on construction. Subclasses
+    // override with `static solid = true` etc. (object-editor checkboxes write these).
+    this.solid = false;
+  }
+  static {
+    // Blocks movement / counts as a solid
+    this.visible = true;
+  }
+  static {
+    // Drawn by default
+    this.persistent = false;
+  }
+  static {
+    // Survives room changes
+    this.depth = 0;
+  }
+  static {
+    // Draw depth (lower = on top)
+    this.sprite = null;
+  }
+  static {
+    // Sprite resource name (resolved to sprite_index)
+    // Physics metadata. `static physics = true` makes every instance a matter.js body
+    // (created on the first physics step). density ≤ 0 ⇒ static (immovable) body.
+    this.physics = false;
+  }
+  static {
+    this.physics_shape = "box";
+  }
+  static {
+    this.physics_density = 0.5;
+  }
+  static {
+    this.physics_restitution = 0.1;
+  }
+  static {
+    this.physics_friction = 0.2;
+  }
+  static {
+    this.physics_sensor = false;
+  }
+  /**
+   * Applies this object's static metadata defaults to the new instance.
+   * @param room - The room this instance belongs to
+   */
+  constructor(room2) {
+    super(room2);
+    const cls = this.constructor;
+    this.solid = cls.solid;
+    this.visible = cls.visible;
+    this.persistent = cls.persistent;
+    this.depth = cls.depth;
+    if (cls.sprite) this.sprite_index = sprite_get_index(cls.sprite);
+    else if (cls.default_sprite) this.sprite_index = cls.default_sprite.id;
+    if (cls.physics) {
+      this.phy_request(cls.physics_shape, cls.physics_density, cls.physics_restitution, cls.physics_friction, cls.physics_sensor);
+    }
+  }
+  /**
+   * Returns the object name. Falls back to the constructor name if not set.
+   */
+  static get_name() {
+    return this.object_name || this.name;
+  }
+  /**
+   * Checks whether this object type is an ancestor (direct or indirect) of another.
+   * @param child - The object type to test
+   * @returns True if this class is somewhere in child's prototype chain
+   */
+  static is_ancestor_of(child) {
+    let current = child.parent;
+    while (current !== null) {
+      if (current === this) return true;
+      current = current.parent;
+    }
+    return false;
+  }
+  /**
+   * Called once when the instance is created. Override in subclasses.
+   */
+  on_create() {
+    const cls = this.constructor;
+    if (this.sprite_index === -1 && cls.default_sprite !== null) {
+      this.sprite_index = cls.default_sprite.id;
+    }
+  }
+};
+function object_exists(obj) {
+  return obj != null;
+}
+function object_get_name(obj) {
+  return obj.get_name();
+}
+function object_get_sprite(obj) {
+  return obj.default_sprite;
+}
+function object_get_parent(obj) {
+  return obj.parent;
+}
+function object_is_ancestor(obj, parent) {
+  return parent.is_ancestor_of(obj);
+}
+
+// packages/engine/src/core/timeline.ts
+var _timelines = /* @__PURE__ */ new Map();
+var _next_timeline_id = 1;
+function _compute_end(tl) {
+  return tl.moments.length > 0 ? tl.moments[tl.moments.length - 1].step : 0;
+}
+function timeline_create() {
+  const id = _next_timeline_id++;
+  _timelines.set(id, { moments: [], pos: 0, speed: 1, loop: false, playing: false, end_step: 0 });
+  return id;
+}
+function timeline_delete(timeline_id) {
+  _timelines.delete(timeline_id);
+}
+function timeline_exists(timeline_id) {
+  return _timelines.has(timeline_id);
+}
+function timeline_moment_add(timeline_id, step, cb) {
+  const tl = _timelines.get(timeline_id);
+  if (!tl) return;
+  tl.moments.push({ step, cb });
+  tl.moments.sort((a, b) => a.step - b.step);
+  tl.end_step = _compute_end(tl);
+}
+function timeline_moment_clear(timeline_id, step) {
+  const tl = _timelines.get(timeline_id);
+  if (!tl) return;
+  tl.moments = tl.moments.filter((m) => m.step !== step);
+  tl.end_step = _compute_end(tl);
+}
+function timeline_get_moment_count(timeline_id) {
+  return _timelines.get(timeline_id)?.moments.length ?? 0;
+}
+function timeline_set_speed(timeline_id, speed) {
+  const tl = _timelines.get(timeline_id);
+  if (tl) tl.speed = speed;
+}
+function timeline_set_loop(timeline_id, loop) {
+  const tl = _timelines.get(timeline_id);
+  if (tl) tl.loop = loop;
+}
+function timeline_play(timeline_id) {
+  const tl = _timelines.get(timeline_id);
+  if (tl) tl.playing = true;
+}
+function timeline_pause(timeline_id) {
+  const tl = _timelines.get(timeline_id);
+  if (tl) tl.playing = false;
+}
+function timeline_stop(timeline_id) {
+  const tl = _timelines.get(timeline_id);
+  if (!tl) return;
+  tl.playing = false;
+  tl.pos = 0;
+}
+function timeline_set_position(timeline_id, pos) {
+  const tl = _timelines.get(timeline_id);
+  if (tl) tl.pos = pos;
+}
+function timeline_get_position(timeline_id) {
+  return _timelines.get(timeline_id)?.pos ?? 0;
+}
+function timeline_step(timeline_id) {
+  const tl = _timelines.get(timeline_id);
+  if (!tl || !tl.playing || tl.moments.length === 0) return false;
+  const prev_pos = tl.pos;
+  const new_pos = tl.pos + tl.speed;
+  for (const m of tl.moments) {
+    if (m.step > prev_pos && m.step <= new_pos) {
+      m.cb();
+    }
+  }
+  tl.pos = new_pos;
+  if (tl.pos >= tl.end_step) {
+    if (tl.loop) {
+      tl.pos = tl.pos % (tl.end_step || 1);
+    } else {
+      tl.pos = tl.end_step;
+      tl.playing = false;
+      return false;
+    }
+  }
+  return true;
+}
+function timeline_step_all() {
+  for (const id of _timelines.keys()) {
+    timeline_step(id);
+  }
+}
+
 // packages/engine/src/drawing/background.ts
 var background = class extends resource {
   // Use smooth filtering
@@ -4899,6 +5952,162 @@ function draw_surface(surf, x, y) {
   renderer.draw_surface(surf, x, y);
 }
 
+// packages/engine/src/input/io.ts
+function io_clear() {
+  keyboard_manager.clear_all();
+  mouse_manager.clear_all();
+}
+
+// packages/engine/src/utils/encoding.ts
+function _utf8(text) {
+  return new TextEncoder().encode(text);
+}
+function base64_encode(text) {
+  const bytes = _utf8(text);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  if (typeof btoa === "function") return btoa(bin);
+  return globalThis.Buffer.from(bin, "binary").toString("base64");
+}
+function base64_decode(text) {
+  let bin;
+  if (typeof atob === "function") bin = atob(text);
+  else bin = globalThis.Buffer.from(text, "base64").toString("binary");
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+function _hex(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, "0");
+  return s;
+}
+function _sha1(data) {
+  const ml = data.length * 8;
+  const blocks = Math.floor((data.length + 8) / 64) + 1;
+  const msg = new Uint8Array(blocks * 64);
+  msg.set(data);
+  msg[data.length] = 128;
+  const dv = new DataView(msg.buffer);
+  dv.setUint32(msg.length - 4, ml >>> 0, false);
+  dv.setUint32(msg.length - 8, Math.floor(ml / 4294967296), false);
+  let h0 = 1732584193, h1 = 4023233417, h2 = 2562383102, h3 = 271733878, h4 = 3285377520;
+  const w = new Uint32Array(80);
+  for (let i = 0; i < msg.length; i += 64) {
+    for (let j = 0; j < 16; j++) w[j] = dv.getUint32(i + j * 4, false);
+    for (let j = 16; j < 80; j++) {
+      const v = w[j - 3] ^ w[j - 8] ^ w[j - 14] ^ w[j - 16];
+      w[j] = v << 1 | v >>> 31;
+    }
+    let a = h0, b = h1, c = h2, d = h3, e = h4;
+    for (let j = 0; j < 80; j++) {
+      let f, k;
+      if (j < 20) {
+        f = b & c | ~b & d;
+        k = 1518500249;
+      } else if (j < 40) {
+        f = b ^ c ^ d;
+        k = 1859775393;
+      } else if (j < 60) {
+        f = b & c | b & d | c & d;
+        k = 2400959708;
+      } else {
+        f = b ^ c ^ d;
+        k = 3395469782;
+      }
+      const t = (a << 5 | a >>> 27) + f + e + k + w[j] >>> 0;
+      e = d;
+      d = c;
+      c = b << 30 | b >>> 2;
+      b = a;
+      a = t;
+    }
+    h0 = h0 + a >>> 0;
+    h1 = h1 + b >>> 0;
+    h2 = h2 + c >>> 0;
+    h3 = h3 + d >>> 0;
+    h4 = h4 + e >>> 0;
+  }
+  const out = new Uint8Array(20);
+  const odv = new DataView(out.buffer);
+  odv.setUint32(0, h0, false);
+  odv.setUint32(4, h1, false);
+  odv.setUint32(8, h2, false);
+  odv.setUint32(12, h3, false);
+  odv.setUint32(16, h4, false);
+  return out;
+}
+function sha1_string_utf8(text) {
+  return _hex(_sha1(_utf8(text)));
+}
+function _md5(data) {
+  const ml = data.length * 8;
+  const blocks = Math.floor((data.length + 8) / 64) + 1;
+  const msg = new Uint8Array(blocks * 64);
+  msg.set(data);
+  msg[data.length] = 128;
+  const dv = new DataView(msg.buffer);
+  dv.setUint32(msg.length - 8, ml >>> 0, true);
+  dv.setUint32(msg.length - 4, Math.floor(ml / 4294967296), true);
+  const S = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
+  const K = new Uint32Array(64);
+  for (let i = 0; i < 64; i++) K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296) >>> 0;
+  const rol = (x, c) => x << c | x >>> 32 - c;
+  let a0 = 1732584193, b0 = 4023233417, c0 = 2562383102, d0 = 271733878;
+  const m = new Uint32Array(16);
+  for (let off = 0; off < msg.length; off += 64) {
+    for (let j = 0; j < 16; j++) m[j] = dv.getUint32(off + j * 4, true);
+    let a = a0, b = b0, c = c0, d = d0;
+    for (let i = 0; i < 64; i++) {
+      let f, g;
+      if (i < 16) {
+        f = b & c | ~b & d;
+        g = i;
+      } else if (i < 32) {
+        f = d & b | ~d & c;
+        g = 5 * i + 1 & 15;
+      } else if (i < 48) {
+        f = b ^ c ^ d;
+        g = 3 * i + 5 & 15;
+      } else {
+        f = c ^ (b | ~d);
+        g = 7 * i & 15;
+      }
+      f = f + a + K[i] + m[g] >>> 0;
+      a = d;
+      d = c;
+      c = b;
+      b = b + rol(f, S[Math.floor(i / 16) * 4 + (i & 3)]) >>> 0;
+    }
+    a0 = a0 + a >>> 0;
+    b0 = b0 + b >>> 0;
+    c0 = c0 + c >>> 0;
+    d0 = d0 + d >>> 0;
+  }
+  const out = new Uint8Array(16);
+  const odv = new DataView(out.buffer);
+  odv.setUint32(0, a0, true);
+  odv.setUint32(4, b0, true);
+  odv.setUint32(8, c0, true);
+  odv.setUint32(12, d0, true);
+  return out;
+}
+function md5_string_utf8(text) {
+  return _hex(_md5(_utf8(text)));
+}
+function clipboard_set_text(text) {
+  const nav = typeof navigator !== "undefined" ? navigator : void 0;
+  if (nav?.clipboard?.writeText) nav.clipboard.writeText(text);
+}
+async function clipboard_get_text() {
+  const nav = typeof navigator !== "undefined" ? navigator : void 0;
+  if (nav?.clipboard?.readText) return nav.clipboard.readText();
+  return "";
+}
+function clipboard_has_text() {
+  const nav = typeof navigator !== "undefined" ? navigator : void 0;
+  return !!nav?.clipboard?.readText;
+}
+
 // packages/engine/src/data/ds_list.ts
 var _lists = /* @__PURE__ */ new Map();
 var _next_id = 0;
@@ -4914,6 +6123,19 @@ function ds_list_create() {
 }
 function ds_list_destroy(id) {
   _lists.delete(id);
+}
+function ds_list_write(id) {
+  return JSON.stringify(_lists.get(id) ?? []);
+}
+function ds_list_read(id, str) {
+  const list = _lists.get(id);
+  if (!list) return;
+  list.length = 0;
+  try {
+    const arr = JSON.parse(str);
+    if (Array.isArray(arr)) for (const v of arr) list.push(v);
+  } catch {
+  }
 }
 function ds_list_add(id, val) {
   _get(id).push(val);
@@ -4984,6 +6206,20 @@ function ds_map_create() {
 function ds_map_destroy(id) {
   _maps.delete(id);
 }
+function ds_map_write(id) {
+  const m = _maps.get(id);
+  return JSON.stringify(m ? Array.from(m.entries()) : []);
+}
+function ds_map_read(id, str) {
+  const m = _maps.get(id);
+  if (!m) return;
+  m.clear();
+  try {
+    const e = JSON.parse(str);
+    if (Array.isArray(e)) for (const [k, v] of e) m.set(k, v);
+  } catch {
+  }
+}
 function ds_map_add(id, key, val) {
   const m = _get2(id);
   if (!m.has(key)) m.set(key, val);
@@ -5037,14 +6273,14 @@ function ds_map_exists_id(id) {
 }
 
 // packages/engine/src/data/ds_grid.ts
-var _grids = /* @__PURE__ */ new Map();
+var _grids2 = /* @__PURE__ */ new Map();
 var _next_id3 = 0;
 function _get3(id) {
-  const g = _grids.get(id);
+  const g = _grids2.get(id);
   if (!g) throw new Error(`ds_grid: invalid id ${id}`);
   return g;
 }
-function _idx(g, x, y) {
+function _idx2(g, x, y) {
   return y * g.w + x;
 }
 function _in_bounds(g, x, y) {
@@ -5052,32 +6288,49 @@ function _in_bounds(g, x, y) {
 }
 function ds_grid_create(w, h) {
   const id = _next_id3++;
-  _grids.set(id, { w, h, data: new Array(w * h).fill(0) });
+  _grids2.set(id, { w, h, data: new Array(w * h).fill(0) });
   return id;
 }
 function ds_grid_destroy(id) {
-  _grids.delete(id);
+  _grids2.delete(id);
+}
+function ds_grid_write(id) {
+  const g = _grids2.get(id);
+  return JSON.stringify(g ? { w: g.w, h: g.h, data: g.data } : null);
+}
+function ds_grid_read(id, str) {
+  const g = _grids2.get(id);
+  if (!g) return;
+  try {
+    const o = JSON.parse(str);
+    if (o && typeof o.w === "number" && Array.isArray(o.data)) {
+      g.w = o.w;
+      g.h = o.h;
+      g.data = o.data;
+    }
+  } catch {
+  }
 }
 function ds_grid_get(id, x, y) {
   const g = _get3(id);
   if (!_in_bounds(g, x, y)) return 0;
-  return g.data[_idx(g, x, y)];
+  return g.data[_idx2(g, x, y)];
 }
 function ds_grid_set(id, x, y, val) {
   const g = _get3(id);
   if (!_in_bounds(g, x, y)) return;
-  g.data[_idx(g, x, y)] = val;
+  g.data[_idx2(g, x, y)] = val;
 }
 function ds_grid_add(id, x, y, val) {
   const g = _get3(id);
   if (!_in_bounds(g, x, y)) return;
-  const i = _idx(g, x, y);
+  const i = _idx2(g, x, y);
   g.data[i] = g.data[i] + val;
 }
 function ds_grid_multiply(id, x, y, factor) {
   const g = _get3(id);
   if (!_in_bounds(g, x, y)) return;
-  const i = _idx(g, x, y);
+  const i = _idx2(g, x, y);
   g.data[i] = g.data[i] * factor;
 }
 function ds_grid_clear(id, val) {
@@ -5100,7 +6353,7 @@ function ds_grid_region_get(id, x1, y1, x2, y2) {
   const out = [];
   for (let y = y1; y <= y2; y++) {
     for (let x = x1; x <= x2; x++) {
-      out.push(_in_bounds(g, x, y) ? g.data[_idx(g, x, y)] : 0);
+      out.push(_in_bounds(g, x, y) ? g.data[_idx2(g, x, y)] : 0);
     }
   }
   return out;
@@ -5109,7 +6362,7 @@ function ds_grid_set_region(id, x1, y1, x2, y2, val) {
   const g = _get3(id);
   for (let y = y1; y <= y2; y++) {
     for (let x = x1; x <= x2; x++) {
-      if (_in_bounds(g, x, y)) g.data[_idx(g, x, y)] = val;
+      if (_in_bounds(g, x, y)) g.data[_idx2(g, x, y)] = val;
     }
   }
 }
@@ -5118,7 +6371,7 @@ function ds_grid_add_region(id, x1, y1, x2, y2, val) {
   for (let y = y1; y <= y2; y++) {
     for (let x = x1; x <= x2; x++) {
       if (_in_bounds(g, x, y)) {
-        const i = _idx(g, x, y);
+        const i = _idx2(g, x, y);
         g.data[i] = g.data[i] + val;
       }
     }
@@ -5129,7 +6382,7 @@ function ds_grid_multiply_region(id, x1, y1, x2, y2, factor) {
   for (let y = y1; y <= y2; y++) {
     for (let x = x1; x <= x2; x++) {
       if (_in_bounds(g, x, y)) {
-        const i = _idx(g, x, y);
+        const i = _idx2(g, x, y);
         g.data[i] = g.data[i] * factor;
       }
     }
@@ -5140,7 +6393,7 @@ function ds_grid_get_max(id, x1, y1, x2, y2) {
   let max2 = -Infinity;
   for (let y = y1; y <= y2; y++) {
     for (let x = x1; x <= x2; x++) {
-      if (_in_bounds(g, x, y)) max2 = Math.max(max2, g.data[_idx(g, x, y)]);
+      if (_in_bounds(g, x, y)) max2 = Math.max(max2, g.data[_idx2(g, x, y)]);
     }
   }
   return max2;
@@ -5150,7 +6403,7 @@ function ds_grid_get_min(id, x1, y1, x2, y2) {
   let min2 = Infinity;
   for (let y = y1; y <= y2; y++) {
     for (let x = x1; x <= x2; x++) {
-      if (_in_bounds(g, x, y)) min2 = Math.min(min2, g.data[_idx(g, x, y)]);
+      if (_in_bounds(g, x, y)) min2 = Math.min(min2, g.data[_idx2(g, x, y)]);
     }
   }
   return min2;
@@ -5160,7 +6413,7 @@ function ds_grid_get_sum(id, x1, y1, x2, y2) {
   let sum = 0;
   for (let y = y1; y <= y2; y++) {
     for (let x = x1; x <= x2; x++) {
-      if (_in_bounds(g, x, y)) sum += g.data[_idx(g, x, y)];
+      if (_in_bounds(g, x, y)) sum += g.data[_idx2(g, x, y)];
     }
   }
   return sum;
@@ -5171,7 +6424,7 @@ function ds_grid_get_mean(id, x1, y1, x2, y2) {
   return ds_grid_get_sum(id, x1, y1, x2, y2) / count;
 }
 function ds_grid_exists(id) {
-  return _grids.has(id);
+  return _grids2.has(id);
 }
 
 // packages/engine/src/data/ds_stack.ts
@@ -6106,238 +7359,6 @@ function audio_get_listener_y() {
   return _listener_y;
 }
 
-// packages/engine/src/physics/physics_world.ts
-import Matter from "matter-js";
-var _engine = null;
-var _world = null;
-var _px_per_m = 64;
-var _on_collision_start = null;
-var _on_collision_end = null;
-function physics_world_create(gx = 0, gy = 0.1, px_per_metre = 64) {
-  if (_engine) {
-    Matter.Engine.clear(_engine);
-  }
-  _px_per_m = px_per_metre;
-  _engine = Matter.Engine.create();
-  _world = _engine.world;
-  _engine.gravity.x = gx;
-  _engine.gravity.y = gy;
-  Matter.Events.on(_engine, "collisionStart", (event) => {
-    if (!_on_collision_start) return;
-    for (const pair of event.pairs) {
-      _on_collision_start(pair.bodyA, pair.bodyB);
-    }
-  });
-  Matter.Events.on(_engine, "collisionEnd", (event) => {
-    if (!_on_collision_end) return;
-    for (const pair of event.pairs) {
-      _on_collision_end(pair.bodyA, pair.bodyB);
-    }
-  });
-}
-function physics_world_step(delta_ms = 1e3 / 60) {
-  if (!_engine) return;
-  Matter.Engine.update(_engine, delta_ms);
-}
-function physics_world_gravity(gx, gy) {
-  if (!_engine) return;
-  _engine.gravity.x = gx;
-  _engine.gravity.y = gy;
-}
-function physics_world_destroy() {
-  if (!_engine) return;
-  Matter.Engine.clear(_engine);
-  _engine = null;
-  _world = null;
-}
-function physics_world_on_collision_start(cb) {
-  _on_collision_start = cb;
-}
-function physics_world_on_collision_end(cb) {
-  _on_collision_end = cb;
-}
-function physics_world_get_engine() {
-  return _engine;
-}
-function physics_get_scale() {
-  return _px_per_m;
-}
-function _get_world() {
-  return _world;
-}
-
-// packages/engine/src/physics/physics_body.ts
-import Matter2 from "matter-js";
-var FIXTURE_SHAPE_RECT = 0;
-var FIXTURE_SHAPE_CIRCLE = 1;
-var FIXTURE_SHAPE_POLYGON = 2;
-var _fixtures = /* @__PURE__ */ new Map();
-var _next_fixture_id = 1;
-function _make_default_fixture() {
-  return {
-    shape: FIXTURE_SHAPE_RECT,
-    w: 16,
-    h: 16,
-    verts: [],
-    density: 1e-3,
-    restitution: 0,
-    friction: 0.1,
-    is_sensor: false
-  };
-}
-var _bodies = /* @__PURE__ */ new Map();
-var _next_body_id = 1;
-function physics_fixture_create() {
-  const id = _next_fixture_id++;
-  _fixtures.set(id, _make_default_fixture());
-  return id;
-}
-function physics_fixture_set_box(fixture_id, w, h) {
-  const f = _fixtures.get(fixture_id);
-  if (!f) return;
-  f.shape = FIXTURE_SHAPE_RECT;
-  f.w = w;
-  f.h = h;
-}
-function physics_fixture_set_circle(fixture_id, radius) {
-  const f = _fixtures.get(fixture_id);
-  if (!f) return;
-  f.shape = FIXTURE_SHAPE_CIRCLE;
-  f.w = radius;
-}
-function physics_fixture_set_polygon(fixture_id, verts) {
-  const f = _fixtures.get(fixture_id);
-  if (!f) return;
-  f.shape = FIXTURE_SHAPE_POLYGON;
-  f.verts = verts.map((v) => ({ x: v.x, y: v.y }));
-}
-function physics_fixture_set_density(fixture_id, density) {
-  const f = _fixtures.get(fixture_id);
-  if (f) f.density = density;
-}
-function physics_fixture_set_restitution(fixture_id, restitution) {
-  const f = _fixtures.get(fixture_id);
-  if (f) f.restitution = Math.max(0, Math.min(1, restitution));
-}
-function physics_fixture_set_friction(fixture_id, friction) {
-  const f = _fixtures.get(fixture_id);
-  if (f) f.friction = Math.max(0, friction);
-}
-function physics_fixture_set_sensor(fixture_id, is_sensor) {
-  const f = _fixtures.get(fixture_id);
-  if (f) f.is_sensor = is_sensor;
-}
-function physics_fixture_bind(fixture_id, x, y, is_static = false) {
-  const world = _get_world();
-  if (!world) return -1;
-  const f = _fixtures.get(fixture_id);
-  if (!f) return -1;
-  let body;
-  switch (f.shape) {
-    case FIXTURE_SHAPE_CIRCLE:
-      body = Matter2.Bodies.circle(x, y, f.w, {
-        density: f.density,
-        restitution: f.restitution,
-        friction: f.friction,
-        isStatic: is_static,
-        isSensor: f.is_sensor
-      });
-      break;
-    case FIXTURE_SHAPE_POLYGON:
-      body = Matter2.Bodies.fromVertices(x, y, [f.verts], {
-        density: f.density,
-        restitution: f.restitution,
-        friction: f.friction,
-        isStatic: is_static,
-        isSensor: f.is_sensor
-      });
-      break;
-    default:
-      body = Matter2.Bodies.rectangle(x, y, f.w, f.h, {
-        density: f.density,
-        restitution: f.restitution,
-        friction: f.friction,
-        isStatic: is_static,
-        isSensor: f.is_sensor
-      });
-  }
-  Matter2.World.add(world, body);
-  const id = _next_body_id++;
-  _bodies.set(id, body);
-  body._sw_id = id;
-  return id;
-}
-function physics_fixture_delete(fixture_id) {
-  _fixtures.delete(fixture_id);
-}
-function physics_body_destroy(body_id) {
-  const world = _get_world();
-  const body = _bodies.get(body_id);
-  if (!body) return;
-  if (world) Matter2.World.remove(world, body);
-  _bodies.delete(body_id);
-}
-function physics_body_apply_force(body_id, fx, fy) {
-  const body = _bodies.get(body_id);
-  if (!body) return;
-  Matter2.Body.applyForce(body, body.position, { x: fx, y: fy });
-}
-function physics_body_apply_impulse(body_id, ix, iy) {
-  const body = _bodies.get(body_id);
-  if (!body) return;
-  const inv_mass = body.mass > 0 ? 1 / body.mass : 0;
-  Matter2.Body.setVelocity(body, {
-    x: body.velocity.x + ix * inv_mass,
-    y: body.velocity.y + iy * inv_mass
-  });
-}
-function physics_body_set_velocity(body_id, vx, vy) {
-  const body = _bodies.get(body_id);
-  if (!body) return;
-  Matter2.Body.setVelocity(body, { x: vx, y: vy });
-}
-function physics_body_set_position(body_id, x, y) {
-  const body = _bodies.get(body_id);
-  if (!body) return;
-  Matter2.Body.setPosition(body, { x, y });
-}
-function physics_body_set_angular_velocity(body_id, omega) {
-  const body = _bodies.get(body_id);
-  if (!body) return;
-  Matter2.Body.setAngularVelocity(body, omega);
-}
-function physics_body_get_x(body_id) {
-  return _bodies.get(body_id)?.position.x ?? 0;
-}
-function physics_body_get_y(body_id) {
-  return _bodies.get(body_id)?.position.y ?? 0;
-}
-function physics_body_get_angle(body_id) {
-  const body = _bodies.get(body_id);
-  if (!body) return 0;
-  return body.angle * 180 / Math.PI;
-}
-function physics_body_get_vx(body_id) {
-  return _bodies.get(body_id)?.velocity.x ?? 0;
-}
-function physics_body_get_vy(body_id) {
-  return _bodies.get(body_id)?.velocity.y ?? 0;
-}
-function physics_body_get_angular_velocity(body_id) {
-  return _bodies.get(body_id)?.angularVelocity ?? 0;
-}
-function physics_body_set_static(body_id, is_static) {
-  const body = _bodies.get(body_id);
-  if (!body) return;
-  Matter2.Body.setStatic(body, is_static);
-}
-function physics_body_exists(body_id) {
-  return _bodies.has(body_id);
-}
-function physics_body_get_raw(body_id) {
-  return _bodies.get(body_id);
-}
-
 // packages/engine/src/physics/physics_joint.ts
 import Matter3 from "matter-js";
 var _joints = /* @__PURE__ */ new Map();
@@ -6413,6 +7434,52 @@ function physics_joint_spring_create(body_a_id, body_b_id, ax, ay, bx, by, rest_
     damping
   });
   return _add_constraint(c);
+}
+function physics_joint_rope_create(body_a_id, body_b_id, ax, ay, bx, by, maxlength) {
+  const ba = physics_body_get_raw(body_a_id);
+  const bb = physics_body_get_raw(body_b_id);
+  if (!ba || !bb) return -1;
+  const c = Matter3.Constraint.create({
+    bodyA: ba,
+    bodyB: bb,
+    pointA: { x: ax, y: ay },
+    pointB: { x: bx, y: by },
+    length: maxlength,
+    stiffness: 1,
+    damping: 0
+  });
+  return _add_constraint(c);
+}
+function physics_joint_get_value(joint_id, field) {
+  const c = _joints.get(joint_id);
+  return c ? c[field] ?? 0 : 0;
+}
+function physics_joint_set_value(joint_id, field, value) {
+  const c = _joints.get(joint_id);
+  if (c) c[field] = value;
+}
+function physics_test_overlap(body_a_id, body_b_id) {
+  const a = physics_body_get_raw(body_a_id);
+  const b = physics_body_get_raw(body_b_id);
+  if (!a || !b) return false;
+  const collides = Matter3.Collision?.collides;
+  if (typeof collides === "function") {
+    const col = collides(a, b);
+    return !!(col && col.collided);
+  }
+  return Matter3.Bounds.overlaps(a.bounds, b.bounds);
+}
+function physics_raycast(x1, y1, x2, y2) {
+  const world = _get_world();
+  if (!world) return [];
+  const hits = Matter3.Query.ray(Matter3.Composite.allBodies(world), { x: x1, y: y1 }, { x: x2, y: y2 });
+  const ids = /* @__PURE__ */ new Set();
+  for (const h of hits) {
+    const a = h.bodyA?._sw_id, b = h.bodyB?._sw_id;
+    if (typeof a === "number") ids.add(a);
+    if (typeof b === "number") ids.add(b);
+  }
+  return [...ids];
 }
 function physics_joint_destroy(joint_id) {
   const world = _get_world();
@@ -8359,6 +9426,8 @@ export {
   background,
   background_get_height,
   background_get_width,
+  base64_decode,
+  base64_encode,
   between,
   bm_add,
   bm_max,
@@ -8421,6 +9490,9 @@ export {
   chr,
   circle_in_instance,
   clamp,
+  clipboard_get_text,
+  clipboard_has_text,
+  clipboard_set_text,
   collision_circle,
   collision_line,
   collision_point,
@@ -8430,6 +9502,14 @@ export {
   color_get_red,
   color_to_rgb_normalized,
   cross2,
+  current_day,
+  current_hour,
+  current_minute,
+  current_month,
+  current_second,
+  current_time,
+  current_weekday,
+  current_year,
   d3d_light_define_direction,
   d3d_light_define_point,
   d3d_light_enable,
@@ -8465,8 +9545,38 @@ export {
   d3d_transform_stack_clear,
   d3d_transform_stack_pop,
   d3d_transform_stack_push,
+  date_compare_datetime,
+  date_create_date,
+  date_create_datetime,
+  date_current_datetime,
+  date_date_string,
+  date_datetime_string,
+  date_day_span,
+  date_days_in_month,
+  date_days_in_year,
+  date_get_day,
+  date_get_day_of_year,
+  date_get_hour,
+  date_get_minute,
+  date_get_month,
+  date_get_second,
+  date_get_weekday,
+  date_get_year,
+  date_hour_span,
+  date_inc_day,
+  date_inc_hour,
+  date_inc_minute,
+  date_inc_month,
+  date_inc_second,
+  date_inc_week,
+  date_inc_year,
+  date_leap_year,
+  date_minute_span,
+  date_second_span,
+  date_time_string,
   dcos,
   degtorad,
+  delta_time,
   device_get_touch_count,
   device_mouse_check_button,
   device_mouse_check_button_pressed,
@@ -8516,10 +9626,12 @@ export {
   ds_grid_height,
   ds_grid_multiply,
   ds_grid_multiply_region,
+  ds_grid_read,
   ds_grid_region_get,
   ds_grid_set,
   ds_grid_set_region,
   ds_grid_width,
+  ds_grid_write,
   ds_list_add,
   ds_list_clear,
   ds_list_copy,
@@ -8531,10 +9643,12 @@ export {
   ds_list_find_index,
   ds_list_find_value,
   ds_list_insert,
+  ds_list_read,
   ds_list_replace,
   ds_list_shuffle,
   ds_list_size,
   ds_list_sort,
+  ds_list_write,
   ds_map_add,
   ds_map_clear,
   ds_map_copy,
@@ -8549,8 +9663,10 @@ export {
   ds_map_find_next,
   ds_map_find_previous,
   ds_map_find_value,
+  ds_map_read,
   ds_map_set,
   ds_map_size,
+  ds_map_write,
   ds_priority_add,
   ds_priority_clear,
   ds_priority_copy,
@@ -8608,6 +9724,8 @@ export {
   file_text_writeln,
   floor,
   font_resource,
+  fps,
+  fps_real,
   frac,
   game_end,
   game_event,
@@ -8627,6 +9745,9 @@ export {
   gamepad_manager,
   gamepad_set_vibration,
   get_bbox,
+  get_integer,
+  get_string,
+  get_timer,
   gm_object,
   gp_axislh,
   gp_axislv,
@@ -8666,6 +9787,7 @@ export {
   ini_write_string,
   instance,
   instances_collide,
+  io_clear,
   irandom,
   irandom_range,
   json_decode,
@@ -8712,6 +9834,7 @@ export {
   mb_middle,
   mb_none,
   mb_right,
+  md5_string_utf8,
   mean,
   median,
   merge_color,
@@ -8725,6 +9848,17 @@ export {
   mouse_manager,
   mouse_wheel_down,
   mouse_wheel_up,
+  mp_grid_add_cell,
+  mp_grid_add_instances,
+  mp_grid_add_rectangle,
+  mp_grid_clear_all,
+  mp_grid_clear_cell,
+  mp_grid_clear_rectangle,
+  mp_grid_create,
+  mp_grid_destroy,
+  mp_grid_get_cell,
+  mp_grid_path,
+  mp_potential_settings,
   network_create_socket,
   network_destroy,
   network_get_ready_state,
@@ -8778,6 +9912,10 @@ export {
   part_type_size,
   part_type_speed,
   part_type_step,
+  path_action_continue,
+  path_action_restart,
+  path_action_reverse,
+  path_action_stop,
   path_add_point,
   path_clear_points,
   path_create,
@@ -8800,7 +9938,9 @@ export {
   path_set_kind,
   path_set_precision,
   physics_body_apply_force,
+  physics_body_apply_force_at,
   physics_body_apply_impulse,
+  physics_body_apply_torque,
   physics_body_destroy,
   physics_body_exists,
   physics_body_get_angle,
@@ -8829,9 +9969,14 @@ export {
   physics_joint_distance_create,
   physics_joint_exists,
   physics_joint_get_raw,
+  physics_joint_get_value,
   physics_joint_revolute_create,
+  physics_joint_rope_create,
+  physics_joint_set_value,
   physics_joint_spring_create,
   physics_joint_weld_create,
+  physics_raycast,
+  physics_test_overlap,
   physics_world_create,
   physics_world_destroy,
   physics_world_get_engine,
@@ -8894,6 +10039,8 @@ export {
   resource,
   room,
   round,
+  set_application_title,
+  sha1_string_utf8,
   shader_current,
   shader_get_uniform,
   shader_reset,
@@ -8906,11 +10053,17 @@ export {
   shader_set_uniform_i,
   shader_set_uniform_i2,
   shader_set_uniform_matrix,
+  show_debug_message,
+  show_message,
+  show_question,
   sign,
   sound_asset,
   sound_instance,
   spatial_sound_instance,
   sprite,
+  sprite_add,
+  sprite_duplicate,
+  sprite_exists,
   sprite_get_height,
   sprite_get_index,
   sprite_get_number,
@@ -8918,6 +10071,7 @@ export {
   sprite_get_xoffset,
   sprite_get_yoffset,
   sprite_register_name,
+  sprite_set_offset,
   sqr,
   sqrt,
   string,
@@ -8956,6 +10110,22 @@ export {
   surface_reset_target,
   surface_set_target,
   texture_manager,
+  tile_add,
+  tile_delete,
+  tile_exists,
+  tile_get_depth,
+  tile_get_visible,
+  tile_get_x,
+  tile_get_y,
+  tile_layer_delete,
+  tile_layer_find,
+  tile_layer_shift,
+  tile_set_alpha,
+  tile_set_background,
+  tile_set_depth,
+  tile_set_position,
+  tile_set_scale,
+  tile_set_visible,
   timeline_create,
   timeline_delete,
   timeline_exists,

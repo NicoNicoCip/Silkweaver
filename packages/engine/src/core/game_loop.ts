@@ -5,6 +5,7 @@ import { keyboard_manager } from "../input/keyboard.js"
 import { mouse_manager } from "../input/mouse.js"
 import { gamepad_manager } from "../input/gamepad.js"
 import { touch_manager } from "../input/touch.js"
+import { physics_world_get_engine, physics_world_step } from "../physics/physics_world.js"
 
 /** Injected by renderer.init() — called at the start of every draw frame. */
 let _begin_frame: (() => void) | null = null
@@ -29,6 +30,11 @@ export abstract class game_loop {
     private static room_delta: number = 0.0         // Time elapsed since last frame in milliseconds
     private static last_delta: number = 0.0         // Timestamp of the previous frame
     private static accumulator: number = 0          // Accumulated time for fixed timestep updates
+    public static fps: number = 0                   // Frames drawn in the last second (measured)
+    public static fps_real: number = 0              // Instantaneous uncapped FPS (1000 / frame time)
+    public static delta_time_us: number = 0         // Microseconds elapsed during the previous frame
+    private static _fps_frames: number = 0          // Frame counter for the current fps sample window
+    private static _fps_accum: number = 0           // Accumulated ms for the current fps sample window
     public static room: room = null!                // The current active room
     public static room_first: number = -1           // ID of the first room in the game
     public static room_last: number = 0             // ID of the last room in the game
@@ -85,6 +91,17 @@ export abstract class game_loop {
         this.last_delta = current
         this.accumulator += this.room_delta
 
+        // Frame timing globals (fps / fps_real / delta_time).
+        this.delta_time_us = this.room_delta * 1000
+        this.fps_real = this.room_delta > 0 ? Math.round(1000 / this.room_delta) : 0
+        this._fps_accum  += this.room_delta
+        this._fps_frames += 1
+        if (this._fps_accum >= 1000) {
+            this.fps = this._fps_frames
+            this._fps_frames = 0
+            this._fps_accum -= 1000
+        }
+
         const frameTime = 1000 / this.room_speed
 
         while (this.accumulator >= frameTime) {
@@ -112,10 +129,16 @@ export abstract class game_loop {
 
         // Game Start then Room Start fire once, after Create events have run.
         if (this._pending_game_start) { this._pending_game_start = false; this._dispatch_lifecycle('on_game_start') }
-        if (this._pending_room_start) { this._pending_room_start = false; this._dispatch_lifecycle('on_room_start') }
+        if (this._pending_room_start) {
+            this._pending_room_start = false
+            // Room creation code runs before the instances' Room Start events.
+            if (this.room?.creation_code) this.room.creation_code()
+            this._dispatch_lifecycle('on_room_start')
+        }
 
         this.update_events.get(EVENT_TYPE.step_begin)?.forEach(e => e.run())
         this.update_events.get(EVENT_TYPE.step)?.forEach(e => e.run())
+        this._step_physics()
         this.update_events.get(EVENT_TYPE.step_end)?.forEach(e => e.run())
         this.update_events.get(EVENT_TYPE.collision)?.forEach(e => e.run())
         this.update_events.get(EVENT_TYPE.keyboard)?.forEach(e => e.run())
@@ -131,6 +154,18 @@ export abstract class game_loop {
         keyboard_manager.end_step()
         mouse_manager.end_step()
         touch_manager.end_step()
+    }
+
+    /**
+     * Advances the physics world (if one exists) and syncs physics instances.
+     * Runs between Step and End Step, matching GMS ordering. No-op for non-physics games.
+     */
+    private static _step_physics(): void {
+        if (!physics_world_get_engine() || !this.room) return
+        const instances = this.room.instance_get_all()
+        for (const inst of instances) inst.phy_ensure_body()
+        physics_world_step()
+        for (const inst of instances) if (inst.active) inst.phy_sync_from_body()
     }
 
     /**
