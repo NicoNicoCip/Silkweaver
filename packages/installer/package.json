@@ -1,8 +1,0 @@
-{
-    "name": "@silkweaver/installer",
-    "version": "0.2.6",
-    "description": "Silkweaver project creator — generates a starter project folder",
-    "type": "module",
-    "main": "./src/index.ts",
-    "license": "GPL-3.0"
-}

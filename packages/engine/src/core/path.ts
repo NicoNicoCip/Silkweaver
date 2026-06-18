@@ -320,3 +320,24 @@ export function path_mirror(path_id: number): void {
 export function path_reverse(path_id: number): void {
     _paths.get(path_id)?.points.reverse()
 }
+
+// =========================================================================
+// Path name registry — resolve a path resource by its project name
+// =========================================================================
+
+/** Maps a path's project name to its resource id (populated by the game bootstrap). */
+const _path_names: Map<string, number> = new Map()
+
+/** Registers a path resource under a name so it can be looked up by name. */
+export function path_register_name(name: string, id: number): void {
+    _path_names.set(name, id)
+}
+
+/**
+ * Returns the id of a path by its project name, or -1 if unknown.
+ * GMS-style asset lookup — e.g. `path_start(path_get_index('pth_patrol'), …)`.
+ * @param name - Path resource name
+ */
+export function path_get_index(name: string): number {
+    return _path_names.get(name) ?? -1
+}

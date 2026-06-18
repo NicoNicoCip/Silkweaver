@@ -624,11 +624,17 @@ class room_editor_window {
             summary.textContent = `BG ${i}: ${layer.bg_name || '(none)'}`
             bg.appendChild(summary)
             bg.append(
-                _check_field('Enabled', layer.enabled, (v) => { layer.enabled = v; this._save() }),
-                _select_field('Resource:', layer.bg_name, get_project_resource_names('backgrounds'), (v) => { layer.bg_name = v; summary.textContent = `BG ${i}: ${v || '(none)'}` ; this._save() }, { empty: true }),
-                _check_field('Tile X',  layer.tile_x,  (v) => { layer.tile_x  = v; this._save() }),
-                _check_field('Tile Y',  layer.tile_y,  (v) => { layer.tile_y  = v; this._save() }),
-                _check_field('Stretch', layer.stretch, (v) => { layer.stretch = v; this._save() }),
+                _check_field('Enabled', layer.enabled, (v) => { layer.enabled = v; this._redraw(); this._save() }),
+                _select_field('Resource:', layer.bg_name, get_project_resource_names('backgrounds'), (v) => {
+                    layer.bg_name = v
+                    summary.textContent = `BG ${i}: ${v || '(none)'}`
+                    this._save()
+                    if (v) this._ensure_tileset_loaded(v).then(() => this._redraw())
+                    else   this._redraw()
+                }, { empty: true }),
+                _check_field('Tile X',  layer.tile_x,  (v) => { layer.tile_x  = v; this._redraw(); this._save() }),
+                _check_field('Tile Y',  layer.tile_y,  (v) => { layer.tile_y  = v; this._redraw(); this._save() }),
+                _check_field('Stretch', layer.stretch, (v) => { layer.stretch = v; this._redraw(); this._save() }),
             )
             const del_btn = document.createElement('button')
             del_btn.className = 'sw-btn'
@@ -1118,6 +1124,9 @@ class room_editor_window {
         ctx.fillStyle = this._data.bg_show_color ? (this._data.bg_color || '#000000') : '#1e1e1e'
         ctx.fillRect(0, 0, this._data.width, this._data.height)
 
+        // Background layers (behind tiles & instances; tiled / stretched per layer flags)
+        for (const layer of this._data.backgrounds) this._draw_bg_layer(ctx, layer)
+
         // Room border
         ctx.strokeStyle = '#555'
         ctx.lineWidth   = 1 / this._zoom
@@ -1144,6 +1153,33 @@ class room_editor_window {
             ctx.restore()
         }
 
+        ctx.restore()
+    }
+
+    /**
+     * Draws one background layer into the room. The background images share the tileset
+     * image cache (both live under backgrounds/<name>/). Honours stretch and per-axis tiling;
+     * clipped to the room so tiled/stretched layers never spill past the room bounds.
+     */
+    private _draw_bg_layer(ctx: CanvasRenderingContext2D, layer: room_background_layer): void {
+        if (!layer.bg_name || layer.visible_in_editor === false) return
+        const img = this._tileset_imgs.get(layer.bg_name)
+        if (!img) { this._ensure_tileset_loaded(layer.bg_name); return }   // loads, then redraws
+
+        const rw = this._data.width, rh = this._data.height
+        ctx.save()
+        ctx.beginPath(); ctx.rect(0, 0, rw, rh); ctx.clip()
+        if (layer.stretch) {
+            ctx.drawImage(img, 0, 0, rw, rh)
+        } else {
+            const iw = img.naturalWidth  || img.width  || 1
+            const ih = img.naturalHeight || img.height || 1
+            const cols = layer.tile_x ? Math.ceil(rw / iw) : 1
+            const rows = layer.tile_y ? Math.ceil(rh / ih) : 1
+            for (let r = 0; r < rows; r++)
+                for (let c = 0; c < cols; c++)
+                    ctx.drawImage(img, c * iw, r * ih)
+        }
         ctx.restore()
     }
 
@@ -1245,6 +1281,7 @@ class room_editor_window {
             // Restore tile ID counter and preload the tilesets the room references.
             this._next_tile_id = this._data.tiles.reduce((m, t) => Math.max(m, t.id), 0) + 1
             for (const b of new Set(this._data.tiles.map(t => t.bg_name).filter(Boolean))) this._ensure_tileset_loaded(b)
+            for (const b of new Set(this._data.backgrounds.map(l => l.bg_name).filter(Boolean))) this._ensure_tileset_loaded(b)
             // Preload object sprites so instances render with their real graphics.
             for (const o of new Set(this._data.instances.map(i => i.object_name).filter(Boolean))) this._ensure_object_sprite(o)
         } catch {

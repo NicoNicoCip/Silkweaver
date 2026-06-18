@@ -61,7 +61,7 @@ export function project_new(): project_state {
     return {
         name:          'My Game',
         version:       '1.0.0',
-        engineVersion: '0.1.0',
+        engineVersion: '1.0.0',
         settings: {
             roomSpeed:    60,
             windowWidth:  640,

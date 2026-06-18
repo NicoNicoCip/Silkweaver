@@ -1,7 +1,0 @@
-{
-    "version": "0.2.6",
-    "engine_url": "engine.js",
-    "ide_url": "ide/",
-    "installer_url": "installer.html",
-    "changelog": "Type-safety pass: strict-mode build now clean; fixed background rendering, binary file writes, physics teardown, and the Electron build config."
-}

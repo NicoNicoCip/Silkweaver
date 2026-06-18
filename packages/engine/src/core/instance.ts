@@ -217,6 +217,14 @@ export class instance extends resource {
     }
 
     /**
+     * Releases this instance's external resources (physics body) without firing a Destroy
+     * event — used when a room is silently rebuilt (e.g. re-entering a non-persistent room).
+     */
+    public dispose_for_rebuild(): void {
+        if (this.phy_body_id >= 0) { physics_body_destroy(this.phy_body_id); this.phy_body_id = -1 }
+    }
+
+    /**
      * Destroys this instance, removing it from the room.
      * Queues the destroy event to run at the end of the current step.
      */

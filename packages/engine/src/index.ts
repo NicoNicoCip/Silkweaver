@@ -48,6 +48,7 @@ export {
     path_get_point_x, path_get_point_y, path_get_point_speed,
     path_set_closed, path_set_kind, path_set_precision,
     path_flip, path_mirror, path_reverse,
+    path_register_name, path_get_index,
     path_action_stop, path_action_restart, path_action_continue, path_action_reverse,
 } from './core/path.js'
 
@@ -59,6 +60,7 @@ export {
     timeline_play, timeline_pause, timeline_stop,
     timeline_set_position, timeline_get_position,
     timeline_step, timeline_step_all,
+    timeline_register_name, timeline_get_index,
 } from './core/timeline.js'
 
 // =========================================================================
@@ -79,7 +81,7 @@ export { renderer } from './drawing/renderer.js'
 export type { surface } from './drawing/renderer.js'
 export { sprite, sprite_get_width, sprite_get_height, sprite_get_xoffset, sprite_get_yoffset, sprite_get_number, sprite_register_name, sprite_get_index, sprite_exists, sprite_set_offset, sprite_duplicate, sprite_add } from './drawing/sprite.js'
 export { background, background_get_width, background_get_height } from './drawing/background.js'
-export { font_resource } from './drawing/font.js'
+export { font_resource, font_register_name, font_get, font_exists } from './drawing/font.js'
 export { texture_manager } from './drawing/texture_manager.js'
 export type { texture_entry } from './drawing/texture_manager.js'
 

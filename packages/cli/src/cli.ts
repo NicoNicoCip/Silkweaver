@@ -188,7 +188,7 @@ const SCAFFOLD = {
     project: (name: string) => JSON.stringify({
         name,
         version: '1.0.0',
-        engineVersion: '0.2.6',
+        engineVersion: '1.0.0',
         settings: { roomSpeed: 60, windowWidth: 640, windowHeight: 480, startRoom: 'room_main', displayColor: '#1a1a2e' },
         resources: {
             sprites: {}, sounds: {}, backgrounds: {}, paths: {}, scripts: {}, fonts: {}, timelines: {},
@@ -208,8 +208,8 @@ const SCAFFOLD = {
             export: 'silkweaver export .',
         },
         devDependencies: {
-            '@silkweaver/cli':    '^0.2.6',
-            '@silkweaver/engine': '^0.2.6',
+            '@silkweaver/cli':    '^1.0.0',
+            '@silkweaver/engine': '^1.0.0',
         },
     }, null, 2) + '\n',
 

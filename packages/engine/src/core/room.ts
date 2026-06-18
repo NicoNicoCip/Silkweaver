@@ -240,6 +240,51 @@ export class room extends resource {
     }
 
     // =========================================================================
+    // Room (re)build — persistence support
+    // =========================================================================
+
+    /**
+     * Populates this room's instances / tiles / layers from its design definition.
+     * Set by the build's generated entry; runs each time a non-persistent room is
+     * entered, and only the first time a persistent room is entered.
+     */
+    public builder: (() => void) | null = null
+
+    /** Whether this room has been built at least once (drives persistent restore). */
+    public built: boolean = false
+
+    /**
+     * Tears down the room's live contents (instances + tiles + scroll offsets) so the
+     * builder can repopulate it cleanly. Destroyed silently — no Destroy events fire.
+     */
+    public reset_contents(): void {
+        for (const inst of this.all.values()) {
+            inst.dispose_for_rebuild()   // free physics bodies etc. (no Destroy event)
+            resource.removeByID(inst.id)
+        }
+        this.all.clear()
+        this.tiles = []
+        this._bg_scroll_x = []
+        this._bg_scroll_y = []
+    }
+
+    /**
+     * Prepares the room when it becomes the active room.
+     *   - Persistent + already built → keep the saved live state, just re-hook event
+     *     handlers (Create events do NOT fire again).
+     *   - Otherwise → rebuild fresh from the definition (Create events queued by the builder).
+     */
+    public build_for_entry(): void {
+        if (this.room_persistent && this.built) {
+            for (const inst of this.all.values()) inst.register_events()
+            return
+        }
+        this.reset_contents()
+        this.built = true
+        this.builder?.()
+    }
+
+    // =========================================================================
     // Tile Management
     // =========================================================================
 

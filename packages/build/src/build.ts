@@ -44,6 +44,18 @@ function engine_entry(): string {
     return require.resolve('@silkweaver/engine')
 }
 
+/**
+ * Strips leading `import …` lines from a code snippet so it can be inlined inside a
+ * function body (timeline moments). Engine references auto-resolve via the inject shim,
+ * so the imports are redundant; importing inside a function body is also a syntax error.
+ */
+function _strip_import_lines(code: string): string {
+    return code
+        .split('\n')
+        .filter(line => !/^\s*import\s.+from\s+['"][^'"]+['"]\s*;?\s*$/.test(line) && !/^\s*import\s+['"][^'"]+['"]\s*;?\s*$/.test(line))
+        .join('\n')
+}
+
 /** Converts a CSS hex colour ('#rrggbb') to a GMS BGR integer (0xBBGGRR). */
 function hex_to_bgr(hex: string): number {
     const m = /^#?([0-9a-fA-F]{6})$/.exec((hex ?? '').trim())
@@ -62,10 +74,13 @@ async function generate_entry_code(
     proj: project_data,
     asset_mode: 'preview' | 'export',
 ): Promise<string> {
-        const object_names = Object.keys(proj.resources.objects ?? {})
-        const room_names   = Object.keys(proj.resources.rooms   ?? {})
-        const sprite_names = Object.keys(proj.resources.sprites ?? {})
-        const script_names = Object.keys(proj.resources.scripts ?? {})
+        const object_names   = Object.keys(proj.resources.objects ?? {})
+        const room_names     = Object.keys(proj.resources.rooms   ?? {})
+        const sprite_names   = Object.keys(proj.resources.sprites ?? {})
+        const script_names   = Object.keys(proj.resources.scripts ?? {})
+        const font_names     = Object.keys(proj.resources.fonts     ?? {})
+        const path_names     = Object.keys(proj.resources.paths     ?? {})
+        const timeline_names = Object.keys(proj.resources.timelines ?? {})
 
         // The engine is resolved from the @silkweaver/engine package (no path coupling).
         const engine_path = engine_entry()
@@ -166,6 +181,9 @@ async function generate_entry_code(
             }).filter(Boolean).join('\n')
 
             room_var_names.push(var_name)
+            // Instances / layers / tiles go inside a `builder` closure so the room can rebuild
+            // itself from this definition when (re-)entered. Non-persistent rooms rebuild fresh
+            // on every entry; persistent rooms keep their live state after the first build.
             room_setups.push(
 `const ${var_name} = new room()
 ${var_name}.room_width  = ${rm_data.width  ?? 640}
@@ -178,10 +196,68 @@ ${var_name}.background_solid_color = ${hex_to_bgr(rm_data.bg_color ?? '#000000')
         ? `\n${var_name}.creation_code = () => {\n${rm_data.creation_code}\n}`
         : ''
 }
+${var_name}.builder = () => {
 ${inst_lines}
 ${bg_lines}
 ${view_lines}
-${tile_lines}`)
+${tile_lines}
+}`)
+        }
+
+        // ── Fonts ────────────────────────────────────────────────────────────
+        // CSS-family fonts (family/size/style) read from fonts/<n>/meta.json and
+        // registered by name so `draw_set_font('fnt_x')` resolves at runtime.
+        const font_setups: string[] = []
+        for (const fn of font_names) {
+            let fd: any = {}
+            try { fd = JSON.parse(await fs.promises.readFile(path.join(project_folder, 'fonts', fn, 'meta.json'), 'utf8')) } catch { /* default */ }
+            const family = typeof fd.font_name === 'string' && fd.font_name.trim() ? fd.font_name : 'Arial'
+            const size   = Number(fd.size) || 16
+            font_setups.push(`    font_register_name('${fn}', new font_resource(${JSON.stringify(family)}, ${size}, ${!!fd.bold}, ${!!fd.italic}))`)
+        }
+
+        // ── Paths ────────────────────────────────────────────────────────────
+        // Read paths/<n>/path.json and rebuild the path resource inline (point speed
+        // is stored 0–100 in the editor; the engine uses a 1 = normal factor).
+        const path_setups: string[] = []
+        for (const pn of path_names) {
+            let pd: any = {}
+            try { pd = JSON.parse(await fs.promises.readFile(path.join(project_folder, 'paths', pn, 'path.json'), 'utf8')) } catch { /* default */ }
+            const pts  = Array.isArray(pd.points) ? pd.points : []
+            const kind = pd.kind === 'smooth' ? 'path_kind_smooth' : 'path_kind_linear'
+            const v    = `_path_${pn}`
+            const lines = [
+                `    const ${v} = path_create()`,
+                `    path_set_kind(${v}, ${kind})`,
+                `    path_set_closed(${v}, ${!!pd.closed})`,
+            ]
+            for (const p of pts) {
+                const sp = (typeof p.sp === 'number' ? p.sp : 100) / 100
+                lines.push(`    path_add_point(${v}, ${Number(p.x) || 0}, ${Number(p.y) || 0}, ${sp})`)
+            }
+            lines.push(`    path_register_name('${pn}', ${v})`)
+            path_setups.push(lines.join('\n'))
+        }
+
+        // ── Timelines ────────────────────────────────────────────────────────
+        // Each moment's code lives in timelines/<n>/step_<step>.ts; inline it as a
+        // callback (bare engine calls auto-resolve via the esbuild inject shim).
+        const timeline_setups: string[] = []
+        for (const tn of timeline_names) {
+            let td: any = {}
+            try { td = JSON.parse(await fs.promises.readFile(path.join(project_folder, 'timelines', tn, 'timeline.json'), 'utf8')) } catch { /* default */ }
+            const moments = Array.isArray(td.moments) ? td.moments : []
+            const v = `_tl_${tn}`
+            const lines = [`    const ${v} = timeline_create()`]
+            for (const m of moments) {
+                const step = Number(m.step) || 0
+                let code = ''
+                try { code = await fs.promises.readFile(path.join(project_folder, 'timelines', tn, `step_${step}.ts`), 'utf8') } catch { /* no code */ }
+                code = _strip_import_lines(code)
+                if (code.trim()) lines.push(`    timeline_moment_add(${v}, ${step}, () => {\n${code}\n    })`)
+            }
+            lines.push(`    timeline_register_name('${tn}', ${v})`)
+            timeline_setups.push(lines.join('\n'))
         }
 
         // Script imports
@@ -355,6 +431,15 @@ export default async function init(canvas: HTMLCanvasElement): Promise<void> {
 
     // Load sounds
     ${sound_loads}
+
+    // Register fonts (resolve 'fnt_x' by name)
+    ${font_setups.join('\n')}
+
+    // Register paths (resolve via path_get_index('pth_x'))
+    ${path_setups.join('\n')}
+
+    // Register timelines (resolve via timeline_get_index('tml_x'))
+    ${timeline_setups.join('\n')}
 
     // Set up rooms
     ${room_setups.join('\n')}

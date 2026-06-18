@@ -172,30 +172,84 @@ export function sprite_duplicate(sprite_index: number): number {
 }
 
 /**
- * Loads an image at runtime and creates a single-frame sprite (GMS `sprite_add`).
+ * Loads an image at runtime and creates a sprite (GMS `sprite_add`).
  * Asynchronous — image fetch + GPU upload are async on the web, so `await` the result.
- * (`imgnumb` strip-splitting and `removeback` are not yet supported — a single frame is created.)
+ *
+ * When `imgnumb > 1` the image is treated as a horizontal strip and split into that many
+ * equal-width sub-images (frames). When `removeback` is true, the colour of each sub-image's
+ * bottom-left pixel is keyed out to full transparency.
+ *
  * @param fname - Image URL
- * @param imgnumb - Sub-image count (reserved; currently always 1)
- * @param _removeback - Remove background colour (reserved; not applied)
+ * @param imgnumb - Number of sub-images packed horizontally in the strip (default 1)
+ * @param removeback - Make the background colour (bottom-left pixel) transparent
  * @param smooth - Use linear texture filtering
  * @param xorig - Origin X (pixels)
  * @param yorig - Origin Y (pixels)
  * @returns The new sprite's id, or -1 on failure (e.g. a headless host or load error)
  */
 export async function sprite_add(
-    fname: string, imgnumb: number = 1, _removeback: boolean = false,
+    fname: string, imgnumb: number = 1, removeback: boolean = false,
     smooth: boolean = false, xorig: number = 0, yorig: number = 0,
 ): Promise<number> {
-    void imgnumb
+    const count = Math.max(1, Math.floor(imgnumb))
     try {
-        const tex = await renderer.tex_mgr.load(fname, smooth)
+        // Fast path — a single frame with no background removal reuses the cached texture loader.
+        if (count === 1 && !removeback) {
+            const tex = await renderer.tex_mgr.load(fname, smooth)
+            const spr = new sprite()
+            spr.xoffset = xorig
+            spr.yoffset = yorig
+            spr.add_frame({ texture: tex, width: tex.width, height: tex.height })
+            return spr.id
+        }
+
+        // Strip / removeback path — decode, slice into `count` equal sub-images across the
+        // width, optionally key out the background colour, and upload each as its own frame.
+        const img = await _load_image_element(fname)
+        const fw  = Math.max(1, Math.floor(img.width / count))
+        const fh  = img.height
         const spr = new sprite()
         spr.xoffset = xorig
         spr.yoffset = yorig
-        spr.add_frame({ texture: tex, width: tex.width, height: tex.height })
-        return spr.id
+        for (let i = 0; i < count; i++) {
+            const canvas = document.createElement('canvas')
+            canvas.width  = fw
+            canvas.height = fh
+            const ctx = canvas.getContext('2d')
+            if (!ctx) continue
+            ctx.imageSmoothingEnabled = false
+            ctx.drawImage(img, i * fw, 0, fw, fh, 0, 0, fw, fh)
+            if (removeback) _remove_background(ctx, fw, fh)
+            const tex = renderer.tex_mgr.from_canvas(canvas, smooth)
+            spr.add_frame({ texture: tex, width: fw, height: fh })
+        }
+        return spr.frames.length > 0 ? spr.id : -1
     } catch {
         return -1
     }
+}
+
+/** Decodes an image URL into an HTMLImageElement (needed for pixel-level slicing). */
+function _load_image_element(url: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+        const im = new Image()
+        im.onload  = () => resolve(im)
+        im.onerror = () => reject(new Error(`Failed to load image: ${url}`))
+        im.src = url
+    })
+}
+
+/**
+ * Keys out a sub-image's background colour (GMS `removeback`): every pixel whose RGB matches
+ * the bottom-left pixel is made fully transparent.
+ */
+function _remove_background(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    const image = ctx.getImageData(0, 0, w, h)
+    const p = image.data
+    const base = (h - 1) * w * 4   // bottom-left pixel
+    const kr = p[base] ?? 0, kg = p[base + 1] ?? 0, kb = p[base + 2] ?? 0
+    for (let i = 0; i < p.length; i += 4) {
+        if (p[i] === kr && p[i + 1] === kg && p[i + 2] === kb) p[i + 3] = 0
+    }
+    ctx.putImageData(image, 0, 0)
 }

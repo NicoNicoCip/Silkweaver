@@ -32,6 +32,31 @@ export class font_resource {
     }
 }
 
+// =========================================================================
+// Font name registry — resolve a font resource by its project name
+// =========================================================================
+
+/** Maps a font's project name to its font_resource (populated by the game bootstrap). */
+const _font_names: Map<string, font_resource> = new Map()
+
+/** Registers a font resource under a name so `draw_set_font('fnt_x')` resolves. */
+export function font_register_name(name: string, fnt: font_resource): void {
+    _font_names.set(name, fnt)
+}
+
+/**
+ * Returns a font resource by its project name, or undefined if unknown.
+ * @param name - Font resource name
+ */
+export function font_get(name: string): font_resource | undefined {
+    return _font_names.get(name)
+}
+
+/** Returns true if a font resource with the given name has been registered. */
+export function font_exists(name: string): boolean {
+    return _font_names.has(name)
+}
+
 /** A cached text texture with associated metrics. */
 interface text_cache_entry {
     entry: texture_entry    // GPU texture for this text

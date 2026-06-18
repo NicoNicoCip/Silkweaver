@@ -1,9 +1,18 @@
 {
     "name": "@silkweaver/project",
-    "version": "0.2.6",
+    "version": "1.0.0",
     "description": "Silkweaver project format — the shared manifest/room/object type contract (types only)",
     "type": "module",
     "license": "GPL-3.0",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/NicoNicoCip/Silkweaver",
+        "directory": "packages/project"
+    },
+    "homepage": "https://github.com/NicoNicoCip/Silkweaver#readme",
+    "publishConfig": {
+        "access": "public"
+    },
     "types": "./src/index.ts",
     "exports": {
         ".": {

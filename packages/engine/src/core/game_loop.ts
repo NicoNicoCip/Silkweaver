@@ -84,6 +84,9 @@ export abstract class game_loop {
             this.room_first = room.id
         }
 
+        // Build the starting room from its definition (creates instances, queues Create events).
+        if (this.room) this.room.build_for_entry()
+
         // Game Start + Room Start fire on the first update (after Create events).
         this._pending_game_start = true
         this._pending_room_start = true
@@ -257,8 +260,12 @@ export abstract class game_loop {
         // Room End fires for the outgoing room's instances before we leave.
         this._dispatch_lifecycle('on_room_end')
 
-        if (this.room && this.room.room_persistent) {
-            // TODO: save the room data somewhere as cache.
+        // A non-persistent room discards its live state when left, so the next visit rebuilds
+        // fresh; a persistent room keeps its instances/variables for when it is re-entered.
+        const leaving = this.room
+        if (leaving && leaving !== room && !leaving.room_persistent) {
+            leaving.reset_contents()
+            leaving.built = false
         }
 
         this.update_events.clear()
@@ -266,13 +273,10 @@ export abstract class game_loop {
         this.room = room
         this.room_speed = room.room_speed
 
-        // Register events for all instances in the new room
-        room.register_all_instances()
-
-        // Room Start fires on the next update, after the new room's Create events.
+        // Rebuild from the definition (fresh), or restore a persistent room's saved state.
+        // Room Start fires on the next update, after any new Create events.
+        room.build_for_entry()
         this._pending_room_start = true
-
-        // TODO: load room cache if it exists
     }
 
     /**
@@ -289,7 +293,10 @@ export abstract class game_loop {
     public static restart(): void {
         _reset_game_state()
         const first = resource.findByID(this.room_first)
-        if (first instanceof room) this.change_room(first)
+        if (first instanceof room) {
+            first.built = false   // force a fresh rebuild even if the start room is persistent
+            this.change_room(first)
+        }
     }
 
     /**

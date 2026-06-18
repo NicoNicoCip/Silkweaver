@@ -1,11 +1,12 @@
 {
     "name": "@silkweaver/ide",
-    "version": "0.2.6",
+    "version": "1.0.0",
     "description": "Silkweaver browser-based IDE (GUI front-end over @silkweaver/build; talks to the toolchain over IPC)",
     "type": "module",
     "main": "./src/index.ts",
     "license": "GPL-3.0",
+    "private": true,
     "devDependencies": {
-        "@silkweaver/project": "0.2.6"
+        "@silkweaver/project": "1.0.0"
     }
 }

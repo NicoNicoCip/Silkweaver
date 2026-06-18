@@ -307,7 +307,7 @@ function render_html(data) {
 </head>
 <body>
   <header id="topbar">
-    <div id="title">Silkweaver <span>· API Reference</span></div>
+    <a id="title" href="../index.html" style="color:inherit;text-decoration:none" title="Back to the Silkweaver home page">Silkweaver <span>· API Reference</span></a>
     <input id="search" type="search" placeholder="Search the API…" autocomplete="off">
     <button id="theme" type="button">Light</button>
   </header>

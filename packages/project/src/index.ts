@@ -2,8 +2,8 @@
  * @silkweaver/project — the canonical Silkweaver project format.
  *
  * The single source of truth for the on-disk shapes (project.json, room.json) shared
- * by the toolchain (build/cli), the IDE, and the installer. Types only — zero runtime
- * dependencies, so it is safe to import from any package (Node or browser).
+ * by the toolchain (build/cli) and the IDE. Types only — zero runtime dependencies,
+ * so it is safe to import from any package (Node or browser).
  *
  * On-disk layout of a project folder:
  *   project.json            — the manifest (this file's `project_file`)

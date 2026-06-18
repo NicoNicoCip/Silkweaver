@@ -21,15 +21,13 @@ capability layer the host provides, so the engine/runtime stays portable TS/WebG
 - **License**: GPL-3.0
 
 ## Architecture
-npm workspaces monorepo, being split into independent, individually-usable packages
-(Godot-style). Full plan + live progress: `docs/plan/00-overview/modular-architecture.md`.
+npm workspaces monorepo, split into independent, individually-usable packages (Godot-style).
 - `packages/engine/` — **`@silkweaver/engine`**: runtime library (WebGL2/Web Audio). A real package — `npm i @silkweaver/engine` works; also bundled to `exports/engine.js`.
 - `packages/project/` — **`@silkweaver/project`**: canonical project format types (project.json/room.json). Types-only, zero deps, the shared contract.
 - `packages/build/` — **`@silkweaver/build`**: toolchain (project folder → game via codegen + esbuild) + `object_format.ts` (class-file parse/patch). Used by the IDE (over IPC) and the CLI.
 - `packages/cli/` — **`@silkweaver/cli`**: `silkweaver new|build|run|export` (no-IDE / code-first workflow).
 - `packages/ide/` — the GMS-style web IDE (bundled to `exports/ide.js`).
 - `packages/electron/` — desktop host for the IDE (`main.ts` + `preload.ts`; imports `@silkweaver/build`).
-- `packages/installer/` — legacy scaffolding (superseded by `silkweaver new`).
 
 Objects are **one class file per object**: `objects/<name>.ts` exporting a `gm_object` subclass —
 `static` fields = metadata (sprite/solid/depth/…), instance fields = variable defaults, `on_*`
@@ -37,18 +35,27 @@ methods = events. The build *imports* these classes and bundles a self-contained
 inlined). The old snippet-folder format (`object.json` + per-event files) has been removed.
 
 ## Current Status
-**Substantially implemented, building cleanly, mid-modularization.** Detailed progress lives in
-`docs/plan/00-overview/modular-architecture.md` and `docs/plan/01-engine/gms-parity-audit.md`.
+**1.0.0 — feature-complete and building cleanly.** The GMS-1.4-style engine + IDE are done; the
+project is in the wrap-up/shipping phase (cleanup, npm publish prep, a standalone IDE installer).
 
-Recent work:
-- **Type-safety pass** — fixed all 187 strict-mode errors; the build is genuinely clean (esbuild had been hiding them).
-- **Standalone export** — `Run → Export HTML5 / Windows / macOS / Linux`: portable HTML5 folder + Electron-packaged executable.
-- **GMS parity** — all 24 object events + per-instance `alarm[]` wired; usable collision (manual masks for spriteless objects + `collision_*`/`instance_place`); instance-var ergonomics (index signature + class fields).
-- **Generated editor types** — Monaco autocomplete is generated from the engine (`npm run gen:types`), not hand-written; the code-gen imports the whole engine API (tree-shaken), so types ≡ availability.
-- **Modular split** — `@silkweaver/{engine, project, build, cli}` are real packages with explicit deps; electron is slimmed to the IDE host; the code-first CLI works end-to-end (`silkweaver new mygame && silkweaver run`). The split is complete.
-- **Physics metadata** — `static physics`/`physics_density`/… on `gm_object`; instances lazily bind a matter.js body (size from mask/bbox; density ≤ 0 ⇒ static), the loop steps + syncs them, and the build creates the world from the room's `physics_world`/gravity.
+What's in place:
+- **Engine** — full GMS-1.4 capability surface (everything except drag-and-drop): all 24 object
+  events + `alarm[]`, collision, physics (matter.js), tiles/tilesets, `mp_*` pathfinding, paths,
+  timelines, fonts, views/backgrounds (editor + runtime), particles, 3D basics, networking, all
+  `ds_*`, storage, audio (incl. 3D), and the global fns (`show_message`/`fps`/`delta_time`/…).
+- **Modular packages** — `@silkweaver/{engine, project, build, cli}` are real, independently
+  publishable packages with explicit deps; the code-first CLI works end-to-end
+  (`silkweaver new mygame && silkweaver run`). `ide`/`electron` are the app side (private).
+- **IDE** — GMS-style editors for every resource (sprite/object/room/path/timeline/font/sound/
+  background/script), Monaco code editing with generated-from-engine autocomplete, an in-IDE
+  Documentation window (Help → Documentation / F1), and standalone export (HTML5 + packaged exe).
+- **Build pipeline** — project folder → self-contained `game.js` (engine inlined via esbuild);
+  rooms/instances/tiles/views/backgrounds/fonts/paths/timelines/physics all wired through codegen.
+- **Persistent rooms** — rooms carry a `builder` closure; non-persistent rooms rebuild fresh on
+  entry, persistent rooms keep their live state.
 
-Deferred: a rich object-editor GUI over the class (parse/patch ops are built + tested, just not wired — needs GUI testing); GMS parity gaps (tiles/tilesets, `mp_*` pathfinding, global fns like `show_message`/`fps`/`delta_time`, room runtime wiring of views/backgrounds); a large UI pass.
+Remaining (wrap-up phase): npm publish (config ready; needs `npm login` + a manual `npm publish`),
+the standalone IDE installer (electron-builder), and dogfooding a real game.
 
 ### Strict TypeScript notes
 The build uses `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`.
@@ -71,7 +78,7 @@ conditional spread: `...(x && { x })`).
 Core loop, drawing/graphics, instance/object system, input (keyboard/mouse/gamepad/touch), audio (incl. 3D/spatial), physics (matter.js), networking (WebSocket/WebRTC/HTTP/buffers), data structures (all `ds_*`), storage (ini/file/json), math/utils, 3D basics (matrices/lighting/OBJ), particles
 
 ## Commands
-- Build bundles: `npm run build` (engine + ide + installer)
+- Build bundles: `npm run build` (engine + ide)
 - Build Node toolchain: `npm run build:tooling` (engine `dist` + `@silkweaver/build` + `@silkweaver/cli`)
 - Launch IDE (desktop): `npm run electron`
 - Build electron host: `npm run build:electron` (runs `build:tooling` first)

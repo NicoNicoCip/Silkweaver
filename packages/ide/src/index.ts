@@ -25,6 +25,7 @@ import { preview_open, preview_play, preview_stop, preview_reload }  from './pan
 import { console_open, console_write, console_toggle }               from './panels/console_panel.js'
 import { debugger_open, debugger_show_hit }                          from './panels/debugger_panel.js'
 import { profiler_open }                                             from './panels/profiler_panel.js'
+import { docs_open }                                                 from './panels/docs_window.js'
 import { bp_resume, bp_on_hit }                                      from './panels/breakpoint_manager.js'
 import { show_alert, show_prompt, show_confirm }                     from './services/dialogs.js'
 import { ICON }                                                     from './icons.js'
@@ -84,6 +85,7 @@ function boot(): void {
         window_minimize_all:   () => FloatingWindow.minimize_all(),
         window_close_all:      () => FloatingWindow.close_all(),
         window_list:           () => FloatingWindow.list().map(w => ({ title: w.get_title(), focus: () => w.focus() })),
+        help_docs:             () => docs_open(_workspace),
         help_about:            on_help_about,
     })
     document.body.appendChild(menubar)
@@ -129,6 +131,7 @@ function boot(): void {
         if (e.key === 'F8')               { e.preventDefault(); bp_resume(); console_write('system', '[IDE] Resumed.') }
         if (e.key === 'F9')               { e.preventDefault(); debugger_open(_workspace) }
         if (e.key === 'F10')              { e.preventDefault(); profiler_open(_workspace) }
+        if (e.key === 'F1')               { e.preventDefault(); docs_open(_workspace) }
         // F11 now toggles output console (see below)
         if (e.ctrlKey && e.key === 'r')   { e.preventDefault(); _tree.show() }
         if (e.ctrlKey && e.shiftKey && e.key === 'P') { e.preventDefault(); on_edit_game_settings() }

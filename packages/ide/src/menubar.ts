@@ -166,6 +166,7 @@ export interface menubar_actions {
     window_minimize_all: () => void
     window_close_all:    () => void
     window_list:         () => { title: string; focus: () => void }[]
+    help_docs:   () => void
     help_about:  () => void
 }
 
@@ -252,6 +253,8 @@ export function menubar_default(actions: menubar_actions): HTMLElement {
         {
             label: 'Help',
             items: [
+                { label: 'Documentation',    shortcut: 'F1', action: actions.help_docs },
+                { separator: true },
                 { label: 'About Silkweaver', action: actions.help_about },
             ],
         },

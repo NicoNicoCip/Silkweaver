@@ -6,7 +6,7 @@
 import { renderer } from './renderer.js'
 import type { sprite } from './sprite.js'
 import type { surface } from './renderer.js'
-import { font_resource } from './font.js'
+import { font_resource, font_get } from './font.js'
 
 // Re-export so users can access from a single import
 export { renderer } from './renderer.js'
@@ -303,10 +303,11 @@ export function draw_text(x: number, y: number, text: string | number): void {
 
 /**
  * Sets the active font for text rendering.
- * @param fnt - font_resource instance
+ * @param fnt - a font_resource, or a project font resource name (e.g. 'fnt_main')
  */
-export function draw_set_font(fnt: font_resource): void {
-    renderer.set_font(fnt)
+export function draw_set_font(fnt: font_resource | string): void {
+    const resolved = typeof fnt === 'string' ? font_get(fnt) : fnt
+    if (resolved) renderer.set_font(resolved)
 }
 
 /**

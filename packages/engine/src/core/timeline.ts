@@ -215,3 +215,24 @@ export function timeline_step_all(): void {
         timeline_step(id)
     }
 }
+
+// =========================================================================
+// Timeline name registry — resolve a timeline resource by its project name
+// =========================================================================
+
+/** Maps a timeline's project name to its resource id (populated by the game bootstrap). */
+const _timeline_names: Map<string, number> = new Map()
+
+/** Registers a timeline resource under a name so it can be looked up by name. */
+export function timeline_register_name(name: string, id: number): void {
+    _timeline_names.set(name, id)
+}
+
+/**
+ * Returns the id of a timeline by its project name, or -1 if unknown.
+ * GMS-style asset lookup — e.g. `timeline_play(timeline_get_index('tml_intro'))`.
+ * @param name - Timeline resource name
+ */
+export function timeline_get_index(name: string): number {
+    return _timeline_names.get(name) ?? -1
+}

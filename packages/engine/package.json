@@ -1,9 +1,18 @@
 {
     "name": "@silkweaver/engine",
-    "version": "0.2.6",
+    "version": "1.0.0",
     "description": "Silkweaver game engine — a GMS 1.4-inspired WebGL2 runtime library (usable standalone, no editor required)",
     "type": "module",
     "license": "GPL-3.0",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/NicoNicoCip/Silkweaver",
+        "directory": "packages/engine"
+    },
+    "homepage": "https://github.com/NicoNicoCip/Silkweaver#readme",
+    "publishConfig": {
+        "access": "public"
+    },
     "keywords": [
         "game-engine",
         "gamemaker",

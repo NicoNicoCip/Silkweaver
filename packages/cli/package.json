@@ -1,9 +1,18 @@
 {
     "name": "@silkweaver/cli",
-    "version": "0.2.6",
+    "version": "1.0.0",
     "description": "Silkweaver command-line toolchain — create, build, run, and export a game with no IDE.",
     "type": "commonjs",
     "license": "GPL-3.0",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/NicoNicoCip/Silkweaver",
+        "directory": "packages/cli"
+    },
+    "homepage": "https://github.com/NicoNicoCip/Silkweaver#readme",
+    "publishConfig": {
+        "access": "public"
+    },
     "bin": {
         "silkweaver": "./dist/cli.js"
     },
@@ -15,7 +24,7 @@
         "build": "tsc -p ."
     },
     "dependencies": {
-        "@silkweaver/build": "0.2.6",
-        "@silkweaver/project": "0.2.6"
+        "@silkweaver/build": "1.0.0",
+        "@silkweaver/project": "1.0.0"
     }
 }

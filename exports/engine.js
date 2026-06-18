@@ -166,6 +166,17 @@ var room = class _room2 extends resource {
     this.tiles = [];
     // All tiles in this room
     this.all = /* @__PURE__ */ new Map();
+    // =========================================================================
+    // Room (re)build — persistence support
+    // =========================================================================
+    /**
+     * Populates this room's instances / tiles / layers from its design definition.
+     * Set by the build's generated entry; runs each time a non-persistent room is
+     * entered, and only the first time a persistent room is entered.
+     */
+    this.builder = null;
+    /** Whether this room has been built at least once (drives persistent restore). */
+    this.built = false;
   }
   // =========================================================================
   // Room Navigation
@@ -294,6 +305,35 @@ var room = class _room2 extends resource {
       inst.register_events();
       game_loop.register("CREATE" /* create */, inst.on_create.bind(inst));
     }
+  }
+  /**
+   * Tears down the room's live contents (instances + tiles + scroll offsets) so the
+   * builder can repopulate it cleanly. Destroyed silently — no Destroy events fire.
+   */
+  reset_contents() {
+    for (const inst of this.all.values()) {
+      inst.dispose_for_rebuild();
+      resource.removeByID(inst.id);
+    }
+    this.all.clear();
+    this.tiles = [];
+    this._bg_scroll_x = [];
+    this._bg_scroll_y = [];
+  }
+  /**
+   * Prepares the room when it becomes the active room.
+   *   - Persistent + already built → keep the saved live state, just re-hook event
+   *     handlers (Create events do NOT fire again).
+   *   - Otherwise → rebuild fresh from the definition (Create events queued by the builder).
+   */
+  build_for_entry() {
+    if (this.room_persistent && this.built) {
+      for (const inst of this.all.values()) inst.register_events();
+      return;
+    }
+    this.reset_contents();
+    this.built = true;
+    this.builder?.();
   }
   // =========================================================================
   // Tile Management
@@ -1851,6 +1891,7 @@ var game_loop = class {
       this.room = room2;
       this.room_first = room2.id;
     }
+    if (this.room) this.room.build_for_entry();
     this._pending_game_start = true;
     this._pending_room_start = true;
     this._stopped = false;
@@ -1983,13 +2024,16 @@ var game_loop = class {
    */
   static change_room(room2) {
     this._dispatch_lifecycle("on_room_end");
-    if (this.room && this.room.room_persistent) {
+    const leaving = this.room;
+    if (leaving && leaving !== room2 && !leaving.room_persistent) {
+      leaving.reset_contents();
+      leaving.built = false;
     }
     this.update_events.clear();
     this.draw_events.clear();
     this.room = room2;
     this.room_speed = room2.room_speed;
-    room2.register_all_instances();
+    room2.build_for_entry();
     this._pending_room_start = true;
   }
   /**
@@ -2005,7 +2049,10 @@ var game_loop = class {
   static restart() {
     _reset_game_state();
     const first = resource.findByID(this.room_first);
-    if (first instanceof room) this.change_room(first);
+    if (first instanceof room) {
+      first.built = false;
+      this.change_room(first);
+    }
   }
   /**
    * Calls a lifecycle event method on every active instance in the current room.
@@ -2455,6 +2502,13 @@ function path_mirror(path_id) {
 }
 function path_reverse(path_id) {
   _paths.get(path_id)?.points.reverse();
+}
+var _path_names = /* @__PURE__ */ new Map();
+function path_register_name(name, id) {
+  _path_names.set(name, id);
+}
+function path_get_index(name) {
+  return _path_names.get(name) ?? -1;
 }
 
 // packages/engine/src/core/motion_planning.ts
@@ -2999,6 +3053,16 @@ var instance = class _instance extends resource {
     const inst = _instance.instance_create(x, y, obj);
     inst.depth = depth;
     return inst;
+  }
+  /**
+   * Releases this instance's external resources (physics body) without firing a Destroy
+   * event — used when a room is silently rebuilt (e.g. re-entering a non-persistent room).
+   */
+  dispose_for_rebuild() {
+    if (this.phy_body_id >= 0) {
+      physics_body_destroy(this.phy_body_id);
+      this.phy_body_id = -1;
+    }
   }
   /**
    * Destroys this instance, removing it from the room.
@@ -4697,6 +4761,16 @@ var font_resource = class {
     return `${style}${weight}${this.size}px ${this.family}`;
   }
 };
+var _font_names = /* @__PURE__ */ new Map();
+function font_register_name(name, fnt) {
+  _font_names.set(name, fnt);
+}
+function font_get(name) {
+  return _font_names.get(name);
+}
+function font_exists(name) {
+  return _font_names.has(name);
+}
 var font_renderer = class {
   constructor(tex_manager) {
     this.cache = /* @__PURE__ */ new Map();
@@ -5984,18 +6058,57 @@ function sprite_duplicate(sprite_index) {
   for (const f of src.frames) dup.add_frame({ texture: f.texture, width: f.width, height: f.height });
   return dup.id;
 }
-async function sprite_add(fname, imgnumb = 1, _removeback = false, smooth = false, xorig = 0, yorig = 0) {
-  void imgnumb;
+async function sprite_add(fname, imgnumb = 1, removeback = false, smooth = false, xorig = 0, yorig = 0) {
+  const count = Math.max(1, Math.floor(imgnumb));
   try {
-    const tex = await renderer.tex_mgr.load(fname, smooth);
+    if (count === 1 && !removeback) {
+      const tex = await renderer.tex_mgr.load(fname, smooth);
+      const spr2 = new sprite();
+      spr2.xoffset = xorig;
+      spr2.yoffset = yorig;
+      spr2.add_frame({ texture: tex, width: tex.width, height: tex.height });
+      return spr2.id;
+    }
+    const img = await _load_image_element(fname);
+    const fw = Math.max(1, Math.floor(img.width / count));
+    const fh = img.height;
     const spr = new sprite();
     spr.xoffset = xorig;
     spr.yoffset = yorig;
-    spr.add_frame({ texture: tex, width: tex.width, height: tex.height });
-    return spr.id;
+    for (let i = 0; i < count; i++) {
+      const canvas = document.createElement("canvas");
+      canvas.width = fw;
+      canvas.height = fh;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) continue;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, i * fw, 0, fw, fh, 0, 0, fw, fh);
+      if (removeback) _remove_background(ctx, fw, fh);
+      const tex = renderer.tex_mgr.from_canvas(canvas, smooth);
+      spr.add_frame({ texture: tex, width: fw, height: fh });
+    }
+    return spr.frames.length > 0 ? spr.id : -1;
   } catch {
     return -1;
   }
+}
+function _load_image_element(url) {
+  return new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error(`Failed to load image: ${url}`));
+    im.src = url;
+  });
+}
+function _remove_background(ctx, w, h) {
+  const image = ctx.getImageData(0, 0, w, h);
+  const p = image.data;
+  const base = (h - 1) * w * 4;
+  const kr = p[base] ?? 0, kg = p[base + 1] ?? 0, kb = p[base + 2] ?? 0;
+  for (let i = 0; i < p.length; i += 4) {
+    if (p[i] === kr && p[i + 1] === kg && p[i + 2] === kb) p[i + 3] = 0;
+  }
+  ctx.putImageData(image, 0, 0);
 }
 
 // packages/engine/src/core/gm_object.ts
@@ -6204,6 +6317,13 @@ function timeline_step_all() {
   for (const id of _timelines.keys()) {
     timeline_step(id);
   }
+}
+var _timeline_names = /* @__PURE__ */ new Map();
+function timeline_register_name(name, id) {
+  _timeline_names.set(name, id);
+}
+function timeline_get_index(name) {
+  return _timeline_names.get(name) ?? -1;
 }
 
 // packages/engine/src/drawing/background.ts
@@ -6464,7 +6584,8 @@ function draw_text(x, y, text) {
   renderer.draw_text(x, y, String(text));
 }
 function draw_set_font(fnt) {
-  renderer.set_font(fnt);
+  const resolved = typeof fnt === "string" ? font_get(fnt) : fnt;
+  if (resolved) renderer.set_font(resolved);
 }
 function draw_set_halign(halign) {
   renderer.set_halign(halign);
@@ -10577,6 +10698,9 @@ export {
   file_text_write_string,
   file_text_writeln,
   floor,
+  font_exists,
+  font_get,
+  font_register_name,
   font_resource,
   fps,
   fps_real,
@@ -10795,6 +10919,7 @@ export {
   path_delete,
   path_exists,
   path_flip,
+  path_get_index,
   path_get_length,
   path_get_number,
   path_get_point_speed,
@@ -10806,6 +10931,7 @@ export {
   path_kind_linear,
   path_kind_smooth,
   path_mirror,
+  path_register_name,
   path_reverse,
   path_set_closed,
   path_set_kind,
@@ -11015,12 +11141,14 @@ export {
   timeline_create,
   timeline_delete,
   timeline_exists,
+  timeline_get_index,
   timeline_get_moment_count,
   timeline_get_position,
   timeline_moment_add,
   timeline_moment_clear,
   timeline_pause,
   timeline_play,
+  timeline_register_name,
   timeline_set_loop,
   timeline_set_position,
   timeline_set_speed,

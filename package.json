@@ -1,25 +1,25 @@
 {
     "name": "silkweaver",
-    "version": "0.2.6",
+    "version": "1.0.0",
     "description": "A GMS 1.4 inspired web game engine and IDE using modern TypeScript, along with some other cool stuff :3",
     "main": "./exports/electron/main.js",
-    "directories": {
-        "doc": "docs"
-    },
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",
         "build:engine": "esbuild ./packages/engine/src/index.ts --bundle --outfile=exports/engine.js --format=esm --external:matter-js",
         "gen:types": "node scripts/generate-types.cjs",
         "gen:docs": "node scripts/generate-docs.cjs",
         "build:ide": "npm run gen:types && esbuild ./packages/ide/src/index.ts --bundle --outfile=exports/ide.js --format=esm",
-        "build:installer": "esbuild ./packages/installer/src/index.ts --bundle --outfile=exports/installer.js --format=esm",
         "build:tooling": "tsc -p ./packages/engine/tsconfig.json && tsc -p ./packages/build/tsconfig.json && tsc -p ./packages/cli/tsconfig.json",
         "build:electron": "npm run build:tooling && tsc -p ./packages/electron/tsconfig.json && esbuild ./packages/electron/src/preload.ts --bundle --outfile=exports/electron/preload.cjs --format=cjs --platform=node --external:electron",
-        "build": "npm run build:engine && npm run build:ide && npm run build:installer",
+        "build": "npm run build:engine && npm run build:ide",
         "watch:engine": "esbuild ./packages/engine/src/index.ts --bundle --outfile=exports/engine.js --format=esm --watch",
         "watch": "npm run build -- --watch",
         "electron": "npm run build:ide && npm run build:electron && electron .",
-        "electron:dev": "npm run build:electron && electron ."
+        "electron:dev": "npm run build:electron && electron .",
+        "build:app": "npm run build:ide && npm run build:engine && npm run build:electron",
+        "dist": "npm run build:app && electron-builder",
+        "dist:win": "npm run build:app && electron-builder --win",
+        "dist:dir": "npm run build:app && electron-builder --dir"
     },
     "repository": {
         "type": "git",
@@ -39,6 +39,49 @@
         "url": "https://github.com/NicoNicoCip/Silkweaver/issues"
     },
     "homepage": "https://github.com/NicoNicoCip/Silkweaver#readme",
+    "build": {
+        "appId": "com.silkweaver.ide",
+        "productName": "Silkweaver",
+        "copyright": "Copyright © FinnWillow — GPL-3.0",
+        "electronVersion": "40.4.1",
+        "asar": false,
+        "directories": {
+            "output": "dist-installer"
+        },
+        "files": [
+            "exports/**/*",
+            "package.json",
+            "!**/*.map",
+            "!**/*.tsbuildinfo",
+            "!**/tsconfig*.json"
+        ],
+        "win": {
+            "target": [
+                "nsis"
+            ],
+            "icon": "packages/build/assets/icon.ico"
+        },
+        "nsis": {
+            "oneClick": false,
+            "perMachine": false,
+            "allowToChangeInstallationDirectory": true,
+            "createDesktopShortcut": true,
+            "createStartMenuShortcut": true,
+            "shortcutName": "Silkweaver"
+        },
+        "mac": {
+            "target": [
+                "dmg"
+            ],
+            "category": "public.app-category.developer-tools"
+        },
+        "linux": {
+            "target": [
+                "AppImage"
+            ],
+            "category": "Development"
+        }
+    },
     "workspaces": [
         "./packages/*"
     ],
@@ -46,10 +89,12 @@
         "@electron/packager": "^19.0.5",
         "@types/matter-js": "^0.20.2",
         "electron": "^40.4.1",
+        "electron-builder": "^26.15.3",
         "esbuild": "^0.27.2",
         "typescript": "^5.9.3"
     },
     "dependencies": {
+        "@silkweaver/build": "1.0.0",
         "matter-js": "^0.20.0"
     }
 }

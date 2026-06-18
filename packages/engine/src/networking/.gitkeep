@@ -1,5 +1,0 @@
-# Networking System
-# - WebSocket connections
-# - HTTP requests (http_get, http_post)
-# - Buffer send/receive
-# - Multiplayer session management
