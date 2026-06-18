@@ -8,7 +8,7 @@ import { menubar_default }                                           from './men
 import { status_bar_create, status_set_project, status_set_unsaved } from './status_bar.js'
 import { ResourceTree }                                              from './resource_tree.js'
 import type { open_resource_event, resource_category }               from './resource_tree.js'
-import { project_new, project_open, project_open_last, project_save, project_set_dir, project_set_folder, project_get_dir, project_has_folder, project_get_folder_path, project_get_last_folder, project_read_file, project_write_file }  from './services/project.js'
+import { project_new, project_open, project_open_last, project_save, project_set_dir, project_set_folder, project_get_dir, project_has_folder, project_get_folder_path, project_get_last_folder, project_read_file, project_write_file, project_file_exists, project_rename, project_copy, project_delete }  from './services/project.js'
 import type { project_state }                                         from './services/project.js'
 import { undo_push, undo_undo, undo_redo, undo_clear }               from './services/undo.js'
 import { script_editor_open, script_editor_open_smart, inject_project_types } from './editors/script_editor.js'
@@ -27,6 +27,8 @@ import { debugger_open, debugger_show_hit }                          from './pan
 import { profiler_open }                                             from './panels/profiler_panel.js'
 import { bp_resume, bp_on_hit }                                      from './panels/breakpoint_manager.js'
 import { show_alert, show_prompt, show_confirm }                     from './services/dialogs.js'
+import { ICON }                                                     from './icons.js'
+import { FloatingWindow }                                           from './window_manager.js'
 
 // Alias dialog functions for local use
 const _alert   = show_alert
@@ -49,15 +51,7 @@ function boot(): void {
     // 1. Inject global styles
     theme_inject()
 
-    // 2. Create workspace root
-    _workspace = document.createElement('div')
-    _workspace.id = 'sw-workspace'
-    document.body.appendChild(_workspace)
-
-    // 3. Create status bar
-    document.body.appendChild(status_bar_create())
-
-    // 4. Create menubar
+    // 2. Menubar (fixed, top)
     const menubar = menubar_default({
         file_new:              on_file_new,
         file_open:             on_file_open,
@@ -85,15 +79,37 @@ function boot(): void {
         run_export_win:        () => on_export_exe('win32', 'x64',   'Windows'),
         run_export_mac:        () => on_export_exe('darwin', 'arm64', 'macOS'),
         run_export_linux:      () => on_export_exe('linux', 'x64',    'Linux'),
+        window_cascade:        () => FloatingWindow.cascade(),
+        window_tile:           () => FloatingWindow.tile(),
+        window_minimize_all:   () => FloatingWindow.minimize_all(),
+        window_close_all:      () => FloatingWindow.close_all(),
+        window_list:           () => FloatingWindow.list().map(w => ({ title: w.get_title(), focus: () => w.focus() })),
         help_about:            on_help_about,
     })
     document.body.appendChild(menubar)
 
-    // 5. Resource tree
+    // 3. Toolbar (fixed, below the menubar)
+    document.body.appendChild(_build_toolbar())
+
+    // 4. Main area: docked resource tree | splitter | MDI work area
+    const main      = document.createElement('div'); main.id      = 'sw-main'
+    const dock      = document.createElement('div'); dock.id      = 'sw-dock'
+    const splitter  = document.createElement('div'); splitter.id  = 'sw-splitter'
+    _workspace      = document.createElement('div'); _workspace.id = 'sw-workspace'
+    main.append(dock, splitter, _workspace)
+    document.body.appendChild(main)
+    _setup_splitter(dock, splitter)
+
+    // 5. Status bar (fixed, bottom)
+    document.body.appendChild(status_bar_create())
+
+    // 6. Resource tree (docked, left)
     _tree = new ResourceTree()
-    _tree.on_add_resource    = on_add_resource
-    _tree.on_delete_resource = on_delete_resource
-    _tree.mount(_workspace)
+    _tree.on_add_resource       = on_add_resource
+    _tree.on_delete_resource    = on_delete_resource
+    _tree.on_rename_resource    = on_rename_resource
+    _tree.on_duplicate_resource = on_duplicate_resource
+    _tree.mount(dock)
 
     // 6. Listen for resource open events
     document.addEventListener('sw:open_resource', (e) => {
@@ -128,7 +144,7 @@ function boot(): void {
     project_open_last().then(result => {
         if (result) {
             _set_project(result.state, null)
-            console_open(_workspace, false)  // Start expanded
+            // Output log stays closed by default — the message is buffered until it's opened (F11).
             console_write('system', `[IDE] Reopened: ${result.state.name}`)
         } else {
             _set_project(project_new(), null)
@@ -150,6 +166,64 @@ function boot(): void {
         if (e.data && e.data.type === 'console') {
             console_write(e.data.level, `[Game] ${e.data.message}`)
         }
+    })
+}
+
+// =========================================================================
+// Shell: toolbar + dock splitter
+// =========================================================================
+
+/** Builds the GMS-style icon toolbar (file · add-resource · run · settings). */
+function _build_toolbar(): HTMLElement {
+    const tb = document.createElement('div')
+    tb.id = 'sw-toolbar'
+    const btn = (label: string, title: string, fn: () => void): void => {
+        const b = document.createElement('button')
+        b.className = 'sw-tb-btn'
+        b.innerHTML = label
+        b.title = title
+        b.addEventListener('click', fn)
+        tb.appendChild(b)
+    }
+    const sep = (): void => {
+        const s = document.createElement('div'); s.className = 'sw-tb-sep'; tb.appendChild(s)
+    }
+    btn(ICON.new_file, 'New Project (Ctrl+N)',  on_file_new)
+    btn(ICON.open,     'Open Project (Ctrl+O)', on_file_open)
+    btn(ICON.save,     'Save Project (Ctrl+S)', on_file_save)
+    sep()
+    btn(ICON.sprite,     'Add Sprite',     () => on_add_resource('sprites'))
+    btn(ICON.sound,      'Add Sound',      () => on_add_resource('sounds'))
+    btn(ICON.background, 'Add Background', () => on_add_resource('backgrounds'))
+    btn(ICON.path,       'Add Path',       () => on_add_resource('paths'))
+    btn(ICON.script,     'Add Script',     () => on_add_resource('scripts'))
+    btn(ICON.font,       'Add Font',       () => on_add_resource('fonts'))
+    btn(ICON.timeline,   'Add Timeline',   () => on_add_resource('timelines'))
+    btn(ICON.object,     'Add Object',     () => on_add_resource('objects'))
+    btn(ICON.room,       'Add Room',       () => on_add_resource('rooms'))
+    sep()
+    btn(ICON.play,  'Play (F5)',       on_run_play)
+    btn(ICON.stop,  'Stop',            on_run_stop)
+    btn(ICON.build, 'Build (Ctrl+F5)', on_run_build)
+    sep()
+    btn(ICON.settings, 'Game Settings (Ctrl+Shift+P)', on_edit_game_settings)
+    return tb
+}
+
+/** Wires the dock splitter for resizing the docked resource-tree panel. */
+function _setup_splitter(dock: HTMLElement, splitter: HTMLElement): void {
+    let dragging = false, start_x = 0, start_w = 0
+    splitter.addEventListener('mousedown', (e) => {
+        dragging = true; start_x = e.clientX; start_w = dock.offsetWidth
+        document.body.style.cursor = 'col-resize'
+        e.preventDefault()
+    })
+    window.addEventListener('mousemove', (e) => {
+        if (!dragging) return
+        dock.style.width = Math.max(150, Math.min(600, start_w + (e.clientX - start_x))) + 'px'
+    })
+    window.addEventListener('mouseup', () => {
+        if (dragging) { dragging = false; document.body.style.cursor = '' }
     })
 }
 
@@ -215,15 +289,21 @@ async function on_file_save_as(): Promise<void> {
 
 async function on_add_resource(cat: resource_category): Promise<void> {
     if (!_project) { await _alert('Open a project first.'); return }
-    const name = await _prompt(`New ${cat.slice(0, -1)} name:`)
-    if (!name) return
-    if (_project.resources[cat][name]) { await _alert('A resource with that name already exists.'); return }
+    // Create with a unique default name, then let the user rename it in place (Explorer-style).
+    // Check the registry AND on-disk files so a new resource never reuses an orphaned folder
+    // (e.g. a deleted sprite's files left behind), which would load stale data.
+    const singular = cat.slice(0, -1)
+    let n = 0, name = ''
+    do { n++; name = `${singular}${n}` }
+    while (_project.resources[cat][name] || await _resource_on_disk(cat, name))
 
     undo_push({
-        label: `Add ${cat.slice(0, -1)} "${name}"`,
+        label: `Add ${singular} "${name}"`,
         execute:   () => { _tree.add_resource(cat, name);    _mark_unsaved() },
         unexecute: () => { _tree.remove_resource(cat, name); _mark_unsaved() },
     })
+    _tree.expand_category(cat)
+    _tree.begin_rename(cat, name)
 }
 
 async function on_delete_resource(cat: resource_category, name: string): Promise<void> {
@@ -233,6 +313,75 @@ async function on_delete_resource(cat: resource_category, name: string): Promise
         execute:   () => { _tree.remove_resource(cat, name); _mark_unsaved() },
         unexecute: () => { _tree.add_resource(cat, name);    _mark_unsaved() },
     })
+    // Remove the on-disk artifacts too, so the name can be reused cleanly later
+    // (otherwise a new resource reusing the name would load stale files).
+    try { await _delete_resource_files(cat, name) } catch (err: any) { console.warn('[IDE] Delete files failed:', err) }
+}
+
+/** Deletes a resource's on-disk artifacts (the `cat/name` folder and/or `cat/name.ts` file). */
+async function _delete_resource_files(cat: resource_category, name: string): Promise<void> {
+    if (!project_has_folder()) return
+    for (const rel of [`${cat}/${name}`, `${cat}/${name}.ts`]) {
+        if (await project_file_exists(rel)) await project_delete(rel)
+    }
+}
+
+async function on_rename_resource(cat: resource_category, name: string, new_name_raw: string): Promise<void> {
+    if (!_project) return
+    const new_name = (new_name_raw ?? '').trim()
+    if (!new_name || new_name === name) return
+    if (!/^[A-Za-z_]\w*$/.test(new_name)) { await _alert('Names may only contain letters, digits, and _ (not starting with a digit).'); return }
+    if (_project.resources[cat][new_name]) { await _alert(`A resource named "${new_name}" already exists.`); return }
+    try {
+        await _move_resource_files(cat, name, new_name, 'move')
+    } catch (err: any) {
+        await _alert('Rename failed: ' + (err?.message ?? err)); return
+    }
+    _tree.remove_resource(cat, name)
+    _tree.add_resource(cat, new_name)
+    _mark_unsaved()
+    console_write('system', `[IDE] Renamed ${cat.slice(0, -1)} "${name}" → "${new_name}".`)
+}
+
+async function on_duplicate_resource(cat: resource_category, name: string): Promise<void> {
+    if (!_project) return
+    let new_name = `${name}_copy`, n = 2
+    while (_project.resources[cat][new_name]) new_name = `${name}_copy${n++}`
+    try {
+        await _move_resource_files(cat, name, new_name, 'copy')
+    } catch (err: any) {
+        await _alert('Duplicate failed: ' + (err?.message ?? err)); return
+    }
+    _tree.add_resource(cat, new_name)
+    _mark_unsaved()
+    console_write('system', `[IDE] Duplicated ${cat.slice(0, -1)} "${name}" → "${new_name}".`)
+}
+
+/**
+ * Moves or copies a resource's on-disk artifact (a .ts file for scripts/objects, otherwise a folder),
+ * if it exists. For code files, the embedded class/function identifier is renamed to match.
+ * (References from OTHER resources — e.g. a room using a renamed object — are not auto-updated.)
+ */
+async function _move_resource_files(cat: resource_category, old_name: string, new_name: string, op: 'move' | 'copy'): Promise<void> {
+    const file_rel   = `${cat}/${old_name}.ts`
+    const folder_rel = `${cat}/${old_name}`
+    let src: string | null = null
+    let is_file = false
+    if      (await project_file_exists(file_rel))   { src = file_rel; is_file = true }
+    else if (await project_file_exists(folder_rel)) { src = folder_rel }
+    if (!src) return   // no on-disk artifact yet (freshly created) — registry-only
+
+    const dst = is_file ? `${cat}/${new_name}.ts` : `${cat}/${new_name}`
+    if (op === 'move') await project_rename(src, dst)
+    else               await project_copy(src, dst)
+
+    if (is_file) {
+        const code = await project_read_file(dst)
+        const renamed = code
+            .replace(new RegExp(`(\\bclass\\s+)${old_name}\\b`, 'g'),    `$1${new_name}`)
+            .replace(new RegExp(`(\\bfunction\\s+)${old_name}\\b`, 'g'), `$1${new_name}`)
+        if (renamed !== code) await project_write_file(dst, renamed)
+    }
 }
 
 // =========================================================================
@@ -272,31 +421,32 @@ async function _proj_has(rel: string): Promise<boolean> {
     try { await project_read_file(rel); return true } catch { return false }
 }
 
+/** True if a resource already has on-disk artifacts (a folder for assets, a .ts file for scripts/objects). */
+async function _resource_on_disk(cat: resource_category, name: string): Promise<boolean> {
+    if (!project_has_folder()) return false
+    return (await project_file_exists(`${cat}/${name}`)) || (await project_file_exists(`${cat}/${name}.ts`))
+}
+
 /**
- * Opens an object. Class-per-object files (objects/<name>.ts) open in the code editor
- * (full class, accurate autocomplete); brand-new objects are scaffolded as a class file;
- * legacy snippet-folder objects fall back to the classic object editor.
+ * Opens an object in the GMS-style object editor (a form over the class-per-object file
+ * `objects/<name>.ts`). The editor scaffolds a class file for brand-new objects and offers
+ * "Open as Code" to drop into the Monaco class editor. When the desktop host's object_op
+ * bridge is unavailable (browser-only), it falls back to opening the class file directly.
  */
 async function _open_object(name: string): Promise<void> {
     try {
-        const class_rel = `objects/${name}.ts`
-        const has_class = await _proj_has(class_rel)
-
-        // Legacy snippet-folder object → classic editor.
-        if (!has_class && await _proj_has(`objects/${name}/object.json`)) {
+        if ((window as any).swfs?.object_op) {
             object_editor_open(_workspace, name)
             return
         }
 
-        // Scaffold a class file for a brand-new object.
-        if (!has_class) {
-            const swfs = (window as any).swfs
-            const source: string = swfs?.object_op
-                ? await swfs.object_op('scaffold', name)
-                : `import { gm_object } from '@silkweaver/engine'\n\nexport class ${name} extends gm_object {\n    on_create(): void {\n\n    }\n}\n`
-            await project_write_file(class_rel, source)
+        // Browser-only fallback: scaffold + open the class file in Monaco.
+        const class_rel = `objects/${name}.ts`
+        if (!await _proj_has(class_rel)) {
+            // Imports are auto-managed (auto-injected at build time), so the scaffold has none.
+            await project_write_file(class_rel,
+                `export class ${name} extends gm_object {\n    on_create(): void {\n\n    }\n}\n`)
         }
-
         await script_editor_open_smart(_workspace, class_rel, async () => {
             const dir  = project_get_dir()!
             const objs = await dir.getDirectoryHandle('objects', { create: true })
@@ -486,6 +636,30 @@ function on_edit_game_settings(): void {
 
 async function on_help_about(): Promise<void> {
     await _alert('Silkweaver Game Engine IDE\nVersion 0.2.0\nGPL-3.0')
+}
+
+// =========================================================================
+// Cross-editor accessors
+// =========================================================================
+
+/**
+ * Returns the names of all objects in the currently-open project (live, in-memory
+ * registry — reflects unsaved additions/removals). Empty if no project is open.
+ * Used by the room editor's object picker.
+ */
+export function get_project_object_names(): string[] {
+    return get_project_resource_names('objects')
+}
+
+/**
+ * Returns the names of every resource in a category from the live, in-memory project
+ * registry (reflects unsaved additions/removals). Empty if no project is open or the
+ * category is unknown. Used by the editors' resource dropdowns.
+ * @param category - e.g. 'sprites', 'objects', 'backgrounds', 'rooms', 'sounds'
+ */
+export function get_project_resource_names(category: resource_category): string[] {
+    const bag = _project?.resources[category]
+    return bag ? Object.keys(bag) : []
 }
 
 // =========================================================================

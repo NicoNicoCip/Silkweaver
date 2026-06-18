@@ -103,7 +103,7 @@ export type { view_config } from './drawing/view.js'
 
 // Draw functions (GMS-style API)
 export {
-    draw_set_color, draw_get_color,
+    draw_set_color, draw_get_color, draw_set_colour, draw_get_colour,
     draw_set_alpha, draw_get_alpha,
     draw_clear,
     draw_set_blend_mode,
@@ -127,7 +127,12 @@ export {
     fa_left, fa_center, fa_right, fa_top, fa_middle, fa_bottom,
     make_color_rgb, make_color_hsv,
     color_get_red, color_get_green, color_get_blue,
+    color_get_hue, color_get_saturation, color_get_value,
     merge_color, color_to_rgb_normalized,
+    make_colour_rgb, make_colour_hsv,
+    colour_get_red, colour_get_green, colour_get_blue,
+    colour_get_hue, colour_get_saturation, colour_get_value,
+    merge_colour,
 } from './drawing/color.js'
 
 // =========================================================================
@@ -265,6 +270,7 @@ export {
     audio_play_sound, audio_stop_sound, audio_stop_all,
     audio_is_playing, audio_sound_gain, audio_sound_pitch,
     audio_set_master_gain, audio_get_master_gain,
+    sound_register_name, sound_get_name,
 } from './audio/sound.js'
 export {
     spatial_sound_instance,
@@ -314,6 +320,7 @@ export {
     buffer_seek_start, buffer_seek_relative, buffer_seek_end,
     buffer_create, buffer_delete, buffer_exists, buffer_get_size, buffer_tell,
     buffer_seek, buffer_write, buffer_read, buffer_fill, buffer_copy,
+    buffer_sizeof, buffer_resize, buffer_poke, buffer_peek,
     buffer_get_bytes, buffer_from_bytes,
     buffer_base64_encode, buffer_base64_decode,
 } from './networking/buffer.js'
@@ -422,18 +429,54 @@ export { vector2 } from './math/vectors.js'
 export {
     degtorad, radtodeg,
     dsin, dcos, dtan, arcsin, arccos, arctan, arctan2,
+    darcsin, darccos, darctan, darctan2,
     lengthdir_x, lengthdir_y, point_distance, point_distance_3d, point_direction,
     angle_difference, lerp, clamp, sign, frac, sqr, sqrt, abs,
-    floor, ceil, round, power, log2, log10, ln, exp,
+    floor, ceil, round, power, log2, log10, ln, logn, exp,
     min, max, median, mean, between, approx, wrap,
-    dot2, dot3, cross2,
+    dot2, dot3, cross2, dot_product, dot_product_3d,
+    pi, point_in_rectangle, point_in_circle, point_in_triangle,
+    rectangle_in_rectangle, rectangle_in_circle, rectangle_in_triangle,
 } from './math/math_utils.js'
+
+// Runtime type checks (GMS is_* family)
+export {
+    is_real, is_string, is_array, is_undefined, is_bool,
+    is_numeric, is_int32, is_int64, is_nan, is_infinity, is_method,
+} from './core/type_checks.js'
+
+// Array helpers (GMS array_* family)
+export {
+    array_create, array_length, array_length_1d, array_get, array_set,
+    array_resize, array_copy, array_equals, array_push, array_pop, array_shift,
+    array_insert, array_delete, array_sort, array_reverse, array_concat,
+    array_contains, array_get_index,
+} from './data/array_utils.js'
+
+// Window / display / caption
+export {
+    window_set_caption, window_get_caption, window_get_width, window_get_height,
+    window_set_size, window_set_fullscreen, window_get_fullscreen,
+    display_get_width, display_get_height, display_get_gui_width, display_get_gui_height,
+} from './core/window.js'
+
+// Gameplay globals (GMS score/lives/health + No More Lives/Health events)
+export {
+    get_score, set_score, get_lives, set_lives, get_health, set_health,
+} from './core/game_state.js'
+
+// Variable reflection (GMS variable_instance_*/variable_global_*)
+export {
+    global_store,
+    variable_instance_get, variable_instance_set, variable_instance_exists, variable_instance_get_names,
+    variable_global_get, variable_global_set, variable_global_exists, variable_global_get_names,
+} from './core/variables.js'
 
 // Random
 export {
     random_set_seed, random_get_seed, randomize,
     random, irandom, random_range, irandom_range,
-    array_shuffle, array_random, random_native,
+    array_shuffle, array_random, random_native, choose,
 } from './math/random.js'
 
 // String utilities
@@ -445,7 +488,7 @@ export {
     string_trim, string_trim_start, string_trim_end,
     string_repeat, string_reverse, string_char_at,
     string_byte_at, string_byte_length,
-    chr, ord, ansi_char, string_format, string, real,
+    chr, ord, string_ord_at, ansi_char, string_format, string, real,
     string_split, string_join,
 } from './math/string_utils.js'
 

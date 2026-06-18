@@ -5,6 +5,7 @@
  */
 
 import { FloatingWindow } from '../window_manager.js'
+import { ICON } from '../icons.js'
 
 // =========================================================================
 // Module state
@@ -25,7 +26,7 @@ let _running = false
 export function preview_open(workspace: HTMLElement): void {
     if (_win) { _win.bring_to_front(); return }
     _win = new FloatingWindow(
-        'sw-game-preview', 'Game Preview', 'icons/room.svg',
+        'sw-game-preview', 'Game Preview', ICON.play,
         { x: 300, y: 60, w: 640, h: 480 }
     )
     _win.on_close(() => {

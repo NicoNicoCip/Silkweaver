@@ -44,6 +44,15 @@ function engine_entry(): string {
     return require.resolve('@silkweaver/engine')
 }
 
+/** Converts a CSS hex colour ('#rrggbb') to a GMS BGR integer (0xBBGGRR). */
+function hex_to_bgr(hex: string): number {
+    const m = /^#?([0-9a-fA-F]{6})$/.exec((hex ?? '').trim())
+    if (!m) return 0
+    const n = parseInt(m[1]!, 16)
+    const r = (n >> 16) & 0xFF, g = (n >> 8) & 0xFF, b = n & 0xFF
+    return (b << 16) | (g << 8) | r
+}
+
 /**
  * Generates the bootstrapper (_entry.ts) source for a project.
  * @param asset_mode - 'preview' (file:// into project) or 'export' (relative assets/)
@@ -88,29 +97,91 @@ async function generate_entry_code(
 
             const instances = rm_data.instances ?? []
             const var_name = `_room_${room_name}`
+            // Track the first placed instance of each object so views can follow it.
+            const first_inst_by_obj: Record<string, string> = {}
             const inst_lines = instances.map((inst, idx) => {
                 if (!object_names.includes(inst.object_name)) return ''
                 const v = `_inst_${inst.object_name}_${idx}`
+                if (!(inst.object_name in first_inst_by_obj)) first_inst_by_obj[inst.object_name] = v
                 const lines = [
                     `    const ${v} = new ${inst.object_name}(${var_name})`,
                     `    ${var_name}.room_instance_add(${inst.x}, ${inst.y}, ${v})`,
                 ]
+                // Per-instance transform (only emit non-defaults to keep generated code tidy).
+                if ((inst.scale_x ?? 1) !== 1) lines.push(`    ${v}.image_xscale = ${inst.scale_x}`)
+                if ((inst.scale_y ?? 1) !== 1) lines.push(`    ${v}.image_yscale = ${inst.scale_y}`)
+                if ((inst.rotation ?? 0) !== 0) lines.push(`    ${v}.image_angle = ${inst.rotation}`)
                 lines.push(`    ${v}.register_events()`)
                 lines.push(`    game_loop.register(EVENT_TYPE.create, ${v}.on_create.bind(${v}))`)
+                // Per-instance creation code runs after the object's Create event (bound: this = instance).
+                if (inst.creation_code && inst.creation_code.trim()) {
+                    lines.push(`    game_loop.register(EVENT_TYPE.create, (function(this: any){\n${inst.creation_code}\n}).bind(${v}))`)
+                }
                 return lines.join('\n')
             }).filter(Boolean).join('\n')
+
+            // Background layers (name → runtime id via _background_map).
+            const bg_lines = (rm_data.backgrounds ?? []).map((bl, i) => {
+                if (!bl.bg_name) return ''
+                return [
+                    `    ${var_name}.background_index[${i}]      = _background_map['${bl.bg_name}'] ?? -1`,
+                    `    ${var_name}.background_visible[${i}]    = ${bl.enabled ?? true}`,
+                    `    ${var_name}.background_foreground[${i}] = false`,
+                    `    ${var_name}.background_htiled[${i}]     = ${bl.tile_x ?? false}`,
+                    `    ${var_name}.background_vtiled[${i}]     = ${bl.tile_y ?? false}`,
+                    `    ${var_name}.background_stretch[${i}]    = ${bl.stretch ?? false}`,
+                    `    ${var_name}.background_x[${i}]          = 0`,
+                    `    ${var_name}.background_y[${i}]          = 0`,
+                    `    ${var_name}.background_color[${i}]      = 0xFFFFFF`,
+                ].join('\n')
+            }).filter(Boolean).join('\n')
+
+            // Views / cameras. follow (object name) resolves to the first placed instance.
+            const views = rm_data.views ?? []
+            const view_lines = views.some(v => v.enabled)
+                ? [`    ${var_name}.view_enabled = true`].concat(views.map((vw, i) => {
+                    const fv = vw.follow ? first_inst_by_obj[vw.follow] : undefined
+                    return [
+                        `    ${var_name}.view_visible[${i}] = ${vw.enabled ?? false}`,
+                        `    ${var_name}.view_xview[${i}]   = ${vw.view_x ?? 0}`,
+                        `    ${var_name}.view_yview[${i}]   = ${vw.view_y ?? 0}`,
+                        `    ${var_name}.view_wview[${i}]   = ${vw.view_w ?? 640}`,
+                        `    ${var_name}.view_hview[${i}]   = ${vw.view_h ?? 480}`,
+                        `    ${var_name}.view_xport[${i}]   = ${vw.port_x ?? 0}`,
+                        `    ${var_name}.view_yport[${i}]   = ${vw.port_y ?? 0}`,
+                        `    ${var_name}.view_wport[${i}]   = ${vw.port_w ?? vw.view_w ?? 640}`,
+                        `    ${var_name}.view_hport[${i}]   = ${vw.port_h ?? vw.view_h ?? 480}`,
+                        fv
+                            ? `    ${var_name}.view_hborder[${i}] = 32\n    ${var_name}.view_vborder[${i}] = 32\n    ${var_name}.view_object[${i}] = ${fv}.id`
+                            : `    ${var_name}.view_object[${i}] = -1`,
+                    ].join('\n')
+                })).join('\n')
+                : ''
+
+            // Tiles — each is a sub-rectangle of a background used as a tileset.
+            const tile_lines = (rm_data.tiles ?? []).map((t) => {
+                if (!t.bg_name) return ''
+                const bid = `_background_map['${t.bg_name}']`
+                return `    if (${bid} !== undefined) ${var_name}.tile_add(${bid}, ${t.left}, ${t.top}, ${t.width}, ${t.height}, ${t.x}, ${t.y}, ${t.depth})`
+            }).filter(Boolean).join('\n')
+
             room_var_names.push(var_name)
             room_setups.push(
 `const ${var_name} = new room()
 ${var_name}.room_width  = ${rm_data.width  ?? 640}
 ${var_name}.room_height = ${rm_data.height ?? 480}
 ${var_name}.room_speed  = ${rm_data.room_speed ?? 60}
-${var_name}.room_persistent = ${rm_data.persistent ?? false}${
+${var_name}.room_persistent = ${rm_data.persistent ?? false}
+${var_name}.background_show_color  = ${rm_data.bg_show_color ?? true}
+${var_name}.background_solid_color = ${hex_to_bgr(rm_data.bg_color ?? '#000000')}${
     rm_data.creation_code && rm_data.creation_code.trim()
         ? `\n${var_name}.creation_code = () => {\n${rm_data.creation_code}\n}`
         : ''
 }
-${inst_lines}`)
+${inst_lines}
+${bg_lines}
+${view_lines}
+${tile_lines}`)
         }
 
         // Script imports
@@ -135,6 +206,12 @@ ${inst_lines}`)
         const bg_names = Object.keys(proj.resources.backgrounds || {})
         const bg_loads = bg_names.map(bg_name =>
             `await _load_background('${bg_name}', '${asset_meta_url('backgrounds', bg_name)}', '${asset_dir_url('backgrounds', bg_name)}')`
+        ).join('\n')
+
+        // Sound loading code
+        const sound_names = Object.keys(proj.resources.sounds || {})
+        const sound_loads = sound_names.map(s =>
+            `await _load_sound('${s}', '${asset_meta_url('sounds', s)}', '${asset_dir_url('sounds', s)}')`
         ).join('\n')
 
         // Determine start room
@@ -168,6 +245,13 @@ async function _load_sprite(name: string, meta_url: string, img_base: string): P
         spr.height = meta.height || 32
         spr.xoffset = meta.origin_x || 0
         spr.yoffset = meta.origin_y || 0
+        // Collision mask rectangle (sprite editor). Only applied when a valid box is set.
+        if (typeof meta.mask_w === 'number' && meta.mask_w > 0 && typeof meta.mask_h === 'number' && meta.mask_h > 0) {
+            spr.mask_left   = meta.mask_x || 0
+            spr.mask_top    = meta.mask_y || 0
+            spr.mask_right  = (meta.mask_x || 0) + meta.mask_w
+            spr.mask_bottom = (meta.mask_y || 0) + meta.mask_h
+        }
 
         // Load all frames specified in meta.json
         const frames = meta.frames || []
@@ -241,6 +325,22 @@ async function _load_background(name: string, meta_url: string, img_base: string
     }
 }
 
+// ── Sound loader ─────────────────────────────────────────────────────────────
+const _sound_map: Record<string, number> = {}
+
+async function _load_sound(name: string, meta_url: string, base: string): Promise<void> {
+    try {
+        const meta = await fetch(meta_url).then(r => r.json())
+        if (!meta.file_name) { console.warn(\`[Sound] \${name} has no file_name in meta.json\`); return }
+        const snd = new sound_asset()
+        await snd.load_url(base + '/' + meta.file_name, 'default', meta.kind === 'music')
+        sound_register_name(name, snd)
+        _sound_map[name] = snd.id
+    } catch (err) {
+        console.warn(\`[Sound] Failed to load \${name}:\`, err)
+    }
+}
+
 // ── Bootstrap ───────────────────────────────────────────────────────────────
 export default async function init(canvas: HTMLCanvasElement): Promise<void> {
     renderer.init(canvas, ${proj.settings.windowWidth ?? 640}, ${proj.settings.windowHeight ?? 480})
@@ -252,6 +352,9 @@ export default async function init(canvas: HTMLCanvasElement): Promise<void> {
 
     // Load backgrounds
     ${bg_loads}
+
+    // Load sounds
+    ${sound_loads}
 
     // Set up rooms
     ${room_setups.join('\n')}
@@ -286,8 +389,17 @@ async function bundle_game(
     minify: boolean,
 ): Promise<void> {
     const entry_code = await generate_entry_code(project_folder, proj, asset_mode)
-    const entry_path = path.join(project_folder, '_entry.ts')
+    const entry_path   = path.join(project_folder, '_entry.ts')
+    const globals_path = path.join(project_folder, '_engine_globals.ts')
     await fs.promises.writeFile(entry_path, entry_code, 'utf8')
+
+    // Auto-import management: a shim that re-exports the whole engine API. Passed to esbuild's
+    // `inject`, it makes any *bare* engine reference in an object/script file (e.g. `gm_object`,
+    // `draw_sprite`) resolve to an auto-injected import — tree-shaken — so users never write or
+    // manage `import … from '@silkweaver/engine'` themselves.
+    const engine_names = await engine_export_names(engine_entry())
+    await fs.promises.writeFile(globals_path, `export { ${engine_names.join(', ')} } from '@silkweaver/engine'\n`, 'utf8')
+
     try {
         // Run esbuild via its Node API. Alias the package specifier to the resolved engine
         // entry so the generated entry AND any class-per-object files resolve to the same
@@ -300,9 +412,11 @@ async function bundle_game(
             format:      'esm',
             minify,
             alias:       { '@silkweaver/engine': engine_entry() },
+            inject:      [globals_path],
         })
     } finally {
         await fs.promises.unlink(entry_path).catch(() => {})
+        await fs.promises.unlink(globals_path).catch(() => {})
     }
 }
 
@@ -329,9 +443,9 @@ export async function export_html5(project_folder: string, out_dir: string): Pro
     // 1. Bundle the game with relative asset URLs
     await bundle_game(project_folder, proj, 'export', path.join(out_dir, 'game.js'), true)
 
-    // 2. Copy only the *registered* sprite/background assets next to game.js
+    // 2. Copy only the *registered* sprite/background/sound assets next to game.js
     //    (matching what generate_entry_code loads — avoids shipping orphaned files).
-    for (const kind of ['sprites', 'backgrounds'] as const) {
+    for (const kind of ['sprites', 'backgrounds', 'sounds'] as const) {
         for (const name of Object.keys(proj.resources[kind] ?? {})) {
             const src = path.join(project_folder, kind, name)
             if (await _path_exists(src)) await _copy_dir(src, path.join(out_dir, 'assets', kind, name))

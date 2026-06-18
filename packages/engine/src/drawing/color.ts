@@ -157,3 +157,44 @@ export function color_to_rgb_normalized(col: number): [number, number, number] {
         color_get_blue(col)  / 255
     ]
 }
+
+/** Returns the hue (0–255) of a BGR color. */
+export function color_get_hue(col: number): number {
+    const r = color_get_red(col) / 255, g = color_get_green(col) / 255, b = color_get_blue(col) / 255
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min
+    let h = 0
+    if (d !== 0) {
+        if      (max === r) h = ((g - b) / d) % 6
+        else if (max === g) h = (b - r) / d + 2
+        else                h = (r - g) / d + 4
+        h *= 60
+        if (h < 0) h += 360
+    }
+    return Math.round((h / 360) * 255)
+}
+
+/** Returns the saturation (0–255) of a BGR color. */
+export function color_get_saturation(col: number): number {
+    const r = color_get_red(col), g = color_get_green(col), b = color_get_blue(col)
+    const max = Math.max(r, g, b)
+    return max === 0 ? 0 : Math.round(((max - Math.min(r, g, b)) / max) * 255)
+}
+
+/** Returns the value/brightness (0–255) of a BGR color. */
+export function color_get_value(col: number): number {
+    return Math.max(color_get_red(col), color_get_green(col), color_get_blue(col))
+}
+
+// =========================================================================
+// British-spelling aliases (GMS accepts both `color` and `colour`)
+// =========================================================================
+
+export const make_colour_rgb        = make_color_rgb
+export const make_colour_hsv        = make_color_hsv
+export const colour_get_red         = color_get_red
+export const colour_get_green       = color_get_green
+export const colour_get_blue        = color_get_blue
+export const colour_get_hue         = color_get_hue
+export const colour_get_saturation  = color_get_saturation
+export const colour_get_value       = color_get_value
+export const merge_colour           = merge_color

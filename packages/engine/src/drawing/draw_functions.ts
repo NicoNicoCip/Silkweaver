@@ -33,6 +33,12 @@ export function draw_get_color(): number {
     return renderer.get_color()
 }
 
+/** British-spelling alias for draw_set_color. */
+export const draw_set_colour = draw_set_color
+
+/** British-spelling alias for draw_get_color. */
+export const draw_get_colour = draw_get_color
+
 /**
  * Sets the current draw alpha (transparency).
  * @param alpha - Value from 0 (fully transparent) to 1 (fully opaque)

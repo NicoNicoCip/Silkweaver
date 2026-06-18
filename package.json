@@ -10,6 +10,7 @@
         "test": "echo \"Error: no test specified\" && exit 1",
         "build:engine": "esbuild ./packages/engine/src/index.ts --bundle --outfile=exports/engine.js --format=esm --external:matter-js",
         "gen:types": "node scripts/generate-types.cjs",
+        "gen:docs": "node scripts/generate-docs.cjs",
         "build:ide": "npm run gen:types && esbuild ./packages/ide/src/index.ts --bundle --outfile=exports/ide.js --format=esm",
         "build:installer": "esbuild ./packages/installer/src/index.ts --bundle --outfile=exports/installer.js --format=esm",
         "build:tooling": "tsc -p ./packages/engine/tsconfig.json && tsc -p ./packages/build/tsconfig.json && tsc -p ./packages/cli/tsconfig.json",

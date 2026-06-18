@@ -4,6 +4,7 @@ import { resource } from "./resource.js"
 import type { room } from "./room.js"
 import { instances_collide, update_bbox, point_in_instance, rect_in_instance, circle_in_instance, line_in_instance } from "../collision/collision.js"
 import { _mp_potential_settings } from "./motion_planning.js"
+import { irandom_range } from "../math/random.js"
 import {
     path_exists, path_get_x, path_get_y, path_get_length,
     path_action_stop, path_action_restart, path_action_continue, path_action_reverse,
@@ -148,11 +149,12 @@ export class instance extends resource {
     private _path_off_x:           number = 0
     private _path_off_y:           number = 0
 
-    // Bound event handlers — stored so unregister() can match the exact same function reference
+    // Bound event handlers — stored so unregister() can match the exact same function reference.
+    // World-space draws (begin/draw/end) are NOT events: the loop calls run_draw_* directly in
+    // depth order. Only step events and the screen-space draw_gui remain event-registered.
     private _bound_step_begin: Function = () => {}
     private _bound_step:       Function = () => {}
     private _bound_step_end:   Function = () => {}
-    private _bound_draw:       Function = () => {}
     private _bound_draw_gui:   Function = () => {}
 
     /**
@@ -166,7 +168,6 @@ export class instance extends resource {
         this._bound_step_begin = this.on_step_begin.bind(this)
         this._bound_step       = this.internal_step.bind(this)
         this._bound_step_end   = this.on_step_end.bind(this)
-        this._bound_draw       = this.internal_draw.bind(this)
         this._bound_draw_gui   = this.on_draw_gui.bind(this)
     }
 
@@ -245,7 +246,6 @@ export class instance extends resource {
         game_loop.register(EVENT_TYPE.step_begin, this._bound_step_begin)
         game_loop.register(EVENT_TYPE.step,       this._bound_step)
         game_loop.register(EVENT_TYPE.step_end,   this._bound_step_end)
-        game_loop.register(EVENT_TYPE.draw,       this._bound_draw)
         game_loop.register(EVENT_TYPE.draw_gui,   this._bound_draw_gui)
     }
 
@@ -256,7 +256,6 @@ export class instance extends resource {
         game_loop.unregister(EVENT_TYPE.step_begin, this._bound_step_begin)
         game_loop.unregister(EVENT_TYPE.step,       this._bound_step)
         game_loop.unregister(EVENT_TYPE.step_end,   this._bound_step_end)
-        game_loop.unregister(EVENT_TYPE.draw,       this._bound_draw)
         game_loop.unregister(EVENT_TYPE.draw_gui,   this._bound_draw_gui)
     }
 
@@ -383,9 +382,25 @@ export class instance extends resource {
      * Internal draw: skips hidden instances, then calls on_draw().
      * If on_draw() has not been overridden, draws the current sprite automatically.
      */
-    private internal_draw(): void {
+    /**
+     * Runs the main Draw event (skips hidden/inactive instances).
+     * Called by the game loop in depth order — not registered as an event.
+     */
+    public run_draw(): void {
         if (!this.visible || !this.active) return
         this.on_draw()
+    }
+
+    /** Runs the Draw Begin event (skips hidden/inactive instances). */
+    public run_draw_begin(): void {
+        if (!this.visible || !this.active) return
+        this.on_draw_begin()
+    }
+
+    /** Runs the Draw End event (skips hidden/inactive instances). */
+    public run_draw_end(): void {
+        if (!this.visible || !this.active) return
+        this.on_draw_end()
     }
 
     // =========================================================================
@@ -564,6 +579,56 @@ export class instance extends resource {
         if (!rm) return
         for (const inst of rm.instance_get_all()) {
             if (inst instanceof obj) inst.active = true
+        }
+    }
+
+    /**
+     * True if the instance's bounding box overlaps the given region.
+     * @param inst - Instance to test
+     * @param l - Region left
+     * @param t - Region top
+     * @param r - Region right
+     * @param b - Region bottom
+     */
+    private static _bbox_in_region(inst: instance, l: number, t: number, r: number, b: number): boolean {
+        update_bbox(inst)
+        return inst.bbox_right >= l && inst.bbox_left <= r &&
+               inst.bbox_bottom >= t && inst.bbox_top <= b
+    }
+
+    /**
+     * Deactivates instances within (or outside) a rectangular region.
+     * @param left - Region left
+     * @param top - Region top
+     * @param width - Region width
+     * @param height - Region height
+     * @param inside - Deactivate instances overlapping the region (true) or those not overlapping it (false)
+     * @param not_me - If true, this instance is excluded
+     */
+    public instance_deactivate_region(left: number, top: number, width: number, height: number, inside: boolean = true, not_me: boolean = false): void {
+        const rm = game_loop.room
+        if (!rm) return
+        const r = left + width, b = top + height
+        for (const inst of rm.instance_get_all()) {
+            if (not_me && inst === this) continue
+            if (instance._bbox_in_region(inst, left, top, r, b) === inside) inst.active = false
+        }
+    }
+
+    /**
+     * Activates instances within (or outside) a rectangular region.
+     * @param left - Region left
+     * @param top - Region top
+     * @param width - Region width
+     * @param height - Region height
+     * @param inside - Activate instances overlapping the region (true) or those not overlapping it (false)
+     */
+    public static instance_activate_region(left: number, top: number, width: number, height: number, inside: boolean = true): void {
+        const rm = game_loop.room
+        if (!rm) return
+        const r = left + width, b = top + height
+        for (const inst of rm.instance_get_all()) {
+            if (instance._bbox_in_region(inst, left, top, r, b) === inside) inst.active = true
         }
     }
 
@@ -871,6 +936,130 @@ export class instance extends resource {
         this.motion_set(dir < 0 ? dir + 360 : dir, spd)
     }
 
+    /**
+     * Returns the distance from this instance's bounding box to a point.
+     * Returns 0 if the point lies inside the bounding box.
+     * @param x - Point X
+     * @param y - Point Y
+     */
+    public distance_to_point(x: number, y: number): number {
+        update_bbox(this)
+        const dx = Math.max(this.bbox_left - x, 0, x - this.bbox_right)
+        const dy = Math.max(this.bbox_top - y, 0, y - this.bbox_bottom)
+        return Math.sqrt(dx * dx + dy * dy)
+    }
+
+    /**
+     * Snaps the instance position to a grid.
+     * @param hsnap - Horizontal grid size (ignored if ≤ 0)
+     * @param vsnap - Vertical grid size (ignored if ≤ 0)
+     */
+    public move_snap(hsnap: number, vsnap: number): void {
+        if (hsnap > 0) this.x = Math.round(this.x / hsnap) * hsnap
+        if (vsnap > 0) this.y = Math.round(this.y / vsnap) * vsnap
+    }
+
+    /**
+     * True if the instance position is aligned to the given grid.
+     * @param hsnap - Horizontal grid size
+     * @param vsnap - Vertical grid size
+     */
+    public place_snapped(hsnap: number, vsnap: number): boolean {
+        const hok = hsnap <= 0 || this.x % hsnap === 0
+        const vok = vsnap <= 0 || this.y % vsnap === 0
+        return hok && vok
+    }
+
+    /**
+     * Moves the instance to a random, grid-snapped, collision-free position in
+     * the room (tries a number of times before giving up).
+     * @param hsnap - Horizontal grid size (use 1 for any pixel)
+     * @param vsnap - Vertical grid size
+     */
+    public move_random(hsnap: number, vsnap: number): void {
+        const rm = game_loop.room
+        if (!rm) return
+        const hs = hsnap > 0 ? hsnap : 1
+        const vs = vsnap > 0 ? vsnap : 1
+        const hcells = Math.max(1, Math.floor(rm.room_width / hs))
+        const vcells = Math.max(1, Math.floor(rm.room_height / vs))
+        for (let tries = 0; tries < 1000; tries++) {
+            const nx = irandom_range(0, hcells - 1) * hs
+            const ny = irandom_range(0, vcells - 1) * vs
+            if (this.place_free(nx, ny)) { this.x = nx; this.y = ny; return }
+        }
+    }
+
+    /**
+     * Like move_contact_solid but treats all instances as obstacles.
+     * @param hspd - Horizontal movement
+     * @param vspd - Vertical movement
+     * @returns True if the movement was blocked
+     */
+    public move_contact_all(hspd: number, vspd: number): boolean {
+        const tx = this.x + hspd, ty = this.y + vspd
+        if (this.place_empty(tx, ty)) { this.x = tx; this.y = ty; return false }
+        return true
+    }
+
+    /**
+     * Steps the instance in the given direction until it is no longer colliding
+     * with a solid (up to its bounding-box size in steps).
+     * @param hspd - Horizontal step
+     * @param vspd - Vertical step
+     */
+    public move_outside_solid(hspd: number, vspd: number): void {
+        this._move_outside(hspd, vspd, false)
+    }
+
+    /** As move_outside_solid but treats all instances as obstacles. */
+    public move_outside_all(hspd: number, vspd: number): void {
+        this._move_outside(hspd, vspd, true)
+    }
+
+    /** Steps in (hspd,vspd) until the position is free (or a step cap is hit). */
+    private _move_outside(hspd: number, vspd: number, all: boolean): void {
+        const free = (x: number, y: number): boolean => all ? this.place_empty(x, y) : this.place_free(x, y)
+        const step = Math.hypot(hspd, vspd)
+        if (step < 1e-9) return
+        const max_steps = 1000
+        for (let i = 0; i < max_steps; i++) {
+            if (free(this.x, this.y)) return
+            this.x += hspd
+            this.y += vspd
+        }
+    }
+
+    /**
+     * Bounces the instance off solid instances by reflecting its hspeed/vspeed.
+     * @param advanced - Reserved for slanted-wall handling (currently axis-aligned reflection)
+     */
+    public move_bounce_solid(advanced: boolean = false): void {
+        this._move_bounce(advanced, false)
+    }
+
+    /** As move_bounce_solid but bounces off all instances. */
+    public move_bounce_all(advanced: boolean = false): void {
+        this._move_bounce(advanced, true)
+    }
+
+    /** Axis-aligned bounce: flips the blocked velocity component(s). */
+    private _move_bounce(_advanced: boolean, all: boolean): void {
+        const free = (x: number, y: number): boolean => all ? this.place_empty(x, y) : this.place_free(x, y)
+        const nx = this.x + this.hspeed, ny = this.y + this.vspeed
+        if (free(nx, ny)) return  // path is clear — nothing to bounce off
+        const blocked_h = !free(this.x + this.hspeed, this.y)
+        const blocked_v = !free(this.x, this.y + this.vspeed)
+        if (blocked_h) this.hspeed = -this.hspeed
+        if (blocked_v) this.vspeed = -this.vspeed
+        if (!blocked_h && !blocked_v) { this.hspeed = -this.hspeed; this.vspeed = -this.vspeed }  // corner
+        this.speed = Math.hypot(this.hspeed, this.vspeed)
+        if (this.hspeed !== 0 || this.vspeed !== 0) {
+            this.direction = Math.atan2(-this.vspeed, this.hspeed) * (180 / Math.PI)
+            if (this.direction < 0) this.direction += 360
+        }
+    }
+
     // =========================================================================
     // Motion planning steppers (GMS mp_*_step)
     // =========================================================================
@@ -1137,6 +1326,12 @@ export class instance extends resource {
         this.draw_self()
     }
 
+    /** Called before the main Draw event (world space). Override to draw underlays. */
+    public on_draw_begin(): void {}
+
+    /** Called after the main Draw event (world space). Override to draw overlays. */
+    public on_draw_end(): void {}
+
     /** Called every frame to draw GUI elements (fixed to the screen, not the room). */
     public on_draw_gui(): void {}
 
@@ -1185,6 +1380,10 @@ export class instance extends resource {
     public on_intersect_boundary(): void {}
     /** A user-defined event (0–15), triggered by `event_user(index)`. */
     public on_user(index: number): void { void index }
+    /** Called once when `lives` transitions to ≤ 0. */
+    public on_no_more_lives(): void {}
+    /** Called once when `health` transitions to ≤ 0. */
+    public on_no_more_health(): void {}
 
     /** Triggers this instance's user event `index` (0–15) → `on_user(index)`. */
     public event_user(index: number): void {

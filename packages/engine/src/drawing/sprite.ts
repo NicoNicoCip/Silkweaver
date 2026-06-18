@@ -26,6 +26,13 @@ export class sprite extends resource {
     public width: number = 0             // Width of the first frame
     public height: number = 0            // Height of the first frame
 
+    // Collision mask rectangle in sprite-local pixels. Defaults of -1 mean
+    // "use the full sprite bounds"; the sprite editor / build can set a tighter box.
+    public mask_left:   number = -1      // Mask left edge (px from sprite left)
+    public mask_top:    number = -1      // Mask top edge
+    public mask_right:  number = -1      // Mask right edge
+    public mask_bottom: number = -1      // Mask bottom edge
+
     constructor() {
         super()
     }

@@ -71,6 +71,19 @@ export interface room_background_layer {
     visible_in_editor: boolean
 }
 
+/** A single placed tile in a room (a sub-rectangle of a background used as a tileset). */
+export interface room_tile {
+    id:      number    // unique within the room
+    bg_name: string    // background resource used as the tileset
+    left:    number    // source rectangle left in the tileset (px)
+    top:     number    // source rectangle top in the tileset (px)
+    width:   number    // tile/source width (px)
+    height:  number    // tile/source height (px)
+    x:       number    // room X position
+    y:       number    // room Y position
+    depth:   number    // draw depth (higher = further back)
+}
+
 /** A room view / viewport configuration. */
 export interface room_view {
     enabled: boolean
@@ -99,6 +112,9 @@ export interface room_file {
     instances:         room_instance[]
     backgrounds:       room_background_layer[]
     views:             room_view[]
+    tiles:             room_tile[]
+    bg_color:          string     // room solid background colour (CSS hex, e.g. '#000000')
+    bg_show_color:     boolean    // whether to clear the room to bg_color
     physics_world:     boolean
     physics_gravity_x: number
     physics_gravity_y: number

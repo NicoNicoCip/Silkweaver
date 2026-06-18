@@ -4,6 +4,9 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
 var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
@@ -24,9 +27,1431 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
+// packages/engine/dist/core/game_event.js
+var EVENT_TYPE, game_event;
+var init_game_event = __esm({
+  "packages/engine/dist/core/game_event.js"() {
+    "use strict";
+    init_engine_globals();
+    (function(EVENT_TYPE2) {
+      EVENT_TYPE2["none"] = "NONE";
+      EVENT_TYPE2["create"] = "CREATE";
+      EVENT_TYPE2["destroy"] = "DESTROY";
+      EVENT_TYPE2["step_begin"] = "STEP_BEGIN";
+      EVENT_TYPE2["step"] = "STEP";
+      EVENT_TYPE2["step_end"] = "STEP_END";
+      EVENT_TYPE2["collision"] = "COLLISION";
+      EVENT_TYPE2["keyboard"] = "KEYBOARD";
+      EVENT_TYPE2["mouse"] = "MOUSE";
+      EVENT_TYPE2["other"] = "OTHER";
+      EVENT_TYPE2["async"] = "ASYNC";
+      EVENT_TYPE2["draw_begin"] = "DRAW_BEGIN";
+      EVENT_TYPE2["draw"] = "DRAW";
+      EVENT_TYPE2["draw_end"] = "DRAW_END";
+      EVENT_TYPE2["draw_gui"] = "DRAW_GUI";
+    })(EVENT_TYPE || (EVENT_TYPE = {}));
+    game_event = class {
+      /**
+       * Creates a new game event.
+       * @param event - The function to call when the event fires
+       * @param type - The event type category
+       */
+      constructor(event = () => {
+      }, type = EVENT_TYPE.none) {
+        this.event = () => {
+        };
+        this.type = EVENT_TYPE.none;
+        this.event = event;
+        this.type = type;
+      }
+      /**
+       * Executes the event function.
+       */
+      run() {
+        this.event();
+      }
+    };
+  }
+});
+
+// packages/engine/dist/core/resource.js
+var resource;
+var init_resource = __esm({
+  "packages/engine/dist/core/resource.js"() {
+    "use strict";
+    init_engine_globals();
+    resource = class _resource {
+      /**
+       * Increments and returns the next available resource ID.
+       * @returns The next unique resource ID
+       */
+      incrementID() {
+        return _resource.gid++;
+      }
+      constructor() {
+        this.id = this.incrementID();
+        this.name = this.constructor.name;
+        _resource.all.set(this.id, this);
+      }
+      static removeByID(id) {
+        _resource.all.delete(id);
+      }
+      static findByID(id) {
+        return _resource.all.get(id);
+      }
+    };
+    resource.gid = 0;
+    resource.all = /* @__PURE__ */ new Map();
+  }
+});
+
+// packages/engine/dist/core/room.js
+var room;
+var init_room = __esm({
+  "packages/engine/dist/core/room.js"() {
+    "use strict";
+    init_engine_globals();
+    init_game_event();
+    init_game_loop();
+    init_resource();
+    room = class _room extends resource {
+      constructor() {
+        super();
+        this.room_width = 640;
+        this.room_height = 480;
+        this.room_caption = `Room ${this.id}`;
+        this.room_speed = 60;
+        this.room_persistent = false;
+        this.room_previous = 0;
+        this.room_next = 0;
+        this.creation_code = null;
+        this.background_visible = [];
+        this.background_foreground = [];
+        this.background_index = [];
+        this.background_x = [];
+        this.background_y = [];
+        this.background_htiled = [];
+        this.background_vtiled = [];
+        this.background_hspeed = [];
+        this.background_vspeed = [];
+        this.background_color = [];
+        this.background_stretch = [];
+        this.background_show_color = true;
+        this.background_solid_color = 0;
+        this._bg_scroll_x = [];
+        this._bg_scroll_y = [];
+        this.view_enabled = false;
+        this.view_current = 0;
+        this.view_visible = [];
+        this.view_xview = [];
+        this.view_yview = [];
+        this.view_wview = [];
+        this.view_hview = [];
+        this.view_xport = [];
+        this.view_yport = [];
+        this.view_wport = [];
+        this.view_hport = [];
+        this.view_hborder = [];
+        this.view_vborder = [];
+        this.view_hspeed = [];
+        this.view_vspeed = [];
+        this.view_object = [];
+        this.tiles = [];
+        this.all = /* @__PURE__ */ new Map();
+      }
+      // =========================================================================
+      // Room Navigation
+      // =========================================================================
+      /**
+       * Transitions to the specified room.
+       * @param target - The room to go to (ID or room reference)
+       */
+      room_goto(target) {
+        if (typeof target === "number") {
+          const potential = resource.findByID(target);
+          if (typeof potential === "undefined") {
+            console.error(`ID ${target} does not exist.`);
+            return;
+          }
+          if (potential.constructor.name !== "room") {
+            console.error(`ID ${target} is not a room.`);
+            return;
+          }
+          game_loop.change_room(potential);
+          return;
+        }
+        game_loop.change_room(target);
+      }
+      /**
+       * Transitions to the previous room in the room order.
+       */
+      room_goto_previous() {
+        this.room_goto(this.room_previous);
+      }
+      /**
+       * Transitions to the next room in the room order.
+       */
+      room_goto_next() {
+        this.room_goto(this.room_next);
+      }
+      /**
+       * Restarts the current room, resetting all non-persistent instances.
+       */
+      room_restart() {
+        this.room_goto(this);
+      }
+      // =========================================================================
+      // Room Queries
+      // =========================================================================
+      /**
+       * Checks if a room with the given ID exists.
+       * @param id - The room ID to check
+       * @returns True if the room exists
+       */
+      room_exists(id) {
+        const res = resource.findByID(id);
+        if (typeof res === "undefined") {
+          return false;
+        }
+        if (res.constructor.name !== "room") {
+          return false;
+        }
+        return true;
+      }
+      // =========================================================================
+      // Instance Management
+      // =========================================================================
+      /**
+       * Adds an instance to the room at design time (before room starts).
+       * @param x - X position for the instance
+       * @param y - Y position for the instance
+       * @param obj - The instance to add
+       */
+      room_instance_add(x, y, obj) {
+        obj.x = x;
+        obj.y = y;
+        obj.xstart = x;
+        obj.ystart = y;
+        this.all.set(obj.id, obj);
+      }
+      /**
+       * Adds an instance to this room at runtime.
+       * @param inst - The instance to add
+       */
+      instance_add(inst) {
+        this.all.set(inst.id, inst);
+      }
+      /**
+       * Removes an instance from this room by ID.
+       * @param id - The instance ID to remove
+       * @returns True if the instance was found and removed
+       */
+      instance_remove(id) {
+        return this.all.delete(id);
+      }
+      /**
+       * Gets an instance from this room by ID.
+       * @param id - The instance ID to find
+       * @returns The instance, or undefined if not found
+       */
+      instance_get(id) {
+        return this.all.get(id);
+      }
+      /**
+       * Gets all instances in this room.
+       * @returns Array of all instances
+       */
+      instance_get_all() {
+        return Array.from(this.all.values());
+      }
+      /**
+       * Gets the number of instances in this room.
+       * @returns The instance count
+       */
+      instance_count() {
+        return this.all.size;
+      }
+      /**
+       * Removes all instances from the room's design-time instance list.
+       */
+      room_instance_clear() {
+        this.all.clear();
+      }
+      /**
+       * Registers all instances in this room with the game loop.
+       * Called when entering a room to set up event handlers.
+       */
+      register_all_instances() {
+        for (const inst of this.all.values()) {
+          inst.register_events();
+          game_loop.register(EVENT_TYPE.create, inst.on_create.bind(inst));
+        }
+      }
+      // =========================================================================
+      // Tile Management
+      // =========================================================================
+      /**
+       * Adds a tile to the room at design time.
+       * @param x - X position for the tile
+       * @param y - Y position for the tile
+       * @param background - Background resource containing the tile
+       * @param left - Left offset in the background
+       * @param top - Top offset in the background
+       * @param width - Width of the tile
+       * @param height - Height of the tile
+       * @param depth - Drawing depth of the tile
+       * @returns The unique ID of the created tile
+       */
+      room_tile_add(x, y, background2, left, top, width, height, depth) {
+        return this.tile_add(background2, left, top, width, height, x, y, depth);
+      }
+      /**
+       * Adds a tile to the room at design time, with extended options.
+       * @param x - X position for the tile
+       * @param y - Y position for the tile
+       * @param background - Background resource containing the tile
+       * @param left - Left offset in the background
+       * @param top - Top offset in the background
+       * @param width - Width of the tile
+       * @param height - Height of the tile
+       * @param depth - Drawing depth of the tile
+       * @param xscale - Horizontal scale factor
+       * @param yscale - Vertical scale factor
+       * @param alpha - Transparency (0-1)
+       * @returns The unique ID of the created tile
+       */
+      room_tile_add_ext(x, y, background2, left, top, width, height, depth, xscale, yscale, alpha) {
+        const id = _room.next_tile_id++;
+        this.tiles.push({
+          id,
+          x,
+          y,
+          background: background2,
+          left,
+          top,
+          width,
+          height,
+          depth,
+          xscale,
+          yscale,
+          alpha,
+          visible: true
+        });
+        return id;
+      }
+      /**
+       * Removes all tiles from the room's design-time tile list.
+       */
+      room_tile_clear() {
+        this.tiles = [];
+      }
+      /**
+       * Adds a tile at runtime and returns its unique ID.
+       * @param background - Background resource containing the tile
+       * @param left - Left offset in the background
+       * @param top - Top offset in the background
+       * @param width - Width of the tile
+       * @param height - Height of the tile
+       * @param x - X position in the room
+       * @param y - Y position in the room
+       * @param depth - Drawing depth
+       * @returns The unique ID of the created tile
+       */
+      /**
+       * Returns the room's tile list (used by the renderer to draw tile layers).
+       * @returns The array of tiles in this room
+       */
+      get_tiles() {
+        return this.tiles;
+      }
+      tile_add(background2, left, top, width, height, x, y, depth) {
+        const id = _room.next_tile_id++;
+        this.tiles.push({
+          id,
+          x,
+          y,
+          background: background2,
+          left,
+          top,
+          width,
+          height,
+          depth,
+          xscale: 1,
+          yscale: 1,
+          alpha: 1,
+          visible: true
+        });
+        return id;
+      }
+      /**
+       * Deletes a tile by its ID.
+       * @param id - The tile ID to delete
+       * @returns True if the tile was found and deleted
+       */
+      tile_delete(id) {
+        const index = this.tiles.findIndex((t) => t.id === id);
+        if (index === -1)
+          return false;
+        this.tiles.splice(index, 1);
+        return true;
+      }
+      /**
+       * Checks if a tile with the given ID exists.
+       * @param id - The tile ID to check
+       * @returns True if the tile exists
+       */
+      tile_exists(id) {
+        return this.tiles.some((t) => t.id === id);
+      }
+      /**
+       * Gets the X position of a tile.
+       * @param id - The tile ID
+       * @returns The X position, or 0 if not found
+       */
+      tile_get_x(id) {
+        return this.tiles.find((t) => t.id === id)?.x ?? 0;
+      }
+      /**
+       * Gets the Y position of a tile.
+       * @param id - The tile ID
+       * @returns The Y position, or 0 if not found
+       */
+      tile_get_y(id) {
+        return this.tiles.find((t) => t.id === id)?.y ?? 0;
+      }
+      /**
+       * Gets the depth of a tile.
+       * @param id - The tile ID
+       * @returns The depth, or 0 if not found
+       */
+      tile_get_depth(id) {
+        return this.tiles.find((t) => t.id === id)?.depth ?? 0;
+      }
+      /**
+       * Gets the visibility of a tile.
+       * @param id - The tile ID
+       * @returns True if visible, false if not found or hidden
+       */
+      tile_get_visible(id) {
+        return this.tiles.find((t) => t.id === id)?.visible ?? false;
+      }
+      /**
+       * Sets the position of a tile.
+       * @param id - The tile ID
+       * @param x - New X position
+       * @param y - New Y position
+       */
+      tile_set_position(id, x, y) {
+        const tile = this.tiles.find((t) => t.id === id);
+        if (tile) {
+          tile.x = x;
+          tile.y = y;
+        }
+      }
+      /**
+       * Sets the depth of a tile.
+       * @param id - The tile ID
+       * @param depth - New depth value
+       */
+      tile_set_depth(id, depth) {
+        const tile = this.tiles.find((t) => t.id === id);
+        if (tile)
+          tile.depth = depth;
+      }
+      /**
+       * Sets the visibility of a tile.
+       * @param id - The tile ID
+       * @param visible - Whether the tile should be visible
+       */
+      tile_set_visible(id, visible) {
+        const tile = this.tiles.find((t) => t.id === id);
+        if (tile)
+          tile.visible = visible;
+      }
+      /**
+       * Sets the scale of a tile.
+       * @param id - The tile ID
+       * @param xscale - Horizontal scale factor
+       * @param yscale - Vertical scale factor
+       */
+      tile_set_scale(id, xscale, yscale) {
+        const tile = this.tiles.find((t) => t.id === id);
+        if (tile) {
+          tile.xscale = xscale;
+          tile.yscale = yscale;
+        }
+      }
+      /**
+       * Sets the alpha (transparency) of a tile.
+       * @param id - The tile ID
+       * @param alpha - Alpha value (0-1)
+       */
+      tile_set_alpha(id, alpha) {
+        const tile = this.tiles.find((t) => t.id === id);
+        if (tile)
+          tile.alpha = alpha;
+      }
+      /**
+       * Sets the background region of a tile.
+       * @param id - The tile ID
+       * @param background - Background resource ID
+       * @param left - Left offset in the background
+       * @param top - Top offset in the background
+       * @param width - Width of the tile region
+       * @param height - Height of the tile region
+       */
+      tile_set_background(id, background2, left, top, width, height) {
+        const tile = this.tiles.find((t) => t.id === id);
+        if (tile) {
+          tile.background = background2;
+          tile.left = left;
+          tile.top = top;
+          tile.width = width;
+          tile.height = height;
+        }
+      }
+      /**
+       * Deletes all tiles at a specific depth.
+       * @param depth - The depth to clear
+       */
+      tile_layer_delete(depth) {
+        this.tiles = this.tiles.filter((t) => t.depth !== depth);
+      }
+      /**
+       * Shifts all tiles at a specific depth by the given amount.
+       * @param depth - The depth layer to shift
+       * @param x - Horizontal shift amount
+       * @param y - Vertical shift amount
+       */
+      tile_layer_shift(depth, x, y) {
+        this.tiles.filter((t) => t.depth === depth).forEach((t) => {
+          t.x += x;
+          t.y += y;
+        });
+      }
+      /**
+       * Finds a tile at the given position and depth.
+       * @param x - X position to check
+       * @param y - Y position to check
+       * @param depth - Depth to check
+       * @returns The tile ID, or -1 if not found
+       */
+      tile_layer_find(x, y, depth) {
+        const tile = this.tiles.find((t) => t.depth === depth && x >= t.x && x < t.x + t.width * t.xscale && y >= t.y && y < t.y + t.height * t.yscale);
+        return tile?.id ?? -1;
+      }
+      // =========================================================================
+      // Background Management
+      // =========================================================================
+      /**
+       * Sets the background for a specific layer in this room.
+       * @param index - Background layer index (0-7)
+       * @param visible - Whether the background is visible
+       * @param foreground - Whether it draws in front of instances
+       * @param background - Background resource ID
+       * @param x - X offset
+       * @param y - Y offset
+       * @param htiled - Whether to tile horizontally
+       * @param vtiled - Whether to tile vertically
+       * @param hspeed - Horizontal scroll speed
+       * @param vspeed - Vertical scroll speed
+       */
+      room_set_background(index, visible, foreground, background2, x, y, htiled, vtiled, hspeed, vspeed) {
+        this.background_visible[index] = visible;
+        this.background_foreground[index] = foreground;
+        this.background_index[index] = background2;
+        this.background_x[index] = x;
+        this.background_y[index] = y;
+        this.background_htiled[index] = htiled;
+        this.background_vtiled[index] = vtiled;
+        this.background_hspeed[index] = hspeed;
+        this.background_vspeed[index] = vspeed;
+      }
+      /**
+       * Sets the background color for a specific layer.
+       * @param index - Background layer index
+       * @param color - The color value
+       */
+      room_set_background_color(index, color) {
+        this.background_color[index] = color;
+      }
+      // =========================================================================
+      // View Management
+      // =========================================================================
+      /**
+       * Configures a view for this room (design-time).
+       * @param index - View index
+       * @param visible - Whether the view is enabled
+       * @param xview - X position of the view in the room
+       * @param yview - Y position of the view in the room
+       * @param wview - Width of the view in the room
+       * @param hview - Height of the view in the room
+       * @param xport - X position of the viewport on screen
+       * @param yport - Y position of the viewport on screen
+       * @param wport - Width of the viewport on screen
+       * @param hport - Height of the viewport on screen
+       * @param hborder - Horizontal border for object following
+       * @param vborder - Vertical border for object following
+       * @param hspeed - Max horizontal speed when following
+       * @param vspeed - Max vertical speed when following
+       * @param target - Object instance to follow (-1 for none)
+       */
+      room_set_view(index, visible, xview, yview, wview, hview, xport, yport, wport, hport, hborder, vborder, hspeed, vspeed, target) {
+        this.view_visible[index] = visible;
+        this.view_xview[index] = xview;
+        this.view_yview[index] = yview;
+        this.view_wview[index] = wview;
+        this.view_hview[index] = hview;
+        this.view_xport[index] = xport;
+        this.view_yport[index] = yport;
+        this.view_wport[index] = wport;
+        this.view_hport[index] = hport;
+        this.view_hborder[index] = hborder;
+        this.view_vborder[index] = vborder;
+        this.view_hspeed[index] = hspeed;
+        this.view_vspeed[index] = vspeed;
+        this.view_object[index] = target;
+      }
+      /**
+       * Enables or disables the view system for this room.
+       * @param enabled - Whether views are enabled
+       */
+      room_set_view_enabled(enabled) {
+        this.view_enabled = enabled;
+      }
+      // =========================================================================
+      // Runtime View Functions
+      // =========================================================================
+      /**
+       * Gets the X position of a view in room coordinates.
+       * @param index - View index
+       * @returns The X position of the view
+       */
+      view_get_xview(index) {
+        return this.view_xview[index] ?? 0;
+      }
+      /**
+       * Gets the Y position of a view in room coordinates.
+       * @param index - View index
+       * @returns The Y position of the view
+       */
+      view_get_yview(index) {
+        return this.view_yview[index] ?? 0;
+      }
+      /**
+       * Gets the width of a view.
+       * @param index - View index
+       * @returns The width of the view
+       */
+      view_get_wview(index) {
+        return this.view_wview[index] ?? 0;
+      }
+      /**
+       * Gets the height of a view.
+       * @param index - View index
+       * @returns The height of the view
+       */
+      view_get_hview(index) {
+        return this.view_hview[index] ?? 0;
+      }
+      /**
+       * Sets the position of a view at runtime.
+       * @param index - View index
+       * @param x - New X position
+       * @param y - New Y position
+       */
+      view_set_position(index, x, y) {
+        this.view_xview[index] = x;
+        this.view_yview[index] = y;
+      }
+      /**
+       * Sets the size of a view at runtime.
+       * @param index - View index
+       * @param w - New width
+       * @param h - New height
+       */
+      view_set_size(index, w, h) {
+        this.view_wview[index] = w;
+        this.view_hview[index] = h;
+      }
+      /**
+       * Sets the viewport position on screen.
+       * @param index - View index
+       * @param x - X position on screen
+       * @param y - Y position on screen
+       */
+      view_set_port_position(index, x, y) {
+        this.view_xport[index] = x;
+        this.view_yport[index] = y;
+      }
+      /**
+       * Sets the viewport size on screen.
+       * @param index - View index
+       * @param w - Width on screen
+       * @param h - Height on screen
+       */
+      view_set_port_size(index, w, h) {
+        this.view_wport[index] = w;
+        this.view_hport[index] = h;
+      }
+      /**
+       * Sets the object for a view to follow.
+       * @param index - View index
+       * @param obj - Instance ID to follow (-1 for none)
+       */
+      view_set_object(index, obj) {
+        this.view_object[index] = obj;
+      }
+      /**
+       * Sets the border area for view following.
+       * @param index - View index
+       * @param hborder - Horizontal border in pixels
+       * @param vborder - Vertical border in pixels
+       */
+      view_set_border(index, hborder, vborder) {
+        this.view_hborder[index] = hborder;
+        this.view_vborder[index] = vborder;
+      }
+      /**
+       * Sets the maximum speed for view following.
+       * @param index - View index
+       * @param hspeed - Max horizontal speed
+       * @param vspeed - Max vertical speed
+       */
+      view_set_speed(index, hspeed, vspeed) {
+        this.view_hspeed[index] = hspeed;
+        this.view_vspeed[index] = vspeed;
+      }
+      /**
+       * Converts a screen X coordinate to room coordinates for a specific view.
+       * @param index - View index
+       * @param x - Screen X coordinate
+       * @returns Room X coordinate
+       */
+      view_screen_to_room_x(index, x) {
+        const xport = this.view_xport[index] ?? 0;
+        const wport = this.view_wport[index] ?? 1;
+        const xview = this.view_xview[index] ?? 0;
+        const wview = this.view_wview[index] ?? 1;
+        return xview + (x - xport) / wport * wview;
+      }
+      /**
+       * Converts a screen Y coordinate to room coordinates for a specific view.
+       * @param index - View index
+       * @param y - Screen Y coordinate
+       * @returns Room Y coordinate
+       */
+      view_screen_to_room_y(index, y) {
+        const yport = this.view_yport[index] ?? 0;
+        const hport = this.view_hport[index] ?? 1;
+        const yview = this.view_yview[index] ?? 0;
+        const hview = this.view_hview[index] ?? 1;
+        return yview + (y - yport) / hport * hview;
+      }
+      /**
+       * Converts a room X coordinate to screen coordinates for a specific view.
+       * @param index - View index
+       * @param x - Room X coordinate
+       * @returns Screen X coordinate
+       */
+      view_room_to_screen_x(index, x) {
+        const xport = this.view_xport[index] ?? 0;
+        const wport = this.view_wport[index] ?? 1;
+        const xview = this.view_xview[index] ?? 0;
+        const wview = this.view_wview[index] ?? 1;
+        return xport + (x - xview) / wview * wport;
+      }
+      /**
+       * Converts a room Y coordinate to screen coordinates for a specific view.
+       * @param index - View index
+       * @param y - Room Y coordinate
+       * @returns Screen Y coordinate
+       */
+      view_room_to_screen_y(index, y) {
+        const yport = this.view_yport[index] ?? 0;
+        const hport = this.view_hport[index] ?? 1;
+        const yview = this.view_yview[index] ?? 0;
+        const hview = this.view_hview[index] ?? 1;
+        return yport + (y - yview) / hview * hport;
+      }
+    };
+    room.next_tile_id = 0;
+  }
+});
+
+// packages/engine/dist/input/keyboard.js
+function keyboard_check(key) {
+  return keyboard_manager.check(key);
+}
+function keyboard_check_pressed(key) {
+  return keyboard_manager.check_pressed(key);
+}
+function keyboard_check_released(key) {
+  return keyboard_manager.check_released(key);
+}
+var vk_nokey, vk_anykey, vk_space, vk_left, vk_right, keyboard_manager;
+var init_keyboard = __esm({
+  "packages/engine/dist/input/keyboard.js"() {
+    "use strict";
+    init_engine_globals();
+    vk_nokey = 0;
+    vk_anykey = 1;
+    vk_space = 32;
+    vk_left = 37;
+    vk_right = 39;
+    keyboard_manager = class {
+      /**
+       * Attaches keyboard listeners to the window.
+       * Called once by input_manager.init().
+       */
+      static attach() {
+        if (this._attached)
+          return;
+        window.addEventListener("keydown", this._on_keydown);
+        window.addEventListener("keyup", this._on_keyup);
+        window.addEventListener("keypress", this._on_keypress);
+        this._attached = true;
+      }
+      /**
+       * Detaches keyboard listeners from the window.
+       */
+      static detach() {
+        if (!this._attached)
+          return;
+        window.removeEventListener("keydown", this._on_keydown);
+        window.removeEventListener("keyup", this._on_keyup);
+        window.removeEventListener("keypress", this._on_keypress);
+        this._attached = false;
+      }
+      static _handle_down(e) {
+        const code = this._map(e.keyCode);
+        if (!this._held.has(code)) {
+          this._pressed.add(code);
+          this.keyboard_lastkey = this.keyboard_key;
+          this.keyboard_key = code;
+        }
+        this._held.add(code);
+      }
+      static _handle_up(e) {
+        const code = this._map(e.keyCode);
+        this._held.delete(code);
+        this._released.add(code);
+      }
+      static _handle_press(e) {
+        if (e.key.length === 1) {
+          this.keyboard_lastchar = e.key;
+          this.keyboard_string += e.key;
+        }
+      }
+      static _map(code) {
+        return this._key_map.get(code) ?? code;
+      }
+      /**
+       * Clears the pressed and released sets at the end of each step.
+       * Called by the game loop after all events have fired.
+       */
+      static end_step() {
+        this._pressed.clear();
+        this._released.clear();
+      }
+      /** Returns true if the key is currently held down. */
+      static check(key) {
+        if (key === vk_anykey)
+          return this._held.size > 0;
+        if (key === vk_nokey)
+          return this._held.size === 0;
+        return this._held.has(key);
+      }
+      /** Returns true if the key was pressed this step. */
+      static check_pressed(key) {
+        if (key === vk_anykey)
+          return this._pressed.size > 0;
+        if (key === vk_nokey)
+          return false;
+        return this._pressed.has(key);
+      }
+      /** Returns true if the key was released this step. */
+      static check_released(key) {
+        if (key === vk_anykey)
+          return this._released.size > 0;
+        if (key === vk_nokey)
+          return false;
+        return this._released.has(key);
+      }
+      /** Clears the held/pressed/released state for a specific key. */
+      static clear(key) {
+        this._held.delete(key);
+        this._pressed.delete(key);
+        this._released.delete(key);
+      }
+      /** Clears all keyboard state (held + pressed + released). */
+      static clear_all() {
+        this._held.clear();
+        this._pressed.clear();
+        this._released.clear();
+      }
+      /** Simulates pressing a key. */
+      static key_press(key) {
+        if (!this._held.has(key))
+          this._pressed.add(key);
+        this._held.add(key);
+        this.keyboard_lastkey = this.keyboard_key;
+        this.keyboard_key = key;
+      }
+      /** Simulates releasing a key. */
+      static key_release(key) {
+        this._held.delete(key);
+        this._released.add(key);
+      }
+      /** Remaps key1 to behave as key2. */
+      static set_map(key1, key2) {
+        this._key_map.set(key1, key2);
+      }
+      /** Returns the mapped key code for a given input code. */
+      static get_map(key) {
+        return this._key_map.get(key) ?? key;
+      }
+      /** Clears all key remappings. */
+      static unset_map() {
+        this._key_map.clear();
+      }
+    };
+    keyboard_manager._held = /* @__PURE__ */ new Set();
+    keyboard_manager._pressed = /* @__PURE__ */ new Set();
+    keyboard_manager._released = /* @__PURE__ */ new Set();
+    keyboard_manager._key_map = /* @__PURE__ */ new Map();
+    keyboard_manager.keyboard_key = vk_nokey;
+    keyboard_manager.keyboard_lastkey = vk_nokey;
+    keyboard_manager.keyboard_lastchar = "";
+    keyboard_manager.keyboard_string = "";
+    keyboard_manager._attached = false;
+    keyboard_manager._on_keydown = (e) => keyboard_manager._handle_down(e);
+    keyboard_manager._on_keyup = (e) => keyboard_manager._handle_up(e);
+    keyboard_manager._on_keypress = (e) => keyboard_manager._handle_press(e);
+  }
+});
+
+// packages/engine/dist/input/mouse.js
+function mouse_check_button_pressed(button) {
+  return mouse_manager.check_pressed(button);
+}
+function mouse_check_button_released(button) {
+  return mouse_manager.check_released(button);
+}
+function window_mouse_get_x() {
+  return mouse_manager.window_x;
+}
+function window_mouse_get_y() {
+  return mouse_manager.window_y;
+}
+var mb_none, mb_left, mb_right, mb_middle, mb_any, mouse_manager;
+var init_mouse = __esm({
+  "packages/engine/dist/input/mouse.js"() {
+    "use strict";
+    init_engine_globals();
+    mb_none = 0;
+    mb_left = 1;
+    mb_right = 2;
+    mb_middle = 3;
+    mb_any = 4;
+    mouse_manager = class {
+      /**
+       * Attaches mouse listeners to a canvas element.
+       * @param canvas - The game canvas
+       */
+      static attach(canvas) {
+        if (this._attached)
+          return;
+        this._canvas = canvas;
+        canvas.addEventListener("mousedown", this._on_mousedown);
+        canvas.addEventListener("mouseup", this._on_mouseup);
+        canvas.addEventListener("mousemove", this._on_mousemove);
+        canvas.addEventListener("wheel", this._on_wheel, { passive: true });
+        canvas.addEventListener("contextmenu", this._on_contextmenu);
+        this._attached = true;
+      }
+      /**
+       * Detaches mouse listeners from the canvas.
+       */
+      static detach() {
+        if (!this._attached || !this._canvas)
+          return;
+        this._canvas.removeEventListener("mousedown", this._on_mousedown);
+        this._canvas.removeEventListener("mouseup", this._on_mouseup);
+        this._canvas.removeEventListener("mousemove", this._on_mousemove);
+        this._canvas.removeEventListener("wheel", this._on_wheel);
+        this._canvas.removeEventListener("contextmenu", this._on_contextmenu);
+        this._attached = false;
+        this._canvas = null;
+      }
+      static _get_button(e) {
+        switch (e.button) {
+          case 0:
+            return mb_left;
+          case 1:
+            return mb_middle;
+          case 2:
+            return mb_right;
+          default:
+            return mb_none;
+        }
+      }
+      static _handle_down(e) {
+        const btn = this._get_button(e);
+        if (btn === mb_none)
+          return;
+        if (!this._held.has(btn))
+          this._pressed.add(btn);
+        this._held.add(btn);
+        this.mouse_lastbutton = this.mouse_button;
+        this.mouse_button = btn;
+        this._update_position(e);
+      }
+      static _handle_up(e) {
+        const btn = this._get_button(e);
+        if (btn === mb_none)
+          return;
+        this._held.delete(btn);
+        this._released.add(btn);
+        if (this._held.size === 0)
+          this.mouse_button = mb_none;
+        this._update_position(e);
+      }
+      static _handle_move(e) {
+        this._update_position(e);
+      }
+      static _handle_wheel(e) {
+        if (e.deltaY < 0)
+          this._wheel_up = true;
+        else
+          this._wheel_down = true;
+      }
+      static _update_position(e) {
+        if (!this._canvas)
+          return;
+        const rect = this._canvas.getBoundingClientRect();
+        const scaleX = this._canvas.width / rect.width;
+        const scaleY = this._canvas.height / rect.height;
+        this.window_x = (e.clientX - rect.left) * scaleX;
+        this.window_y = (e.clientY - rect.top) * scaleY;
+      }
+      /**
+       * Updates room-space mouse coordinates using the current view offset.
+       * Called once per step by the game loop before keyboard/mouse events fire.
+       * @param view_x - Current view X offset in the room
+       * @param view_y - Current view Y offset in the room
+       */
+      static update_room_position(view_x, view_y) {
+        this.mouse_x = this.window_x + view_x;
+        this.mouse_y = this.window_y + view_y;
+      }
+      /** Clears pressed/released state and wheel flags at the end of each step. */
+      static end_step() {
+        this._pressed.clear();
+        this._released.clear();
+        this._wheel_up = false;
+        this._wheel_down = false;
+      }
+      /** Returns true if button is held. */
+      static check(btn) {
+        if (btn === mb_any)
+          return this._held.size > 0;
+        if (btn === mb_none)
+          return this._held.size === 0;
+        return this._held.has(btn);
+      }
+      /** Returns true if button was pressed this step. */
+      static check_pressed(btn) {
+        if (btn === mb_any)
+          return this._pressed.size > 0;
+        if (btn === mb_none)
+          return false;
+        return this._pressed.has(btn);
+      }
+      /** Returns true if button was released this step. */
+      static check_released(btn) {
+        if (btn === mb_any)
+          return this._released.size > 0;
+        if (btn === mb_none)
+          return false;
+        return this._released.has(btn);
+      }
+      /** Clears state for a specific button. */
+      static clear(btn) {
+        this._held.delete(btn);
+        this._pressed.delete(btn);
+        this._released.delete(btn);
+      }
+      /** Clears all mouse button + wheel state. */
+      static clear_all() {
+        this._held.clear();
+        this._pressed.clear();
+        this._released.clear();
+        this._wheel_up = false;
+        this._wheel_down = false;
+        this.mouse_button = mb_none;
+      }
+      /** Returns true if the wheel scrolled up this step. */
+      static wheel_up() {
+        return this._wheel_up;
+      }
+      /** Returns true if the wheel scrolled down this step. */
+      static wheel_down() {
+        return this._wheel_down;
+      }
+    };
+    mouse_manager._held = /* @__PURE__ */ new Set();
+    mouse_manager._pressed = /* @__PURE__ */ new Set();
+    mouse_manager._released = /* @__PURE__ */ new Set();
+    mouse_manager._canvas = null;
+    mouse_manager.window_x = 0;
+    mouse_manager.window_y = 0;
+    mouse_manager.mouse_x = 0;
+    mouse_manager.mouse_y = 0;
+    mouse_manager.mouse_button = mb_none;
+    mouse_manager.mouse_lastbutton = mb_none;
+    mouse_manager._wheel_up = false;
+    mouse_manager._wheel_down = false;
+    mouse_manager._attached = false;
+    mouse_manager._on_mousedown = (e) => mouse_manager._handle_down(e);
+    mouse_manager._on_mouseup = (e) => mouse_manager._handle_up(e);
+    mouse_manager._on_mousemove = (e) => mouse_manager._handle_move(e);
+    mouse_manager._on_wheel = (e) => mouse_manager._handle_wheel(e);
+    mouse_manager._on_contextmenu = (e) => e.preventDefault();
+  }
+});
+
+// packages/engine/dist/input/gamepad.js
+var BUTTON_THRESHOLD, gamepad_manager;
+var init_gamepad = __esm({
+  "packages/engine/dist/input/gamepad.js"() {
+    "use strict";
+    init_engine_globals();
+    BUTTON_THRESHOLD = 0.5;
+    gamepad_manager = class {
+      /**
+       * Polls the Gamepad API and refreshes all state snapshots.
+       * Must be called every step before gamepad functions are queried.
+       */
+      static poll() {
+        if (!navigator.getGamepads)
+          return;
+        const pads = navigator.getGamepads();
+        for (let i = 0; i < pads.length; i++) {
+          const pad = pads[i];
+          const prev = this._states.get(i);
+          if (!pad) {
+            if (prev)
+              prev.connected = false;
+            continue;
+          }
+          const buttons_held = pad.buttons.map((b) => b.pressed || b.value > BUTTON_THRESHOLD);
+          const axes = Array.from(pad.axes);
+          if (!prev) {
+            this._states.set(i, {
+              buttons_held,
+              buttons_prev: new Array(buttons_held.length).fill(false),
+              axes,
+              connected: true,
+              id: pad.id
+            });
+          } else {
+            prev.buttons_prev = prev.buttons_held;
+            prev.buttons_held = buttons_held;
+            prev.axes = axes;
+            prev.connected = true;
+            prev.id = pad.id;
+          }
+        }
+      }
+      /** Returns true if the Gamepad API is supported by the browser. */
+      static is_supported() {
+        return typeof navigator.getGamepads === "function";
+      }
+      /** Returns true if device index `device` is connected. */
+      static is_connected(device) {
+        return this._states.get(device)?.connected ?? false;
+      }
+      /** Returns the number of connected gamepad slots (may include gaps). */
+      static get_device_count() {
+        return this._states.size;
+      }
+      /** Returns the device description string (controller name). */
+      static get_description(device) {
+        return this._states.get(device)?.id ?? "";
+      }
+      /** Returns the number of axes on device. */
+      static axis_count(device) {
+        return this._states.get(device)?.axes.length ?? 0;
+      }
+      /**
+       * Returns the current value of an axis (-1 to 1, dead zone not applied).
+       * @param device - Gamepad index
+       * @param axis - Axis index (use gp_axis* constants)
+       */
+      static axis_value(device, axis) {
+        const state = this._states.get(device);
+        if (!state?.connected)
+          return 0;
+        return state.axes[axis] ?? 0;
+      }
+      /** Returns the number of buttons on device. */
+      static button_count(device) {
+        return this._states.get(device)?.buttons_held.length ?? 0;
+      }
+      /** Returns true if button is currently held. */
+      static button_check(device, button) {
+        const state = this._states.get(device);
+        if (!state?.connected)
+          return false;
+        return state.buttons_held[button] ?? false;
+      }
+      /** Returns true if button was pressed this step (was up last step, down now). */
+      static button_check_pressed(device, button) {
+        const state = this._states.get(device);
+        if (!state?.connected)
+          return false;
+        return (state.buttons_held[button] ?? false) && !(state.buttons_prev[button] ?? false);
+      }
+      /** Returns true if button was released this step. */
+      static button_check_released(device, button) {
+        const state = this._states.get(device);
+        if (!state?.connected)
+          return false;
+        return !(state.buttons_held[button] ?? false) && (state.buttons_prev[button] ?? false);
+      }
+      /**
+       * Returns the analog button value (0 to 1) for triggers or 0/1 for digital buttons.
+       * @param device - Gamepad index
+       * @param button - Button index
+       */
+      static button_value(device, button) {
+        if (!navigator.getGamepads)
+          return 0;
+        const pad = navigator.getGamepads()[device];
+        if (!pad)
+          return 0;
+        return pad.buttons[button]?.value ?? 0;
+      }
+      /**
+       * Sets controller vibration (rumble).
+       * @param device - Gamepad index
+       * @param left - Left motor strength (0–1)
+       * @param right - Right motor strength (0–1)
+       */
+      static set_vibration(device, left, right) {
+        if (!navigator.getGamepads)
+          return;
+        const pad = navigator.getGamepads()[device];
+        if (!pad)
+          return;
+        if (typeof pad.vibrationActuator?.playEffect === "function") {
+          pad.vibrationActuator.playEffect("dual-rumble", {
+            startDelay: 0,
+            duration: 100,
+            weakMagnitude: right,
+            strongMagnitude: left
+          });
+        }
+      }
+    };
+    gamepad_manager._states = /* @__PURE__ */ new Map();
+  }
+});
+
+// packages/engine/dist/input/touch.js
+function make_touch_point() {
+  return { x: 0, y: 0, held: false, pressed: false, released: false };
+}
+var MAX_TOUCH_POINTS, touch_manager;
+var init_touch = __esm({
+  "packages/engine/dist/input/touch.js"() {
+    "use strict";
+    init_engine_globals();
+    MAX_TOUCH_POINTS = 11;
+    touch_manager = class {
+      /**
+       * Attaches touch listeners to a canvas element.
+       * @param canvas - The canvas receiving touch events
+       */
+      static attach(canvas) {
+        if (this._attached)
+          return;
+        this._canvas = canvas;
+        canvas.addEventListener("touchstart", this._on_start, { passive: false });
+        canvas.addEventListener("touchend", this._on_end, { passive: false });
+        canvas.addEventListener("touchmove", this._on_move, { passive: false });
+        canvas.addEventListener("touchcancel", this._on_cancel, { passive: false });
+        this._attached = true;
+      }
+      /**
+       * Detaches touch listeners from the canvas.
+       */
+      static detach() {
+        if (!this._attached || !this._canvas)
+          return;
+        this._canvas.removeEventListener("touchstart", this._on_start);
+        this._canvas.removeEventListener("touchend", this._on_end);
+        this._canvas.removeEventListener("touchmove", this._on_move);
+        this._canvas.removeEventListener("touchcancel", this._on_cancel);
+        this._attached = false;
+        this._canvas = null;
+      }
+      /**
+       * Converts a browser Touch to canvas-local coordinates.
+       */
+      static _to_canvas(touch) {
+        if (!this._canvas)
+          return { x: touch.clientX, y: touch.clientY };
+        const rect = this._canvas.getBoundingClientRect();
+        const sx = this._canvas.width / rect.width;
+        const sy = this._canvas.height / rect.height;
+        return {
+          x: (touch.clientX - rect.left) * sx,
+          y: (touch.clientY - rect.top) * sy
+        };
+      }
+      static _alloc_slot(id) {
+        if (this._id_to_slot.has(id))
+          return this._id_to_slot.get(id);
+        const used = new Set(this._id_to_slot.values());
+        for (let i = 0; i < MAX_TOUCH_POINTS; i++) {
+          if (!used.has(i)) {
+            this._id_to_slot.set(id, i);
+            return i;
+          }
+        }
+        return -1;
+      }
+      static _free_slot(id) {
+        const slot = this._id_to_slot.get(id) ?? -1;
+        this._id_to_slot.delete(id);
+        return slot;
+      }
+      static _handle_start(e) {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          if (!t)
+            continue;
+          const slot = this._alloc_slot(t.identifier);
+          if (slot < 0)
+            continue;
+          const pos = this._to_canvas(t);
+          const pt = this._points[slot];
+          pt.x = pos.x;
+          pt.y = pos.y;
+          pt.held = true;
+          pt.pressed = true;
+        }
+      }
+      static _handle_end(e) {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          if (!t)
+            continue;
+          const slot = this._free_slot(t.identifier);
+          if (slot < 0)
+            continue;
+          const pos = this._to_canvas(t);
+          const pt = this._points[slot];
+          pt.x = pos.x;
+          pt.y = pos.y;
+          pt.held = false;
+          pt.released = true;
+        }
+      }
+      static _handle_move(e) {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          if (!t)
+            continue;
+          const slot = this._id_to_slot.get(t.identifier) ?? -1;
+          if (slot < 0)
+            continue;
+          const pos = this._to_canvas(t);
+          const pt = this._points[slot];
+          pt.x = pos.x;
+          pt.y = pos.y;
+        }
+      }
+      static _handle_cancel(e) {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          if (!t)
+            continue;
+          const slot = this._free_slot(t.identifier);
+          if (slot < 0)
+            continue;
+          const pt = this._points[slot];
+          pt.held = false;
+          pt.released = true;
+        }
+      }
+      /**
+       * Clears per-step pressed/released flags.
+       * Called by input_manager at the end of each step.
+       */
+      static end_step() {
+        for (const pt of this._points) {
+          pt.pressed = false;
+          pt.released = false;
+        }
+      }
+      // -------------------------------------------------------------------------
+      // Query API (device = finger slot 0..MAX_TOUCH_POINTS-1)
+      // -------------------------------------------------------------------------
+      /** Returns true if a touch point is currently active. */
+      static is_held(device) {
+        return this._points[device]?.held ?? false;
+      }
+      /** Returns true if a touch point became active this step. */
+      static is_pressed(device) {
+        return this._points[device]?.pressed ?? false;
+      }
+      /** Returns true if a touch point was lifted this step. */
+      static is_released(device) {
+        return this._points[device]?.released ?? false;
+      }
+      /** Returns the canvas-space X coordinate of a touch device. */
+      static get_x(device) {
+        return this._points[device]?.x ?? -1;
+      }
+      /** Returns the canvas-space Y coordinate of a touch device. */
+      static get_y(device) {
+        return this._points[device]?.y ?? -1;
+      }
+      /** Returns the number of currently active touch points. */
+      static get_count() {
+        return this._points.filter((p) => p.held).length;
+      }
+    };
+    touch_manager._points = Array.from({ length: MAX_TOUCH_POINTS }, make_touch_point);
+    touch_manager._canvas = null;
+    touch_manager._attached = false;
+    touch_manager._on_start = (e) => {
+      e.preventDefault();
+      touch_manager._handle_start(e);
+    };
+    touch_manager._on_end = (e) => {
+      e.preventDefault();
+      touch_manager._handle_end(e);
+    };
+    touch_manager._on_move = (e) => {
+      e.preventDefault();
+      touch_manager._handle_move(e);
+    };
+    touch_manager._on_cancel = (e) => {
+      e.preventDefault();
+      touch_manager._handle_cancel(e);
+    };
+    touch_manager._id_to_slot = /* @__PURE__ */ new Map();
+  }
+});
+
 // node_modules/matter-js/build/matter.js
 var require_matter = __commonJS({
   "node_modules/matter-js/build/matter.js"(exports, module) {
+    init_engine_globals();
     (function webpackUniversalModuleDefinition(root, factory) {
       if (typeof exports === "object" && typeof module === "object")
         module.exports = factory();
@@ -210,11 +1635,11 @@ var require_matter = __commonJS({
               Common.isString = function(obj) {
                 return toString.call(obj) === "[object String]";
               };
-              Common.clamp = function(value, min2, max2) {
-                if (value < min2)
-                  return min2;
-                if (value > max2)
-                  return max2;
+              Common.clamp = function(value, min3, max3) {
+                if (value < min3)
+                  return min3;
+                if (value > max3)
+                  return max3;
                 return value;
               };
               Common.sign = function(value) {
@@ -233,10 +1658,10 @@ var require_matter = __commonJS({
                 }
                 return /* @__PURE__ */ new Date() - Common._nowStartTime;
               };
-              Common.random = function(min2, max2) {
-                min2 = typeof min2 !== "undefined" ? min2 : 0;
-                max2 = typeof max2 !== "undefined" ? max2 : 1;
-                return min2 + _seededRandom() * (max2 - min2);
+              Common.random = function(min3, max3) {
+                min3 = typeof min3 !== "undefined" ? min3 : 0;
+                max3 = typeof max3 !== "undefined" ? max3 : 1;
+                return min3 + _seededRandom() * (max3 - min3);
               };
               var _seededRandom = function() {
                 Common._seed = (Common._seed * 9301 + 49297) % 233280;
@@ -3823,16 +5248,16 @@ var require_matter = __commonJS({
                   max: { x: -Infinity, y: -Infinity }
                 };
                 for (var i = 0; i < objects.length; i += 1) {
-                  var object = objects[i], min2 = object.bounds ? object.bounds.min : object.min || object.position || object, max2 = object.bounds ? object.bounds.max : object.max || object.position || object;
-                  if (min2 && max2) {
-                    if (min2.x < bounds.min.x)
-                      bounds.min.x = min2.x;
-                    if (max2.x > bounds.max.x)
-                      bounds.max.x = max2.x;
-                    if (min2.y < bounds.min.y)
-                      bounds.min.y = min2.y;
-                    if (max2.y > bounds.max.y)
-                      bounds.max.y = max2.y;
+                  var object = objects[i], min3 = object.bounds ? object.bounds.min : object.min || object.position || object, max3 = object.bounds ? object.bounds.max : object.max || object.position || object;
+                  if (min3 && max3) {
+                    if (min3.x < bounds.min.x)
+                      bounds.min.x = min3.x;
+                    if (max3.x > bounds.max.x)
+                      bounds.max.x = max3.x;
+                    if (min3.y < bounds.min.y)
+                      bounds.min.y = min3.y;
+                    if (max3.y > bounds.max.y)
+                      bounds.max.y = max3.y;
                   }
                 }
                 var width = bounds.max.x - bounds.min.x + 2 * padding.x, height = bounds.max.y - bounds.min.y + 2 * padding.y, viewHeight = render.canvas.height, viewWidth = render.canvas.width, outerRatio = viewWidth / viewHeight, innerRatio = width / height, scaleX = 1, scaleY = 1;
@@ -3982,7 +5407,7 @@ var require_matter = __commonJS({
               };
               Render.performance = function(render, context) {
                 var engine = render.engine, timing = render.timing, deltaHistory = timing.deltaHistory, elapsedHistory = timing.elapsedHistory, timestampElapsedHistory = timing.timestampElapsedHistory, engineDeltaHistory = timing.engineDeltaHistory, engineUpdatesHistory = timing.engineUpdatesHistory, engineElapsedHistory = timing.engineElapsedHistory, lastEngineUpdatesPerFrame = engine.timing.lastUpdatesPerFrame, lastEngineDelta = engine.timing.lastDelta;
-                var deltaMean = _mean(deltaHistory), elapsedMean = _mean(elapsedHistory), engineDeltaMean = _mean(engineDeltaHistory), engineUpdatesMean = _mean(engineUpdatesHistory), engineElapsedMean = _mean(engineElapsedHistory), timestampElapsedMean = _mean(timestampElapsedHistory), rateMean = timestampElapsedMean / deltaMean || 0, neededUpdatesPerFrame = Math.round(deltaMean / lastEngineDelta), fps = 1e3 / deltaMean || 0;
+                var deltaMean = _mean(deltaHistory), elapsedMean = _mean(elapsedHistory), engineDeltaMean = _mean(engineDeltaHistory), engineUpdatesMean = _mean(engineUpdatesHistory), engineElapsedMean = _mean(engineElapsedHistory), timestampElapsedMean = _mean(timestampElapsedHistory), rateMean = timestampElapsedMean / deltaMean || 0, neededUpdatesPerFrame = Math.round(deltaMean / lastEngineDelta), fps3 = 1e3 / deltaMean || 0;
                 var graphHeight = 4, gap = 12, width = 60, height = 34, x = 10, y = 69;
                 context.fillStyle = "#0e0f19";
                 context.fillRect(0, 50, gap * 5 + width * 6 + 22, height);
@@ -3993,8 +5418,8 @@ var require_matter = __commonJS({
                   width,
                   graphHeight,
                   deltaHistory.length,
-                  Math.round(fps) + " fps",
-                  fps / Render._goodFps,
+                  Math.round(fps3) + " fps",
+                  fps3 / Render._goodFps,
                   function(i) {
                     return deltaHistory[i] / deltaMean - 1;
                   }
@@ -4902,1608 +6327,338 @@ var require_matter = __commonJS({
   }
 });
 
-// exports/engine.js
-var import_matter_js = __toESM(require_matter());
-var import_matter_js2 = __toESM(require_matter());
-var import_matter_js3 = __toESM(require_matter());
-var EVENT_TYPE = /* @__PURE__ */ ((EVENT_TYPE2) => {
-  EVENT_TYPE2["none"] = "NONE";
-  EVENT_TYPE2["create"] = "CREATE";
-  EVENT_TYPE2["destroy"] = "DESTROY";
-  EVENT_TYPE2["step_begin"] = "STEP_BEGIN";
-  EVENT_TYPE2["step"] = "STEP";
-  EVENT_TYPE2["step_end"] = "STEP_END";
-  EVENT_TYPE2["collision"] = "COLLISION";
-  EVENT_TYPE2["keyboard"] = "KEYBOARD";
-  EVENT_TYPE2["mouse"] = "MOUSE";
-  EVENT_TYPE2["other"] = "OTHER";
-  EVENT_TYPE2["async"] = "ASYNC";
-  EVENT_TYPE2["draw"] = "DRAW";
-  EVENT_TYPE2["draw_gui"] = "DRAW_GUI";
-  return EVENT_TYPE2;
-})(EVENT_TYPE || {});
-var game_event = class {
-  // The event type category
-  /**
-   * Creates a new game event.
-   * @param event - The function to call when the event fires
-   * @param type - The event type category
-   */
-  constructor(event = () => {
-  }, type = "NONE") {
-    this.event = () => {
-    };
-    this.type = "NONE";
-    this.event = event;
-    this.type = type;
+// packages/engine/dist/physics/physics_world.js
+function physics_world_step(delta_ms = 1e3 / 60) {
+  if (!_engine)
+    return;
+  import_matter_js.default.Engine.update(_engine, delta_ms);
+}
+function physics_world_get_engine() {
+  return _engine;
+}
+function _get_world() {
+  return _world;
+}
+var import_matter_js, _engine, _world;
+var init_physics_world = __esm({
+  "packages/engine/dist/physics/physics_world.js"() {
+    "use strict";
+    init_engine_globals();
+    import_matter_js = __toESM(require_matter(), 1);
+    _engine = null;
+    _world = null;
   }
-  /**
-   * Executes the event function.
-   */
-  run() {
-    this.event();
-  }
-};
-var resource = class _resource {
-  constructor() {
-    this.id = this.incrementID();
-    this.name = this.constructor.name;
-    _resource.all.set(this.id, this);
-  }
-  static {
-    this.gid = 0;
-  }
-  static {
-    this.all = /* @__PURE__ */ new Map();
-  }
-  // Name derived from the class type
-  /**
-   * Increments and returns the next available resource ID.
-   * @returns The next unique resource ID
-   */
-  incrementID() {
-    return _resource.gid++;
-  }
-  static removeByID(id) {
-    _resource.all.delete(id);
-  }
-  static findByID(id) {
-    return _resource.all.get(id);
-  }
-};
-var room = class _room extends resource {
-  // Instances in this room, keyed by ID
-  constructor() {
-    super();
-    this.room_width = 640;
-    this.room_height = 480;
-    this.room_caption = `Room ${this.id}`;
-    this.room_speed = 60;
-    this.room_persistent = false;
-    this.room_previous = 0;
-    this.room_next = 0;
-    this.background_visible = [];
-    this.background_foreground = [];
-    this.background_index = [];
-    this.background_x = [];
-    this.background_y = [];
-    this.background_htiled = [];
-    this.background_vtiled = [];
-    this.background_hspeed = [];
-    this.background_vspeed = [];
-    this.background_color = [];
-    this.view_enabled = false;
-    this.view_current = 0;
-    this.view_visible = [];
-    this.view_xview = [];
-    this.view_yview = [];
-    this.view_wview = [];
-    this.view_hview = [];
-    this.view_xport = [];
-    this.view_yport = [];
-    this.view_wport = [];
-    this.view_hport = [];
-    this.view_hborder = [];
-    this.view_vborder = [];
-    this.view_hspeed = [];
-    this.view_vspeed = [];
-    this.view_object = [];
-    this.tiles = [];
-    this.all = /* @__PURE__ */ new Map();
-  }
-  // =========================================================================
-  // Room Navigation
-  // =========================================================================
-  /**
-   * Transitions to the specified room.
-   * @param target - The room to go to (ID or room reference)
-   */
-  room_goto(target) {
-    if (typeof target === "number") {
-      const potential = resource.findByID(target);
-      if (typeof potential === "undefined") {
-        console.error(`ID ${target} does not exist.`);
-        return;
-      }
-      if (potential.constructor.name !== "room") {
-        console.error(`ID ${target} is not a room.`);
-        return;
-      }
-      game_loop.change_room(potential);
-      return;
-    }
-    game_loop.change_room(target);
-  }
-  /**
-   * Transitions to the previous room in the room order.
-   */
-  room_goto_previous() {
-    this.room_goto(this.room_previous);
-  }
-  /**
-   * Transitions to the next room in the room order.
-   */
-  room_goto_next() {
-    this.room_goto(this.room_next);
-  }
-  /**
-   * Restarts the current room, resetting all non-persistent instances.
-   */
-  room_restart() {
-    this.room_goto(this);
-  }
-  // =========================================================================
-  // Room Queries
-  // =========================================================================
-  /**
-   * Checks if a room with the given ID exists.
-   * @param id - The room ID to check
-   * @returns True if the room exists
-   */
-  room_exists(id) {
-    const res = resource.findByID(id);
-    if (typeof res === "undefined") {
-      return false;
-    }
-    if (res.constructor.name !== "room") {
-      return false;
-    }
+});
+
+// packages/engine/dist/core/game_state.js
+function _consume_no_more_lives() {
+  if (_lives <= 0 && _lives_armed) {
+    _lives_armed = false;
     return true;
   }
-  // =========================================================================
-  // Instance Management
-  // =========================================================================
-  /**
-   * Adds an instance to the room at design time (before room starts).
-   * @param x - X position for the instance
-   * @param y - Y position for the instance
-   * @param obj - The instance to add
-   */
-  room_instance_add(x, y, obj) {
-    obj.x = x;
-    obj.y = y;
-    obj.xstart = x;
-    obj.ystart = y;
-    this.all.set(obj.id, obj);
-  }
-  /**
-   * Adds an instance to this room at runtime.
-   * @param inst - The instance to add
-   */
-  instance_add(inst) {
-    this.all.set(inst.id, inst);
-  }
-  /**
-   * Removes an instance from this room by ID.
-   * @param id - The instance ID to remove
-   * @returns True if the instance was found and removed
-   */
-  instance_remove(id) {
-    return this.all.delete(id);
-  }
-  /**
-   * Gets an instance from this room by ID.
-   * @param id - The instance ID to find
-   * @returns The instance, or undefined if not found
-   */
-  instance_get(id) {
-    return this.all.get(id);
-  }
-  /**
-   * Gets all instances in this room.
-   * @returns Array of all instances
-   */
-  instance_get_all() {
-    return Array.from(this.all.values());
-  }
-  /**
-   * Gets the number of instances in this room.
-   * @returns The instance count
-   */
-  instance_count() {
-    return this.all.size;
-  }
-  /**
-   * Removes all instances from the room's design-time instance list.
-   */
-  room_instance_clear() {
-    this.all.clear();
-  }
-  /**
-   * Registers all instances in this room with the game loop.
-   * Called when entering a room to set up event handlers.
-   */
-  register_all_instances() {
-    for (const inst of this.all.values()) {
-      inst.register_events();
-      game_loop.register("CREATE", inst.on_create.bind(inst));
-    }
-  }
-  // =========================================================================
-  // Tile Management
-  // =========================================================================
-  /**
-   * Adds a tile to the room at design time.
-   * @param x - X position for the tile
-   * @param y - Y position for the tile
-   * @param background - Background resource containing the tile
-   * @param left - Left offset in the background
-   * @param top - Top offset in the background
-   * @param width - Width of the tile
-   * @param height - Height of the tile
-   * @param depth - Drawing depth of the tile
-   * @returns The unique ID of the created tile
-   */
-  room_tile_add(x, y, background2, left, top, width, height, depth) {
-    return this.tile_add(background2, left, top, width, height, x, y, depth);
-  }
-  /**
-   * Adds a tile to the room at design time, with extended options.
-   * @param x - X position for the tile
-   * @param y - Y position for the tile
-   * @param background - Background resource containing the tile
-   * @param left - Left offset in the background
-   * @param top - Top offset in the background
-   * @param width - Width of the tile
-   * @param height - Height of the tile
-   * @param depth - Drawing depth of the tile
-   * @param xscale - Horizontal scale factor
-   * @param yscale - Vertical scale factor
-   * @param alpha - Transparency (0-1)
-   * @returns The unique ID of the created tile
-   */
-  room_tile_add_ext(x, y, background2, left, top, width, height, depth, xscale, yscale, alpha) {
-    const id = _room.next_tile_id++;
-    this.tiles.push({
-      id,
-      x,
-      y,
-      background: background2,
-      left,
-      top,
-      width,
-      height,
-      depth,
-      xscale,
-      yscale,
-      alpha,
-      visible: true
-    });
-    return id;
-  }
-  /**
-   * Removes all tiles from the room's design-time tile list.
-   */
-  room_tile_clear() {
-    this.tiles = [];
-  }
-  static {
-    this.next_tile_id = 0;
-  }
-  // Auto-incrementing tile ID counter
-  /**
-   * Adds a tile at runtime and returns its unique ID.
-   * @param background - Background resource containing the tile
-   * @param left - Left offset in the background
-   * @param top - Top offset in the background
-   * @param width - Width of the tile
-   * @param height - Height of the tile
-   * @param x - X position in the room
-   * @param y - Y position in the room
-   * @param depth - Drawing depth
-   * @returns The unique ID of the created tile
-   */
-  tile_add(background2, left, top, width, height, x, y, depth) {
-    const id = _room.next_tile_id++;
-    this.tiles.push({
-      id,
-      x,
-      y,
-      background: background2,
-      left,
-      top,
-      width,
-      height,
-      depth,
-      xscale: 1,
-      yscale: 1,
-      alpha: 1,
-      visible: true
-    });
-    return id;
-  }
-  /**
-   * Deletes a tile by its ID.
-   * @param id - The tile ID to delete
-   * @returns True if the tile was found and deleted
-   */
-  tile_delete(id) {
-    const index = this.tiles.findIndex((t) => t.id === id);
-    if (index === -1) return false;
-    this.tiles.splice(index, 1);
+  if (_lives > 0)
+    _lives_armed = true;
+  return false;
+}
+function _consume_no_more_health() {
+  if (_health <= 0 && _health_armed) {
+    _health_armed = false;
     return true;
   }
-  /**
-   * Checks if a tile with the given ID exists.
-   * @param id - The tile ID to check
-   * @returns True if the tile exists
-   */
-  tile_exists(id) {
-    return this.tiles.some((t) => t.id === id);
-  }
-  /**
-   * Gets the X position of a tile.
-   * @param id - The tile ID
-   * @returns The X position, or 0 if not found
-   */
-  tile_get_x(id) {
-    return this.tiles.find((t) => t.id === id)?.x ?? 0;
-  }
-  /**
-   * Gets the Y position of a tile.
-   * @param id - The tile ID
-   * @returns The Y position, or 0 if not found
-   */
-  tile_get_y(id) {
-    return this.tiles.find((t) => t.id === id)?.y ?? 0;
-  }
-  /**
-   * Gets the depth of a tile.
-   * @param id - The tile ID
-   * @returns The depth, or 0 if not found
-   */
-  tile_get_depth(id) {
-    return this.tiles.find((t) => t.id === id)?.depth ?? 0;
-  }
-  /**
-   * Gets the visibility of a tile.
-   * @param id - The tile ID
-   * @returns True if visible, false if not found or hidden
-   */
-  tile_get_visible(id) {
-    return this.tiles.find((t) => t.id === id)?.visible ?? false;
-  }
-  /**
-   * Sets the position of a tile.
-   * @param id - The tile ID
-   * @param x - New X position
-   * @param y - New Y position
-   */
-  tile_set_position(id, x, y) {
-    const tile = this.tiles.find((t) => t.id === id);
-    if (tile) {
-      tile.x = x;
-      tile.y = y;
-    }
-  }
-  /**
-   * Sets the depth of a tile.
-   * @param id - The tile ID
-   * @param depth - New depth value
-   */
-  tile_set_depth(id, depth) {
-    const tile = this.tiles.find((t) => t.id === id);
-    if (tile) tile.depth = depth;
-  }
-  /**
-   * Sets the visibility of a tile.
-   * @param id - The tile ID
-   * @param visible - Whether the tile should be visible
-   */
-  tile_set_visible(id, visible) {
-    const tile = this.tiles.find((t) => t.id === id);
-    if (tile) tile.visible = visible;
-  }
-  /**
-   * Sets the scale of a tile.
-   * @param id - The tile ID
-   * @param xscale - Horizontal scale factor
-   * @param yscale - Vertical scale factor
-   */
-  tile_set_scale(id, xscale, yscale) {
-    const tile = this.tiles.find((t) => t.id === id);
-    if (tile) {
-      tile.xscale = xscale;
-      tile.yscale = yscale;
-    }
-  }
-  /**
-   * Sets the alpha (transparency) of a tile.
-   * @param id - The tile ID
-   * @param alpha - Alpha value (0-1)
-   */
-  tile_set_alpha(id, alpha) {
-    const tile = this.tiles.find((t) => t.id === id);
-    if (tile) tile.alpha = alpha;
-  }
-  /**
-   * Sets the background region of a tile.
-   * @param id - The tile ID
-   * @param background - Background resource ID
-   * @param left - Left offset in the background
-   * @param top - Top offset in the background
-   * @param width - Width of the tile region
-   * @param height - Height of the tile region
-   */
-  tile_set_background(id, background2, left, top, width, height) {
-    const tile = this.tiles.find((t) => t.id === id);
-    if (tile) {
-      tile.background = background2;
-      tile.left = left;
-      tile.top = top;
-      tile.width = width;
-      tile.height = height;
-    }
-  }
-  /**
-   * Deletes all tiles at a specific depth.
-   * @param depth - The depth to clear
-   */
-  tile_layer_delete(depth) {
-    this.tiles = this.tiles.filter((t) => t.depth !== depth);
-  }
-  /**
-   * Shifts all tiles at a specific depth by the given amount.
-   * @param depth - The depth layer to shift
-   * @param x - Horizontal shift amount
-   * @param y - Vertical shift amount
-   */
-  tile_layer_shift(depth, x, y) {
-    this.tiles.filter((t) => t.depth === depth).forEach((t) => {
-      t.x += x;
-      t.y += y;
-    });
-  }
-  /**
-   * Finds a tile at the given position and depth.
-   * @param x - X position to check
-   * @param y - Y position to check
-   * @param depth - Depth to check
-   * @returns The tile ID, or -1 if not found
-   */
-  tile_layer_find(x, y, depth) {
-    const tile = this.tiles.find(
-      (t) => t.depth === depth && x >= t.x && x < t.x + t.width * t.xscale && y >= t.y && y < t.y + t.height * t.yscale
-    );
-    return tile?.id ?? -1;
-  }
-  // =========================================================================
-  // Background Management
-  // =========================================================================
-  /**
-   * Sets the background for a specific layer in this room.
-   * @param index - Background layer index (0-7)
-   * @param visible - Whether the background is visible
-   * @param foreground - Whether it draws in front of instances
-   * @param background - Background resource ID
-   * @param x - X offset
-   * @param y - Y offset
-   * @param htiled - Whether to tile horizontally
-   * @param vtiled - Whether to tile vertically
-   * @param hspeed - Horizontal scroll speed
-   * @param vspeed - Vertical scroll speed
-   */
-  room_set_background(index, visible, foreground, background2, x, y, htiled, vtiled, hspeed, vspeed) {
-    this.background_visible[index] = visible;
-    this.background_foreground[index] = foreground;
-    this.background_index[index] = background2;
-    this.background_x[index] = x;
-    this.background_y[index] = y;
-    this.background_htiled[index] = htiled;
-    this.background_vtiled[index] = vtiled;
-    this.background_hspeed[index] = hspeed;
-    this.background_vspeed[index] = vspeed;
-  }
-  /**
-   * Sets the background color for a specific layer.
-   * @param index - Background layer index
-   * @param color - The color value
-   */
-  room_set_background_color(index, color) {
-    this.background_color[index] = color;
-  }
-  // =========================================================================
-  // View Management
-  // =========================================================================
-  /**
-   * Configures a view for this room (design-time).
-   * @param index - View index
-   * @param visible - Whether the view is enabled
-   * @param xview - X position of the view in the room
-   * @param yview - Y position of the view in the room
-   * @param wview - Width of the view in the room
-   * @param hview - Height of the view in the room
-   * @param xport - X position of the viewport on screen
-   * @param yport - Y position of the viewport on screen
-   * @param wport - Width of the viewport on screen
-   * @param hport - Height of the viewport on screen
-   * @param hborder - Horizontal border for object following
-   * @param vborder - Vertical border for object following
-   * @param hspeed - Max horizontal speed when following
-   * @param vspeed - Max vertical speed when following
-   * @param target - Object instance to follow (-1 for none)
-   */
-  room_set_view(index, visible, xview, yview, wview, hview, xport, yport, wport, hport, hborder, vborder, hspeed, vspeed, target) {
-    this.view_visible[index] = visible;
-    this.view_xview[index] = xview;
-    this.view_yview[index] = yview;
-    this.view_wview[index] = wview;
-    this.view_hview[index] = hview;
-    this.view_xport[index] = xport;
-    this.view_yport[index] = yport;
-    this.view_wport[index] = wport;
-    this.view_hport[index] = hport;
-    this.view_hborder[index] = hborder;
-    this.view_vborder[index] = vborder;
-    this.view_hspeed[index] = hspeed;
-    this.view_vspeed[index] = vspeed;
-    this.view_object[index] = target;
-  }
-  /**
-   * Enables or disables the view system for this room.
-   * @param enabled - Whether views are enabled
-   */
-  room_set_view_enabled(enabled) {
-    this.view_enabled = enabled;
-  }
-  // =========================================================================
-  // Runtime View Functions
-  // =========================================================================
-  /**
-   * Gets the X position of a view in room coordinates.
-   * @param index - View index
-   * @returns The X position of the view
-   */
-  view_get_xview(index) {
-    return this.view_xview[index] ?? 0;
-  }
-  /**
-   * Gets the Y position of a view in room coordinates.
-   * @param index - View index
-   * @returns The Y position of the view
-   */
-  view_get_yview(index) {
-    return this.view_yview[index] ?? 0;
-  }
-  /**
-   * Gets the width of a view.
-   * @param index - View index
-   * @returns The width of the view
-   */
-  view_get_wview(index) {
-    return this.view_wview[index] ?? 0;
-  }
-  /**
-   * Gets the height of a view.
-   * @param index - View index
-   * @returns The height of the view
-   */
-  view_get_hview(index) {
-    return this.view_hview[index] ?? 0;
-  }
-  /**
-   * Sets the position of a view at runtime.
-   * @param index - View index
-   * @param x - New X position
-   * @param y - New Y position
-   */
-  view_set_position(index, x, y) {
-    this.view_xview[index] = x;
-    this.view_yview[index] = y;
-  }
-  /**
-   * Sets the size of a view at runtime.
-   * @param index - View index
-   * @param w - New width
-   * @param h - New height
-   */
-  view_set_size(index, w, h) {
-    this.view_wview[index] = w;
-    this.view_hview[index] = h;
-  }
-  /**
-   * Sets the viewport position on screen.
-   * @param index - View index
-   * @param x - X position on screen
-   * @param y - Y position on screen
-   */
-  view_set_port_position(index, x, y) {
-    this.view_xport[index] = x;
-    this.view_yport[index] = y;
-  }
-  /**
-   * Sets the viewport size on screen.
-   * @param index - View index
-   * @param w - Width on screen
-   * @param h - Height on screen
-   */
-  view_set_port_size(index, w, h) {
-    this.view_wport[index] = w;
-    this.view_hport[index] = h;
-  }
-  /**
-   * Sets the object for a view to follow.
-   * @param index - View index
-   * @param obj - Instance ID to follow (-1 for none)
-   */
-  view_set_object(index, obj) {
-    this.view_object[index] = obj;
-  }
-  /**
-   * Sets the border area for view following.
-   * @param index - View index
-   * @param hborder - Horizontal border in pixels
-   * @param vborder - Vertical border in pixels
-   */
-  view_set_border(index, hborder, vborder) {
-    this.view_hborder[index] = hborder;
-    this.view_vborder[index] = vborder;
-  }
-  /**
-   * Sets the maximum speed for view following.
-   * @param index - View index
-   * @param hspeed - Max horizontal speed
-   * @param vspeed - Max vertical speed
-   */
-  view_set_speed(index, hspeed, vspeed) {
-    this.view_hspeed[index] = hspeed;
-    this.view_vspeed[index] = vspeed;
-  }
-  /**
-   * Converts a screen X coordinate to room coordinates for a specific view.
-   * @param index - View index
-   * @param x - Screen X coordinate
-   * @returns Room X coordinate
-   */
-  view_screen_to_room_x(index, x) {
-    const xport = this.view_xport[index] ?? 0;
-    const wport = this.view_wport[index] ?? 1;
-    const xview = this.view_xview[index] ?? 0;
-    const wview = this.view_wview[index] ?? 1;
-    return xview + (x - xport) / wport * wview;
-  }
-  /**
-   * Converts a screen Y coordinate to room coordinates for a specific view.
-   * @param index - View index
-   * @param y - Screen Y coordinate
-   * @returns Room Y coordinate
-   */
-  view_screen_to_room_y(index, y) {
-    const yport = this.view_yport[index] ?? 0;
-    const hport = this.view_hport[index] ?? 1;
-    const yview = this.view_yview[index] ?? 0;
-    const hview = this.view_hview[index] ?? 1;
-    return yview + (y - yport) / hport * hview;
-  }
-  /**
-   * Converts a room X coordinate to screen coordinates for a specific view.
-   * @param index - View index
-   * @param x - Room X coordinate
-   * @returns Screen X coordinate
-   */
-  view_room_to_screen_x(index, x) {
-    const xport = this.view_xport[index] ?? 0;
-    const wport = this.view_wport[index] ?? 1;
-    const xview = this.view_xview[index] ?? 0;
-    const wview = this.view_wview[index] ?? 1;
-    return xport + (x - xview) / wview * wport;
-  }
-  /**
-   * Converts a room Y coordinate to screen coordinates for a specific view.
-   * @param index - View index
-   * @param y - Room Y coordinate
-   * @returns Screen Y coordinate
-   */
-  view_room_to_screen_y(index, y) {
-    const yport = this.view_yport[index] ?? 0;
-    const hport = this.view_hport[index] ?? 1;
-    const yview = this.view_yview[index] ?? 0;
-    const hview = this.view_hview[index] ?? 1;
-    return yport + (y - yview) / hview * hport;
-  }
-};
-var vk_nokey = 0;
-var vk_anykey = 1;
-var vk_space = 32;
-var vk_left = 37;
-var vk_right = 39;
-var keyboard_manager = class _keyboard_manager {
-  static {
-    this._held = /* @__PURE__ */ new Set();
-  }
-  static {
-    this._pressed = /* @__PURE__ */ new Set();
-  }
-  static {
-    this._released = /* @__PURE__ */ new Set();
-  }
-  static {
-    this._key_map = /* @__PURE__ */ new Map();
-  }
-  static {
-    this.keyboard_key = vk_nokey;
-  }
-  static {
-    this.keyboard_lastkey = vk_nokey;
-  }
-  static {
-    this.keyboard_lastchar = "";
-  }
-  static {
-    this.keyboard_string = "";
-  }
-  static {
-    this._attached = false;
-  }
-  static {
-    this._on_keydown = (e) => _keyboard_manager._handle_down(e);
-  }
-  static {
-    this._on_keyup = (e) => _keyboard_manager._handle_up(e);
-  }
-  static {
-    this._on_keypress = (e) => _keyboard_manager._handle_press(e);
-  }
-  /**
-   * Attaches keyboard listeners to the window.
-   * Called once by input_manager.init().
-   */
-  static attach() {
-    if (this._attached) return;
-    window.addEventListener("keydown", this._on_keydown);
-    window.addEventListener("keyup", this._on_keyup);
-    window.addEventListener("keypress", this._on_keypress);
-    this._attached = true;
-  }
-  /**
-   * Detaches keyboard listeners from the window.
-   */
-  static detach() {
-    if (!this._attached) return;
-    window.removeEventListener("keydown", this._on_keydown);
-    window.removeEventListener("keyup", this._on_keyup);
-    window.removeEventListener("keypress", this._on_keypress);
-    this._attached = false;
-  }
-  static _handle_down(e) {
-    const code = this._map(e.keyCode);
-    if (!this._held.has(code)) {
-      this._pressed.add(code);
-      this.keyboard_lastkey = this.keyboard_key;
-      this.keyboard_key = code;
-    }
-    this._held.add(code);
-  }
-  static _handle_up(e) {
-    const code = this._map(e.keyCode);
-    this._held.delete(code);
-    this._released.add(code);
-  }
-  static _handle_press(e) {
-    if (e.key.length === 1) {
-      this.keyboard_lastchar = e.key;
-      this.keyboard_string += e.key;
-    }
-  }
-  static _map(code) {
-    return this._key_map.get(code) ?? code;
-  }
-  /**
-   * Clears the pressed and released sets at the end of each step.
-   * Called by the game loop after all events have fired.
-   */
-  static end_step() {
-    this._pressed.clear();
-    this._released.clear();
-  }
-  /** Returns true if the key is currently held down. */
-  static check(key) {
-    if (key === vk_anykey) return this._held.size > 0;
-    if (key === vk_nokey) return this._held.size === 0;
-    return this._held.has(key);
-  }
-  /** Returns true if the key was pressed this step. */
-  static check_pressed(key) {
-    if (key === vk_anykey) return this._pressed.size > 0;
-    if (key === vk_nokey) return false;
-    return this._pressed.has(key);
-  }
-  /** Returns true if the key was released this step. */
-  static check_released(key) {
-    if (key === vk_anykey) return this._released.size > 0;
-    if (key === vk_nokey) return false;
-    return this._released.has(key);
-  }
-  /** Clears the held/pressed/released state for a specific key. */
-  static clear(key) {
-    this._held.delete(key);
-    this._pressed.delete(key);
-    this._released.delete(key);
-  }
-  /** Simulates pressing a key. */
-  static key_press(key) {
-    if (!this._held.has(key)) this._pressed.add(key);
-    this._held.add(key);
-    this.keyboard_lastkey = this.keyboard_key;
-    this.keyboard_key = key;
-  }
-  /** Simulates releasing a key. */
-  static key_release(key) {
-    this._held.delete(key);
-    this._released.add(key);
-  }
-  /** Remaps key1 to behave as key2. */
-  static set_map(key1, key2) {
-    this._key_map.set(key1, key2);
-  }
-  /** Returns the mapped key code for a given input code. */
-  static get_map(key) {
-    return this._key_map.get(key) ?? key;
-  }
-  /** Clears all key remappings. */
-  static unset_map() {
-    this._key_map.clear();
-  }
-};
-function keyboard_check(key) {
-  return keyboard_manager.check(key);
+  if (_health > 0)
+    _health_armed = true;
+  return false;
 }
-function keyboard_check_pressed(key) {
-  return keyboard_manager.check_pressed(key);
+function _reset_game_state() {
+  _score = 0;
+  _lives = 3;
+  _health = 100;
+  _lives_armed = true;
+  _health_armed = true;
 }
-function keyboard_check_released(key) {
-  return keyboard_manager.check_released(key);
-}
-var mb_none = 0;
-var mb_left = 1;
-var mb_right = 2;
-var mb_middle = 3;
-var mb_any = 4;
-var mouse_manager = class _mouse_manager {
-  static {
-    this._held = /* @__PURE__ */ new Set();
-  }
-  static {
-    this._pressed = /* @__PURE__ */ new Set();
-  }
-  static {
-    this._released = /* @__PURE__ */ new Set();
-  }
-  static {
-    this._canvas = null;
-  }
-  static {
-    this.window_x = 0;
-  }
-  static {
-    this.window_y = 0;
-  }
-  static {
-    this.mouse_x = 0;
-  }
-  static {
-    this.mouse_y = 0;
-  }
-  static {
-    this.mouse_button = mb_none;
-  }
-  static {
-    this.mouse_lastbutton = mb_none;
-  }
-  static {
-    this._wheel_up = false;
-  }
-  static {
-    this._wheel_down = false;
-  }
-  static {
-    this._attached = false;
-  }
-  static {
-    this._on_mousedown = (e) => _mouse_manager._handle_down(e);
-  }
-  static {
-    this._on_mouseup = (e) => _mouse_manager._handle_up(e);
-  }
-  static {
-    this._on_mousemove = (e) => _mouse_manager._handle_move(e);
-  }
-  static {
-    this._on_wheel = (e) => _mouse_manager._handle_wheel(e);
-  }
-  static {
-    this._on_contextmenu = (e) => e.preventDefault();
-  }
-  /**
-   * Attaches mouse listeners to a canvas element.
-   * @param canvas - The game canvas
-   */
-  static attach(canvas) {
-    if (this._attached) return;
-    this._canvas = canvas;
-    canvas.addEventListener("mousedown", this._on_mousedown);
-    canvas.addEventListener("mouseup", this._on_mouseup);
-    canvas.addEventListener("mousemove", this._on_mousemove);
-    canvas.addEventListener("wheel", this._on_wheel, { passive: true });
-    canvas.addEventListener("contextmenu", this._on_contextmenu);
-    this._attached = true;
-  }
-  /**
-   * Detaches mouse listeners from the canvas.
-   */
-  static detach() {
-    if (!this._attached || !this._canvas) return;
-    this._canvas.removeEventListener("mousedown", this._on_mousedown);
-    this._canvas.removeEventListener("mouseup", this._on_mouseup);
-    this._canvas.removeEventListener("mousemove", this._on_mousemove);
-    this._canvas.removeEventListener("wheel", this._on_wheel);
-    this._canvas.removeEventListener("contextmenu", this._on_contextmenu);
-    this._attached = false;
-    this._canvas = null;
-  }
-  static _get_button(e) {
-    switch (e.button) {
-      case 0:
-        return mb_left;
-      case 1:
-        return mb_middle;
-      case 2:
-        return mb_right;
-      default:
-        return mb_none;
-    }
-  }
-  static _handle_down(e) {
-    const btn = this._get_button(e);
-    if (btn === mb_none) return;
-    if (!this._held.has(btn)) this._pressed.add(btn);
-    this._held.add(btn);
-    this.mouse_lastbutton = this.mouse_button;
-    this.mouse_button = btn;
-    this._update_position(e);
-  }
-  static _handle_up(e) {
-    const btn = this._get_button(e);
-    if (btn === mb_none) return;
-    this._held.delete(btn);
-    this._released.add(btn);
-    if (this._held.size === 0) this.mouse_button = mb_none;
-    this._update_position(e);
-  }
-  static _handle_move(e) {
-    this._update_position(e);
-  }
-  static _handle_wheel(e) {
-    if (e.deltaY < 0) this._wheel_up = true;
-    else this._wheel_down = true;
-  }
-  static _update_position(e) {
-    if (!this._canvas) return;
-    const rect = this._canvas.getBoundingClientRect();
-    const scaleX = this._canvas.width / rect.width;
-    const scaleY = this._canvas.height / rect.height;
-    this.window_x = (e.clientX - rect.left) * scaleX;
-    this.window_y = (e.clientY - rect.top) * scaleY;
-  }
-  /**
-   * Updates room-space mouse coordinates using the current view offset.
-   * Called once per step by the game loop before keyboard/mouse events fire.
-   * @param view_x - Current view X offset in the room
-   * @param view_y - Current view Y offset in the room
-   */
-  static update_room_position(view_x, view_y) {
-    this.mouse_x = this.window_x + view_x;
-    this.mouse_y = this.window_y + view_y;
-  }
-  /** Clears pressed/released state and wheel flags at the end of each step. */
-  static end_step() {
-    this._pressed.clear();
-    this._released.clear();
-    this._wheel_up = false;
-    this._wheel_down = false;
-  }
-  /** Returns true if button is held. */
-  static check(btn) {
-    if (btn === mb_any) return this._held.size > 0;
-    if (btn === mb_none) return this._held.size === 0;
-    return this._held.has(btn);
-  }
-  /** Returns true if button was pressed this step. */
-  static check_pressed(btn) {
-    if (btn === mb_any) return this._pressed.size > 0;
-    if (btn === mb_none) return false;
-    return this._pressed.has(btn);
-  }
-  /** Returns true if button was released this step. */
-  static check_released(btn) {
-    if (btn === mb_any) return this._released.size > 0;
-    if (btn === mb_none) return false;
-    return this._released.has(btn);
-  }
-  /** Clears state for a specific button. */
-  static clear(btn) {
-    this._held.delete(btn);
-    this._pressed.delete(btn);
-    this._released.delete(btn);
-  }
-  /** Returns true if the wheel scrolled up this step. */
-  static wheel_up() {
-    return this._wheel_up;
-  }
-  /** Returns true if the wheel scrolled down this step. */
-  static wheel_down() {
-    return this._wheel_down;
-  }
-};
-function mouse_check_button_pressed(button) {
-  return mouse_manager.check_pressed(button);
-}
-function mouse_check_button_released(button) {
-  return mouse_manager.check_released(button);
-}
-function window_mouse_get_x() {
-  return mouse_manager.window_x;
-}
-function window_mouse_get_y() {
-  return mouse_manager.window_y;
-}
-var BUTTON_THRESHOLD = 0.5;
-var gamepad_manager = class {
-  static {
-    this._states = /* @__PURE__ */ new Map();
-  }
-  /**
-   * Polls the Gamepad API and refreshes all state snapshots.
-   * Must be called every step before gamepad functions are queried.
-   */
-  static poll() {
-    if (!navigator.getGamepads) return;
-    const pads = navigator.getGamepads();
-    for (let i = 0; i < pads.length; i++) {
-      const pad = pads[i];
-      const prev = this._states.get(i);
-      if (!pad) {
-        if (prev) prev.connected = false;
-        continue;
-      }
-      const buttons_held = pad.buttons.map((b) => b.pressed || b.value > BUTTON_THRESHOLD);
-      const axes = Array.from(pad.axes);
-      if (!prev) {
-        this._states.set(i, {
-          buttons_held,
-          buttons_prev: new Array(buttons_held.length).fill(false),
-          axes,
-          connected: true,
-          id: pad.id
-        });
-      } else {
-        prev.buttons_prev = prev.buttons_held;
-        prev.buttons_held = buttons_held;
-        prev.axes = axes;
-        prev.connected = true;
-        prev.id = pad.id;
-      }
-    }
-  }
-  /** Returns true if the Gamepad API is supported by the browser. */
-  static is_supported() {
-    return typeof navigator.getGamepads === "function";
-  }
-  /** Returns true if device index `device` is connected. */
-  static is_connected(device) {
-    return this._states.get(device)?.connected ?? false;
-  }
-  /** Returns the number of connected gamepad slots (may include gaps). */
-  static get_device_count() {
-    return this._states.size;
-  }
-  /** Returns the device description string (controller name). */
-  static get_description(device) {
-    return this._states.get(device)?.id ?? "";
-  }
-  /** Returns the number of axes on device. */
-  static axis_count(device) {
-    return this._states.get(device)?.axes.length ?? 0;
-  }
-  /**
-   * Returns the current value of an axis (-1 to 1, dead zone not applied).
-   * @param device - Gamepad index
-   * @param axis - Axis index (use gp_axis* constants)
-   */
-  static axis_value(device, axis) {
-    const state = this._states.get(device);
-    if (!state?.connected) return 0;
-    return state.axes[axis] ?? 0;
-  }
-  /** Returns the number of buttons on device. */
-  static button_count(device) {
-    return this._states.get(device)?.buttons_held.length ?? 0;
-  }
-  /** Returns true if button is currently held. */
-  static button_check(device, button) {
-    const state = this._states.get(device);
-    if (!state?.connected) return false;
-    return state.buttons_held[button] ?? false;
-  }
-  /** Returns true if button was pressed this step (was up last step, down now). */
-  static button_check_pressed(device, button) {
-    const state = this._states.get(device);
-    if (!state?.connected) return false;
-    return (state.buttons_held[button] ?? false) && !(state.buttons_prev[button] ?? false);
-  }
-  /** Returns true if button was released this step. */
-  static button_check_released(device, button) {
-    const state = this._states.get(device);
-    if (!state?.connected) return false;
-    return !(state.buttons_held[button] ?? false) && (state.buttons_prev[button] ?? false);
-  }
-  /**
-   * Returns the analog button value (0 to 1) for triggers or 0/1 for digital buttons.
-   * @param device - Gamepad index
-   * @param button - Button index
-   */
-  static button_value(device, button) {
-    if (!navigator.getGamepads) return 0;
-    const pad = navigator.getGamepads()[device];
-    if (!pad) return 0;
-    return pad.buttons[button]?.value ?? 0;
-  }
-  /**
-   * Sets controller vibration (rumble).
-   * @param device - Gamepad index
-   * @param left - Left motor strength (0–1)
-   * @param right - Right motor strength (0–1)
-   */
-  static set_vibration(device, left, right) {
-    if (!navigator.getGamepads) return;
-    const pad = navigator.getGamepads()[device];
-    if (!pad) return;
-    if (typeof pad.vibrationActuator?.playEffect === "function") {
-      pad.vibrationActuator.playEffect("dual-rumble", {
-        startDelay: 0,
-        duration: 100,
-        weakMagnitude: right,
-        strongMagnitude: left
-      });
-    }
-  }
-};
-var MAX_TOUCH_POINTS = 11;
-function make_touch_point() {
-  return { x: 0, y: 0, held: false, pressed: false, released: false };
-}
-var touch_manager = class _touch_manager {
-  static {
-    this._points = Array.from({ length: MAX_TOUCH_POINTS }, make_touch_point);
-  }
-  static {
-    this._canvas = null;
-  }
-  static {
-    this._attached = false;
-  }
-  static {
-    this._on_start = (e) => {
-      e.preventDefault();
-      _touch_manager._handle_start(e);
-    };
-  }
-  static {
-    this._on_end = (e) => {
-      e.preventDefault();
-      _touch_manager._handle_end(e);
-    };
-  }
-  static {
-    this._on_move = (e) => {
-      e.preventDefault();
-      _touch_manager._handle_move(e);
-    };
-  }
-  static {
-    this._on_cancel = (e) => {
-      e.preventDefault();
-      _touch_manager._handle_cancel(e);
-    };
-  }
-  /**
-   * Attaches touch listeners to a canvas element.
-   * @param canvas - The canvas receiving touch events
-   */
-  static attach(canvas) {
-    if (this._attached) return;
-    this._canvas = canvas;
-    canvas.addEventListener("touchstart", this._on_start, { passive: false });
-    canvas.addEventListener("touchend", this._on_end, { passive: false });
-    canvas.addEventListener("touchmove", this._on_move, { passive: false });
-    canvas.addEventListener("touchcancel", this._on_cancel, { passive: false });
-    this._attached = true;
-  }
-  /**
-   * Detaches touch listeners from the canvas.
-   */
-  static detach() {
-    if (!this._attached || !this._canvas) return;
-    this._canvas.removeEventListener("touchstart", this._on_start);
-    this._canvas.removeEventListener("touchend", this._on_end);
-    this._canvas.removeEventListener("touchmove", this._on_move);
-    this._canvas.removeEventListener("touchcancel", this._on_cancel);
-    this._attached = false;
-    this._canvas = null;
-  }
-  /**
-   * Converts a browser Touch to canvas-local coordinates.
-   */
-  static _to_canvas(touch) {
-    if (!this._canvas) return { x: touch.clientX, y: touch.clientY };
-    const rect = this._canvas.getBoundingClientRect();
-    const sx = this._canvas.width / rect.width;
-    const sy = this._canvas.height / rect.height;
-    return {
-      x: (touch.clientX - rect.left) * sx,
-      y: (touch.clientY - rect.top) * sy
-    };
-  }
-  static {
-    this._id_to_slot = /* @__PURE__ */ new Map();
-  }
-  static _alloc_slot(id) {
-    if (this._id_to_slot.has(id)) return this._id_to_slot.get(id);
-    const used = new Set(this._id_to_slot.values());
-    for (let i = 0; i < MAX_TOUCH_POINTS; i++) {
-      if (!used.has(i)) {
-        this._id_to_slot.set(id, i);
-        return i;
-      }
-    }
-    return -1;
-  }
-  static _free_slot(id) {
-    const slot = this._id_to_slot.get(id) ?? -1;
-    this._id_to_slot.delete(id);
-    return slot;
-  }
-  static _handle_start(e) {
-    for (let i = 0; i < e.changedTouches.length; i++) {
-      const t = e.changedTouches[i];
-      if (!t) continue;
-      const slot = this._alloc_slot(t.identifier);
-      if (slot < 0) continue;
-      const pos = this._to_canvas(t);
-      const pt = this._points[slot];
-      pt.x = pos.x;
-      pt.y = pos.y;
-      pt.held = true;
-      pt.pressed = true;
-    }
-  }
-  static _handle_end(e) {
-    for (let i = 0; i < e.changedTouches.length; i++) {
-      const t = e.changedTouches[i];
-      if (!t) continue;
-      const slot = this._free_slot(t.identifier);
-      if (slot < 0) continue;
-      const pos = this._to_canvas(t);
-      const pt = this._points[slot];
-      pt.x = pos.x;
-      pt.y = pos.y;
-      pt.held = false;
-      pt.released = true;
-    }
-  }
-  static _handle_move(e) {
-    for (let i = 0; i < e.changedTouches.length; i++) {
-      const t = e.changedTouches[i];
-      if (!t) continue;
-      const slot = this._id_to_slot.get(t.identifier) ?? -1;
-      if (slot < 0) continue;
-      const pos = this._to_canvas(t);
-      const pt = this._points[slot];
-      pt.x = pos.x;
-      pt.y = pos.y;
-    }
-  }
-  static _handle_cancel(e) {
-    for (let i = 0; i < e.changedTouches.length; i++) {
-      const t = e.changedTouches[i];
-      if (!t) continue;
-      const slot = this._free_slot(t.identifier);
-      if (slot < 0) continue;
-      const pt = this._points[slot];
-      pt.held = false;
-      pt.released = true;
-    }
-  }
-  /**
-   * Clears per-step pressed/released flags.
-   * Called by input_manager at the end of each step.
-   */
-  static end_step() {
-    for (const pt of this._points) {
-      pt.pressed = false;
-      pt.released = false;
-    }
-  }
-  // -------------------------------------------------------------------------
-  // Query API (device = finger slot 0..MAX_TOUCH_POINTS-1)
-  // -------------------------------------------------------------------------
-  /** Returns true if a touch point is currently active. */
-  static is_held(device) {
-    return this._points[device]?.held ?? false;
-  }
-  /** Returns true if a touch point became active this step. */
-  static is_pressed(device) {
-    return this._points[device]?.pressed ?? false;
-  }
-  /** Returns true if a touch point was lifted this step. */
-  static is_released(device) {
-    return this._points[device]?.released ?? false;
-  }
-  /** Returns the canvas-space X coordinate of a touch device. */
-  static get_x(device) {
-    return this._points[device]?.x ?? -1;
-  }
-  /** Returns the canvas-space Y coordinate of a touch device. */
-  static get_y(device) {
-    return this._points[device]?.y ?? -1;
-  }
-  /** Returns the number of currently active touch points. */
-  static get_count() {
-    return this._points.filter((p) => p.held).length;
-  }
-};
-var _begin_frame = null;
-var _end_frame = null;
+var _score, _lives, _health, _lives_armed, _health_armed;
+var init_game_state = __esm({
+  "packages/engine/dist/core/game_state.js"() {
+    "use strict";
+    init_engine_globals();
+    _score = 0;
+    _lives = 3;
+    _health = 100;
+    _lives_armed = true;
+    _health_armed = true;
+  }
+});
+
+// packages/engine/dist/core/game_loop.js
 function set_frame_hooks(begin, end) {
   _begin_frame = begin;
   _end_frame = end;
 }
-var game_loop = class {
-  static {
-    this.room_speed = 60;
+function set_room_render_hook(fn) {
+  _draw_room = fn;
+}
+var _begin_frame, _end_frame, _draw_room, game_loop;
+var init_game_loop = __esm({
+  "packages/engine/dist/core/game_loop.js"() {
+    "use strict";
+    init_engine_globals();
+    init_game_event();
+    init_room();
+    init_resource();
+    init_keyboard();
+    init_mouse();
+    init_gamepad();
+    init_touch();
+    init_physics_world();
+    init_game_state();
+    _begin_frame = null;
+    _end_frame = null;
+    _draw_room = null;
+    game_loop = class {
+      /**
+       * Attaches input systems to the given canvas.
+       * Must be called before start() if mouse or touch input is needed.
+       * @param canvas - The game canvas element
+       */
+      static init_input(canvas) {
+        this._canvas = canvas;
+        keyboard_manager.attach();
+        mouse_manager.attach(canvas);
+        touch_manager.attach(canvas);
+      }
+      /**
+       * Starts the game loop.
+       * Initializes timing values and begins the requestAnimationFrame cycle.
+       */
+      static start(room2) {
+        if (room2) {
+          this.room = room2;
+          this.room_first = room2.id;
+        }
+        this._pending_game_start = true;
+        this._pending_room_start = true;
+        this._stopped = false;
+        this.last_delta = performance.now();
+        requestAnimationFrame(this.tick.bind(this));
+      }
+      /**
+       * Main loop tick called every frame by requestAnimationFrame.
+       * Handles timing, runs fixed timestep updates, and draws once per frame.
+       * @param current - The current timestamp provided by requestAnimationFrame
+       */
+      static tick(current) {
+        if (this._stopped)
+          return;
+        this.room_delta = current - this.last_delta;
+        this.last_delta = current;
+        this.accumulator += this.room_delta;
+        this.delta_time_us = this.room_delta * 1e3;
+        this.fps_real = this.room_delta > 0 ? Math.round(1e3 / this.room_delta) : 0;
+        this._fps_accum += this.room_delta;
+        this._fps_frames += 1;
+        if (this._fps_accum >= 1e3) {
+          this.fps = this._fps_frames;
+          this._fps_frames = 0;
+          this._fps_accum -= 1e3;
+        }
+        const frameTime = 1e3 / this.room_speed;
+        while (this.accumulator >= frameTime) {
+          this.update();
+          this.accumulator -= frameTime;
+        }
+        this.draw();
+        requestAnimationFrame(this.tick.bind(this));
+      }
+      /**
+       * Runs all update events in GMS order.
+       * Create and destroy events run once and are cleared after execution.
+       * Input polling happens before events; end_step clears edge-trigger state after.
+       */
+      static update() {
+        gamepad_manager.poll();
+        const createEvents = [...this.update_events.get(EVENT_TYPE.create) ?? []];
+        this.update_events.set(EVENT_TYPE.create, []);
+        createEvents.forEach((e) => e.run());
+        if (this._pending_game_start) {
+          this._pending_game_start = false;
+          this._dispatch_lifecycle("on_game_start");
+        }
+        if (this._pending_room_start) {
+          this._pending_room_start = false;
+          if (this.room?.creation_code)
+            this.room.creation_code();
+          this._dispatch_lifecycle("on_room_start");
+        }
+        this.update_events.get(EVENT_TYPE.step_begin)?.forEach((e) => e.run());
+        this.update_events.get(EVENT_TYPE.step)?.forEach((e) => e.run());
+        this._step_physics();
+        this.update_events.get(EVENT_TYPE.step_end)?.forEach((e) => e.run());
+        if (_consume_no_more_lives())
+          this._dispatch_lifecycle("on_no_more_lives");
+        if (_consume_no_more_health())
+          this._dispatch_lifecycle("on_no_more_health");
+        this.update_events.get(EVENT_TYPE.collision)?.forEach((e) => e.run());
+        this.update_events.get(EVENT_TYPE.keyboard)?.forEach((e) => e.run());
+        this.update_events.get(EVENT_TYPE.mouse)?.forEach((e) => e.run());
+        this.update_events.get(EVENT_TYPE.other)?.forEach((e) => e.run());
+        this.update_events.get(EVENT_TYPE.async)?.forEach((e) => e.run());
+        const destroyEvents = [...this.update_events.get(EVENT_TYPE.destroy) ?? []];
+        this.update_events.set(EVENT_TYPE.destroy, []);
+        destroyEvents.forEach((e) => e.run());
+        keyboard_manager.end_step();
+        mouse_manager.end_step();
+        touch_manager.end_step();
+      }
+      /**
+       * Advances the physics world (if one exists) and syncs physics instances.
+       * Runs between Step and End Step, matching GMS ordering. No-op for non-physics games.
+       */
+      static _step_physics() {
+        if (!physics_world_get_engine() || !this.room)
+          return;
+        const instances = this.room.instance_get_all();
+        for (const inst of instances)
+          inst.phy_ensure_body();
+        physics_world_step();
+        for (const inst of instances)
+          if (inst.active)
+            inst.phy_sync_from_body();
+      }
+      /**
+       * Runs all draw events in GMS order.
+       * Called once per frame after all updates have completed.
+       * begin_frame clears the canvas; end_frame flushes the batch.
+       */
+      static draw() {
+        _begin_frame?.();
+        const run_instances = () => {
+          const rm = this.room;
+          if (!rm)
+            return;
+          const insts = rm.instance_get_all().filter((i) => i.active && i.visible).sort((a, b) => b.depth - a.depth);
+          for (const i of insts)
+            i.run_draw_begin();
+          for (const i of insts)
+            i.run_draw();
+          for (const i of insts)
+            i.run_draw_end();
+        };
+        if (_draw_room && this.room) {
+          _draw_room(this.room, run_instances);
+        } else {
+          run_instances();
+        }
+        this.draw_events.get(EVENT_TYPE.draw_gui)?.forEach((e) => e.run());
+        _end_frame?.();
+      }
+      /**
+       * Registers a function to be called for a specific event type.
+       * @param event - The event type to register for
+       * @param func - The function to call when the event fires
+       */
+      static register(event, func) {
+        const targetMap = event === EVENT_TYPE.draw_begin || event === EVENT_TYPE.draw || event === EVENT_TYPE.draw_end || event === EVENT_TYPE.draw_gui ? this.draw_events : this.update_events;
+        const existing = targetMap.get(event) ?? [];
+        existing.push(new game_event(func, event));
+        targetMap.set(event, existing);
+      }
+      /**
+       * Unregisters a function from a specific event type.
+       * @param event - The event type to unregister from
+       * @param func - The function to remove
+       */
+      static unregister(event, func) {
+        const targetMap = event === EVENT_TYPE.draw_begin || event === EVENT_TYPE.draw || event === EVENT_TYPE.draw_end || event === EVENT_TYPE.draw_gui ? this.draw_events : this.update_events;
+        const existing = targetMap.get(event) ?? [];
+        const filtered = existing.filter((e) => e.event !== func);
+        targetMap.set(event, filtered);
+      }
+      /**
+       * Transitions to a new room, clearing current events and loading the new room's state.
+       * @param room - The room to transition to
+       */
+      static change_room(room2) {
+        this._dispatch_lifecycle("on_room_end");
+        if (this.room && this.room.room_persistent) {
+        }
+        this.update_events.clear();
+        this.draw_events.clear();
+        this.room = room2;
+        this.room_speed = room2.room_speed;
+        room2.register_all_instances();
+        this._pending_room_start = true;
+      }
+      /**
+       * Ends the game: fires the Game End event for all instances, then halts the loop.
+       */
+      static end() {
+        this._dispatch_lifecycle("on_game_end");
+        this._stopped = true;
+      }
+      /**
+       * Restarts the game by returning to the first room.
+       */
+      static restart() {
+        _reset_game_state();
+        const first = resource.findByID(this.room_first);
+        if (first instanceof room)
+          this.change_room(first);
+      }
+      /**
+       * Calls a lifecycle event method on every active instance in the current room.
+       * @param method - Name of the lifecycle method to invoke
+       */
+      static _dispatch_lifecycle(method) {
+        if (!this.room)
+          return;
+        for (const inst of this.room.instance_get_all()) {
+          if (inst.active)
+            inst[method]();
+        }
+      }
+    };
+    game_loop.room_speed = 60;
+    game_loop.room_delta = 0;
+    game_loop.last_delta = 0;
+    game_loop.accumulator = 0;
+    game_loop.fps = 0;
+    game_loop.fps_real = 0;
+    game_loop.delta_time_us = 0;
+    game_loop._fps_frames = 0;
+    game_loop._fps_accum = 0;
+    game_loop.room = null;
+    game_loop.room_first = -1;
+    game_loop.room_last = 0;
+    game_loop._canvas = null;
+    game_loop._pending_game_start = false;
+    game_loop._pending_room_start = false;
+    game_loop._stopped = false;
+    game_loop.update_events = /* @__PURE__ */ new Map();
+    game_loop.draw_events = /* @__PURE__ */ new Map();
   }
-  static {
-    this.room_delta = 0;
+});
+
+// packages/engine/dist/core/system.js
+var _now, _start;
+var init_system = __esm({
+  "packages/engine/dist/core/system.js"() {
+    "use strict";
+    init_engine_globals();
+    init_game_loop();
+    _now = () => typeof performance !== "undefined" ? performance.now() : Date.now();
+    _start = _now();
   }
-  static {
-    this.last_delta = 0;
+});
+
+// packages/engine/dist/utils/datetime.js
+var init_datetime = __esm({
+  "packages/engine/dist/utils/datetime.js"() {
+    "use strict";
+    init_engine_globals();
   }
-  static {
-    this.accumulator = 0;
-  }
-  static {
-    this.room = null;
-  }
-  static {
-    this.room_first = -1;
-  }
-  static {
-    this.room_last = 0;
-  }
-  static {
-    this._canvas = null;
-  }
-  static {
-    this._pending_game_start = false;
-  }
-  static {
-    this._pending_room_start = false;
-  }
-  static {
-    this._stopped = false;
-  }
-  static {
-    this.update_events = /* @__PURE__ */ new Map();
-  }
-  static {
-    this.draw_events = /* @__PURE__ */ new Map();
-  }
-  /**
-   * Attaches input systems to the given canvas.
-   * Must be called before start() if mouse or touch input is needed.
-   * @param canvas - The game canvas element
-   */
-  static init_input(canvas) {
-    this._canvas = canvas;
-    keyboard_manager.attach();
-    mouse_manager.attach(canvas);
-    touch_manager.attach(canvas);
-  }
-  /**
-   * Starts the game loop.
-   * Initializes timing values and begins the requestAnimationFrame cycle.
-   */
-  static start(room2) {
-    if (room2) {
-      this.room = room2;
-      this.room_first = room2.id;
-    }
-    this._pending_game_start = true;
-    this._pending_room_start = true;
-    this._stopped = false;
-    this.last_delta = performance.now();
-    requestAnimationFrame(this.tick.bind(this));
-  }
-  /**
-   * Main loop tick called every frame by requestAnimationFrame.
-   * Handles timing, runs fixed timestep updates, and draws once per frame.
-   * @param current - The current timestamp provided by requestAnimationFrame
-   */
-  static tick(current) {
-    if (this._stopped) return;
-    this.room_delta = current - this.last_delta;
-    this.last_delta = current;
-    this.accumulator += this.room_delta;
-    const frameTime = 1e3 / this.room_speed;
-    while (this.accumulator >= frameTime) {
-      this.update();
-      this.accumulator -= frameTime;
-    }
-    this.draw();
-    requestAnimationFrame(this.tick.bind(this));
-  }
-  /**
-   * Runs all update events in GMS order.
-   * Create and destroy events run once and are cleared after execution.
-   * Input polling happens before events; end_step clears edge-trigger state after.
-   */
-  static update() {
-    gamepad_manager.poll();
-    const createEvents = [...this.update_events.get(
-      "CREATE"
-      /* create */
-    ) ?? []];
-    this.update_events.set("CREATE", []);
-    createEvents.forEach((e) => e.run());
-    if (this._pending_game_start) {
-      this._pending_game_start = false;
-      this._dispatch_lifecycle("on_game_start");
-    }
-    if (this._pending_room_start) {
-      this._pending_room_start = false;
-      this._dispatch_lifecycle("on_room_start");
-    }
-    this.update_events.get(
-      "STEP_BEGIN"
-      /* step_begin */
-    )?.forEach((e) => e.run());
-    this.update_events.get(
-      "STEP"
-      /* step */
-    )?.forEach((e) => e.run());
-    this.update_events.get(
-      "STEP_END"
-      /* step_end */
-    )?.forEach((e) => e.run());
-    this.update_events.get(
-      "COLLISION"
-      /* collision */
-    )?.forEach((e) => e.run());
-    this.update_events.get(
-      "KEYBOARD"
-      /* keyboard */
-    )?.forEach((e) => e.run());
-    this.update_events.get(
-      "MOUSE"
-      /* mouse */
-    )?.forEach((e) => e.run());
-    this.update_events.get(
-      "OTHER"
-      /* other */
-    )?.forEach((e) => e.run());
-    this.update_events.get(
-      "ASYNC"
-      /* async */
-    )?.forEach((e) => e.run());
-    const destroyEvents = [...this.update_events.get(
-      "DESTROY"
-      /* destroy */
-    ) ?? []];
-    this.update_events.set("DESTROY", []);
-    destroyEvents.forEach((e) => e.run());
-    keyboard_manager.end_step();
-    mouse_manager.end_step();
-    touch_manager.end_step();
-  }
-  /**
-   * Runs all draw events in GMS order.
-   * Called once per frame after all updates have completed.
-   * begin_frame clears the canvas; end_frame flushes the batch.
-   */
-  static draw() {
-    _begin_frame?.();
-    this.draw_events.get(
-      "DRAW"
-      /* draw */
-    )?.forEach((e) => e.run());
-    this.draw_events.get(
-      "DRAW_GUI"
-      /* draw_gui */
-    )?.forEach((e) => e.run());
-    _end_frame?.();
-  }
-  /**
-   * Registers a function to be called for a specific event type.
-   * @param event - The event type to register for
-   * @param func - The function to call when the event fires
-   */
-  static register(event, func) {
-    const targetMap = event === "DRAW" || event === "DRAW_GUI" ? this.draw_events : this.update_events;
-    const existing = targetMap.get(event) ?? [];
-    existing.push(new game_event(func, event));
-    targetMap.set(event, existing);
-  }
-  /**
-   * Unregisters a function from a specific event type.
-   * @param event - The event type to unregister from
-   * @param func - The function to remove
-   */
-  static unregister(event, func) {
-    const targetMap = event === "DRAW" || event === "DRAW_GUI" ? this.draw_events : this.update_events;
-    const existing = targetMap.get(event) ?? [];
-    const filtered = existing.filter((e) => e.event !== func);
-    targetMap.set(event, filtered);
-  }
-  /**
-   * Transitions to a new room, clearing current events and loading the new room's state.
-   * @param room - The room to transition to
-   */
-  static change_room(room2) {
-    this._dispatch_lifecycle("on_room_end");
-    if (this.room && this.room.room_persistent) {
-    }
-    this.update_events.clear();
-    this.draw_events.clear();
-    this.room = room2;
-    this.room_speed = room2.room_speed;
-    room2.register_all_instances();
-    this._pending_room_start = true;
-  }
-  /**
-   * Ends the game: fires the Game End event for all instances, then halts the loop.
-   */
-  static end() {
-    this._dispatch_lifecycle("on_game_end");
-    this._stopped = true;
-  }
-  /**
-   * Restarts the game by returning to the first room.
-   */
-  static restart() {
-    const first = resource.findByID(this.room_first);
-    if (first instanceof room) this.change_room(first);
-  }
-  /**
-   * Calls a lifecycle event method on every active instance in the current room.
-   * @param method - Name of the lifecycle method to invoke
-   */
-  static _dispatch_lifecycle(method) {
-    if (!this.room) return;
-    for (const inst of this.room.instance_get_all()) {
-      if (inst.active) inst[method]();
-    }
-  }
-};
+});
+
+// packages/engine/dist/collision/collision.js
 function get_bbox(inst, x, y) {
   const px = x ?? inst.x;
   const py = y ?? inst.y;
@@ -6521,15 +6676,18 @@ function get_bbox(inst, x, y) {
   }
   const sx = inst.image_xscale;
   const sy = inst.image_yscale;
-  const w = sprite2.width * sx;
-  const h = sprite2.height * sy;
   const ox = sprite2.xoffset * sx;
   const oy = sprite2.yoffset * sy;
+  const has_mask = sprite2.mask_left >= 0;
+  const ml = has_mask ? sprite2.mask_left : 0;
+  const mt = has_mask ? sprite2.mask_top : 0;
+  const mr = has_mask ? sprite2.mask_right : sprite2.width;
+  const mb = has_mask ? sprite2.mask_bottom : sprite2.height;
   return {
-    left: px - ox,
-    top: py - oy,
-    right: px - ox + w,
-    bottom: py - oy + h
+    left: px - ox + ml * sx,
+    top: py - oy + mt * sy,
+    right: px - ox + mr * sx,
+    bottom: py - oy + mb * sy
   };
 }
 function update_bbox(inst) {
@@ -6541,7 +6699,8 @@ function update_bbox(inst) {
 }
 function get_sprite_for_instance(inst) {
   const idx = inst.mask_index >= 0 ? inst.mask_index : inst.sprite_index;
-  if (idx < 0) return null;
+  if (idx < 0)
+    return null;
   const res = resource.findByID(idx);
   if (res && "frames" in res && "width" in res && "xoffset" in res && Array.isArray(res.frames)) {
     return res;
@@ -6552,848 +6711,1714 @@ function bbox_overlap(a_left, a_top, a_right, a_bottom, b_left, b_top, b_right, 
   return a_left < b_right && a_right > b_left && a_top < b_bottom && a_bottom > b_top;
 }
 function instances_collide(a, ax, ay, b) {
-  if (a === b) return false;
-  if (!b.active) return false;
+  if (a === b)
+    return false;
+  if (!b.active)
+    return false;
   const bbox_a = get_bbox(a, ax, ay);
   const bbox_b = get_bbox(b);
-  return bbox_overlap(
-    bbox_a.left,
-    bbox_a.top,
-    bbox_a.right,
-    bbox_a.bottom,
-    bbox_b.left,
-    bbox_b.top,
-    bbox_b.right,
-    bbox_b.bottom
-  );
+  return bbox_overlap(bbox_a.left, bbox_a.top, bbox_a.right, bbox_a.bottom, bbox_b.left, bbox_b.top, bbox_b.right, bbox_b.bottom);
 }
 function point_in_instance(px, py, b) {
-  if (!b.active) return false;
+  if (!b.active)
+    return false;
   const bbox = get_bbox(b);
   return px >= bbox.left && px < bbox.right && py >= bbox.top && py < bbox.bottom;
 }
-var ALARM_COUNT = 12;
-var _renderer_draw_sprite_ext = null;
+var init_collision = __esm({
+  "packages/engine/dist/collision/collision.js"() {
+    "use strict";
+    init_engine_globals();
+    init_resource();
+  }
+});
+
+// packages/engine/dist/core/path.js
+function _catmull_rom(p0, p1, p2, p3, t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+}
+function _eval_path(path, t) {
+  const pts = path.points;
+  const n = pts.length;
+  if (n === 0)
+    return { x: 0, y: 0, speed: 1 };
+  if (n === 1) {
+    const p = pts[0];
+    return { x: p.x, y: p.y, speed: p.speed };
+  }
+  if (path.closed) {
+    t = (t % 1 + 1) % 1;
+  } else {
+    t = Math.max(0, Math.min(1, t));
+  }
+  const seg_count = path.closed ? n : n - 1;
+  const seg_t = t * seg_count;
+  const seg_i = Math.min(Math.floor(seg_t), seg_count - 1);
+  const local_t = seg_t - seg_i;
+  if (path.kind === path_kind_linear) {
+    const a = pts[seg_i];
+    const b = pts[(seg_i + 1) % n];
+    return {
+      x: a.x + (b.x - a.x) * local_t,
+      y: a.y + (b.y - a.y) * local_t,
+      speed: a.speed + (b.speed - a.speed) * local_t
+    };
+  }
+  const wrap3 = (i) => (i % n + n) % n;
+  const p0 = pts[path.closed ? wrap3(seg_i - 1) : Math.max(seg_i - 1, 0)];
+  const p1 = pts[seg_i];
+  const p2 = pts[(seg_i + 1) % n];
+  const p3 = pts[path.closed ? wrap3(seg_i + 2) : Math.min(seg_i + 2, n - 1)];
+  return {
+    x: _catmull_rom(p0.x, p1.x, p2.x, p3.x, local_t),
+    y: _catmull_rom(p0.y, p1.y, p2.y, p3.y, local_t),
+    speed: _catmull_rom(p0.speed, p1.speed, p2.speed, p3.speed, local_t)
+  };
+}
+function _compute_length(path) {
+  const steps = path.points.length * path.precision;
+  if (steps < 2)
+    return 0;
+  let len = 0;
+  let prev = _eval_path(path, 0);
+  for (let i = 1; i <= steps; i++) {
+    const curr = _eval_path(path, i / steps);
+    const dx = curr.x - prev.x;
+    const dy = curr.y - prev.y;
+    len += Math.sqrt(dx * dx + dy * dy);
+    prev = curr;
+  }
+  return len;
+}
+function path_exists(path_id) {
+  return _paths.has(path_id);
+}
+function path_get_x(path_id, t) {
+  const p = _paths.get(path_id);
+  return p ? _eval_path(p, t).x : 0;
+}
+function path_get_y(path_id, t) {
+  const p = _paths.get(path_id);
+  return p ? _eval_path(p, t).y : 0;
+}
+function path_get_length(path_id) {
+  const p = _paths.get(path_id);
+  return p ? _compute_length(p) : 0;
+}
+var path_kind_linear, _paths, path_action_stop, path_action_restart, path_action_continue, path_action_reverse;
+var init_path = __esm({
+  "packages/engine/dist/core/path.js"() {
+    "use strict";
+    init_engine_globals();
+    path_kind_linear = 0;
+    _paths = /* @__PURE__ */ new Map();
+    path_action_stop = 0;
+    path_action_restart = 1;
+    path_action_continue = 2;
+    path_action_reverse = 3;
+  }
+});
+
+// packages/engine/dist/core/motion_planning.js
+function _mp_potential_settings() {
+  return _potential;
+}
+var _potential;
+var init_motion_planning = __esm({
+  "packages/engine/dist/core/motion_planning.js"() {
+    "use strict";
+    init_engine_globals();
+    init_game_loop();
+    init_path();
+    _potential = { maxrot: 180, rotstep: 15 };
+  }
+});
+
+// packages/engine/dist/math/random.js
+function _mulberry32() {
+  _seed |= 0;
+  _seed = _seed + 1831565813 | 0;
+  let t = Math.imul(_seed ^ _seed >>> 15, 1 | _seed);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+  return ((t ^ t >>> 14) >>> 0) / 4294967296;
+}
+function irandom_range(lo, hi) {
+  return Math.floor(lo + _mulberry32() * (hi - lo + 1));
+}
+var _seed;
+var init_random = __esm({
+  "packages/engine/dist/math/random.js"() {
+    "use strict";
+    init_engine_globals();
+    _seed = 0;
+  }
+});
+
+// packages/engine/dist/physics/physics_body.js
+function _make_default_fixture() {
+  return {
+    shape: FIXTURE_SHAPE_RECT,
+    w: 16,
+    h: 16,
+    verts: [],
+    density: 1e-3,
+    restitution: 0,
+    friction: 0.1,
+    is_sensor: false
+  };
+}
+function physics_fixture_create() {
+  const id = _next_fixture_id++;
+  _fixtures.set(id, _make_default_fixture());
+  return id;
+}
+function physics_fixture_set_box(fixture_id, w, h) {
+  const f = _fixtures.get(fixture_id);
+  if (!f)
+    return;
+  f.shape = FIXTURE_SHAPE_RECT;
+  f.w = w;
+  f.h = h;
+}
+function physics_fixture_set_circle(fixture_id, radius) {
+  const f = _fixtures.get(fixture_id);
+  if (!f)
+    return;
+  f.shape = FIXTURE_SHAPE_CIRCLE;
+  f.w = radius;
+}
+function physics_fixture_set_density(fixture_id, density) {
+  const f = _fixtures.get(fixture_id);
+  if (f)
+    f.density = density;
+}
+function physics_fixture_set_restitution(fixture_id, restitution) {
+  const f = _fixtures.get(fixture_id);
+  if (f)
+    f.restitution = Math.max(0, Math.min(1, restitution));
+}
+function physics_fixture_set_friction(fixture_id, friction) {
+  const f = _fixtures.get(fixture_id);
+  if (f)
+    f.friction = Math.max(0, friction);
+}
+function physics_fixture_set_sensor(fixture_id, is_sensor) {
+  const f = _fixtures.get(fixture_id);
+  if (f)
+    f.is_sensor = is_sensor;
+}
+function physics_fixture_bind(fixture_id, x, y, is_static = false) {
+  const world = _get_world();
+  if (!world)
+    return -1;
+  const f = _fixtures.get(fixture_id);
+  if (!f)
+    return -1;
+  let body;
+  switch (f.shape) {
+    case FIXTURE_SHAPE_CIRCLE:
+      body = import_matter_js2.default.Bodies.circle(x, y, f.w, {
+        density: f.density,
+        restitution: f.restitution,
+        friction: f.friction,
+        isStatic: is_static,
+        isSensor: f.is_sensor
+      });
+      break;
+    case FIXTURE_SHAPE_POLYGON:
+      body = import_matter_js2.default.Bodies.fromVertices(x, y, [f.verts], {
+        density: f.density,
+        restitution: f.restitution,
+        friction: f.friction,
+        isStatic: is_static,
+        isSensor: f.is_sensor
+      });
+      break;
+    default:
+      body = import_matter_js2.default.Bodies.rectangle(x, y, f.w, f.h, {
+        density: f.density,
+        restitution: f.restitution,
+        friction: f.friction,
+        isStatic: is_static,
+        isSensor: f.is_sensor
+      });
+  }
+  import_matter_js2.default.World.add(world, body);
+  const id = _next_body_id++;
+  _bodies.set(id, body);
+  body._sw_id = id;
+  return id;
+}
+function physics_fixture_delete(fixture_id) {
+  _fixtures.delete(fixture_id);
+}
+function physics_body_destroy(body_id) {
+  const world = _get_world();
+  const body = _bodies.get(body_id);
+  if (!body)
+    return;
+  if (world)
+    import_matter_js2.default.World.remove(world, body);
+  _bodies.delete(body_id);
+}
+function physics_body_apply_force(body_id, fx, fy) {
+  const body = _bodies.get(body_id);
+  if (!body)
+    return;
+  import_matter_js2.default.Body.applyForce(body, body.position, { x: fx, y: fy });
+}
+function physics_body_apply_impulse(body_id, ix, iy) {
+  const body = _bodies.get(body_id);
+  if (!body)
+    return;
+  const inv_mass = body.mass > 0 ? 1 / body.mass : 0;
+  import_matter_js2.default.Body.setVelocity(body, {
+    x: body.velocity.x + ix * inv_mass,
+    y: body.velocity.y + iy * inv_mass
+  });
+}
+function physics_body_set_velocity(body_id, vx, vy) {
+  const body = _bodies.get(body_id);
+  if (!body)
+    return;
+  import_matter_js2.default.Body.setVelocity(body, { x: vx, y: vy });
+}
+function physics_body_set_position(body_id, x, y) {
+  const body = _bodies.get(body_id);
+  if (!body)
+    return;
+  import_matter_js2.default.Body.setPosition(body, { x, y });
+}
+function physics_body_get_x(body_id) {
+  return _bodies.get(body_id)?.position.x ?? 0;
+}
+function physics_body_get_y(body_id) {
+  return _bodies.get(body_id)?.position.y ?? 0;
+}
+function physics_body_get_angle(body_id) {
+  const body = _bodies.get(body_id);
+  if (!body)
+    return 0;
+  return body.angle * 180 / Math.PI;
+}
+function physics_body_get_vx(body_id) {
+  return _bodies.get(body_id)?.velocity.x ?? 0;
+}
+function physics_body_get_vy(body_id) {
+  return _bodies.get(body_id)?.velocity.y ?? 0;
+}
+var import_matter_js2, FIXTURE_SHAPE_RECT, FIXTURE_SHAPE_CIRCLE, FIXTURE_SHAPE_POLYGON, _fixtures, _next_fixture_id, _bodies, _next_body_id;
+var init_physics_body = __esm({
+  "packages/engine/dist/physics/physics_body.js"() {
+    "use strict";
+    init_engine_globals();
+    import_matter_js2 = __toESM(require_matter(), 1);
+    init_physics_world();
+    FIXTURE_SHAPE_RECT = 0;
+    FIXTURE_SHAPE_CIRCLE = 1;
+    FIXTURE_SHAPE_POLYGON = 2;
+    _fixtures = /* @__PURE__ */ new Map();
+    _next_fixture_id = 1;
+    _bodies = /* @__PURE__ */ new Map();
+    _next_body_id = 1;
+  }
+});
+
+// packages/engine/dist/core/instance.js
 function set_draw_sprite_ext(fn) {
   _renderer_draw_sprite_ext = fn;
 }
-var instance = class _instance extends resource {
-  /**
-   * Creates a new instance in the specified room.
-   * @param room - The room this instance will belong to
-   */
-  constructor(room2) {
-    super();
-    this.x = 0;
-    this.y = 0;
-    this.xprevious = 0;
-    this.yprevious = 0;
-    this.xstart = 0;
-    this.ystart = 0;
-    this.hspeed = 0;
-    this.vspeed = 0;
-    this.speed = 0;
-    this.direction = 0;
-    this.friction = 0;
-    this.gravity = 0;
-    this.gravity_direction = 270;
-    this.sprite_index = -1;
-    this.image_index = 0;
-    this.image_speed = 1;
-    this.image_xscale = 1;
-    this.image_yscale = 1;
-    this.image_angle = 0;
-    this.image_alpha = 1;
-    this.image_blend = 16777215;
-    this.depth = 0;
-    this.visible = true;
-    this.mask_index = -1;
-    this.solid = false;
-    this.persistent = false;
-    this.active = true;
-    this.alarm = new Array(ALARM_COUNT).fill(-1);
-    this._destroyed = false;
-    this.bbox_left = 0;
-    this.bbox_top = 0;
-    this.bbox_right = 0;
-    this.bbox_bottom = 0;
-    this.mask_manual = false;
-    this.mask_off_left = 0;
-    this.mask_off_top = 0;
-    this.mask_off_right = 0;
-    this.mask_off_bottom = 0;
-    this._bound_step_begin = () => {
-    };
-    this._bound_step = () => {
-    };
-    this._bound_step_end = () => {
-    };
-    this._bound_draw = () => {
-    };
-    this._bound_draw_gui = () => {
-    };
-    this.room = room2;
-    this._bound_step_begin = this.on_step_begin.bind(this);
-    this._bound_step = this.internal_step.bind(this);
-    this._bound_step_end = this.on_step_end.bind(this);
-    this._bound_draw = this.internal_draw.bind(this);
-    this._bound_draw_gui = this.on_draw_gui.bind(this);
-  }
-  // =========================================================================
-  // Lifecycle
-  // =========================================================================
-  /**
-   * Creates a new instance of an object at the specified position.
-   * @param x - X position for the new instance
-   * @param y - Y position for the new instance
-   * @param obj - The object class to instantiate
-   * @returns The newly created instance
-   */
-  static instance_create(x, y, obj) {
-    const currentRoom = game_loop.room;
-    const inst = new obj(currentRoom);
-    inst.x = x;
-    inst.y = y;
-    inst.xstart = x;
-    inst.ystart = y;
-    inst.xprevious = x;
-    inst.yprevious = y;
-    currentRoom.instance_add(inst);
-    inst.register_events();
-    game_loop.register("CREATE", inst.on_create.bind(inst));
-    return inst;
-  }
-  /**
-   * Creates a new instance at the specified position with an explicit depth.
-   * @param x - X position
-   * @param y - Y position
-   * @param depth - Drawing depth
-   * @param obj - The object class to instantiate
-   * @returns The newly created instance
-   */
-  static instance_create_depth(x, y, depth, obj) {
-    const inst = _instance.instance_create(x, y, obj);
-    inst.depth = depth;
-    return inst;
-  }
-  /**
-   * Destroys this instance, removing it from the room.
-   * Queues the destroy event to run at the end of the current step.
-   */
-  instance_destroy() {
-    if (this._destroyed) return;
-    this._destroyed = true;
-    game_loop.register("DESTROY", this.on_destroy.bind(this));
-    this.unregister_events();
-    this.room.instance_remove(this.id);
-    resource.removeByID(this.id);
-  }
-  /**
-   * Destroys an instance by its numeric ID.
-   * @param id - ID of the instance to destroy
-   */
-  static instance_destroy_id(id) {
-    const inst = _instance.instance_find(id);
-    if (inst) inst.instance_destroy();
-  }
-  /**
-   * Registers this instance's event handlers with the game loop.
-   */
-  register_events() {
-    game_loop.register("STEP_BEGIN", this._bound_step_begin);
-    game_loop.register("STEP", this._bound_step);
-    game_loop.register("STEP_END", this._bound_step_end);
-    game_loop.register("DRAW", this._bound_draw);
-    game_loop.register("DRAW_GUI", this._bound_draw_gui);
-  }
-  /**
-   * Unregisters this instance's event handlers from the game loop.
-   */
-  unregister_events() {
-    game_loop.unregister("STEP_BEGIN", this._bound_step_begin);
-    game_loop.unregister("STEP", this._bound_step);
-    game_loop.unregister("STEP_END", this._bound_step_end);
-    game_loop.unregister("DRAW", this._bound_draw);
-    game_loop.unregister("DRAW_GUI", this._bound_draw_gui);
-  }
-  /**
-   * Internal step: alarms, input events, physics, animation, bbox, collision
-   * events, then on_step(). Bails out early if an event destroys the instance.
-   */
-  internal_step() {
-    if (!this.active || this._destroyed) return;
-    this.xprevious = this.x;
-    this.yprevious = this.y;
-    this._process_alarms();
-    if (this._destroyed) return;
-    this._process_input_events();
-    if (this._destroyed) return;
-    if (this.gravity !== 0) {
-      const grav_rad = this.gravity_direction * (Math.PI / 180);
-      this.hspeed += Math.cos(grav_rad) * this.gravity;
-      this.vspeed -= Math.sin(grav_rad) * this.gravity;
-    }
-    if (this.friction !== 0 && (this.hspeed !== 0 || this.vspeed !== 0)) {
-      const currentSpeed = Math.sqrt(this.hspeed * this.hspeed + this.vspeed * this.vspeed);
-      const newSpeed = Math.max(0, currentSpeed - this.friction);
-      if (currentSpeed > 0) {
-        const ratio = newSpeed / currentSpeed;
-        this.hspeed *= ratio;
-        this.vspeed *= ratio;
+var ALARM_COUNT, _renderer_draw_sprite_ext, instance;
+var init_instance = __esm({
+  "packages/engine/dist/core/instance.js"() {
+    "use strict";
+    init_engine_globals();
+    init_game_event();
+    init_game_loop();
+    init_resource();
+    init_collision();
+    init_motion_planning();
+    init_random();
+    init_path();
+    init_physics_world();
+    init_physics_body();
+    init_keyboard();
+    init_mouse();
+    ALARM_COUNT = 12;
+    _renderer_draw_sprite_ext = null;
+    instance = class _instance extends resource {
+      /**
+       * Creates a new instance in the specified room.
+       * @param room - The room this instance will belong to
+       */
+      constructor(room2) {
+        super();
+        this.x = 0;
+        this.y = 0;
+        this.xprevious = 0;
+        this.yprevious = 0;
+        this.xstart = 0;
+        this.ystart = 0;
+        this.hspeed = 0;
+        this.vspeed = 0;
+        this.speed = 0;
+        this.direction = 0;
+        this.friction = 0;
+        this.gravity = 0;
+        this.gravity_direction = 270;
+        this.sprite_index = -1;
+        this.image_index = 0;
+        this.image_speed = 1;
+        this.image_xscale = 1;
+        this.image_yscale = 1;
+        this.image_angle = 0;
+        this.image_alpha = 1;
+        this.image_blend = 16777215;
+        this.depth = 0;
+        this.visible = true;
+        this.mask_index = -1;
+        this.solid = false;
+        this.persistent = false;
+        this.active = true;
+        this.alarm = new Array(ALARM_COUNT).fill(-1);
+        this._destroyed = false;
+        this.bbox_left = 0;
+        this.bbox_top = 0;
+        this.bbox_right = 0;
+        this.bbox_bottom = 0;
+        this.mask_manual = false;
+        this.mask_off_left = 0;
+        this.mask_off_top = 0;
+        this.mask_off_right = 0;
+        this.mask_off_bottom = 0;
+        this.phy_body_id = -1;
+        this._phy_wants = false;
+        this._phy_shape = "box";
+        this._phy_density = 0.5;
+        this._phy_restitution = 0.1;
+        this._phy_friction = 0.2;
+        this._phy_sensor = false;
+        this._mp_dir = NaN;
+        this.path_index = -1;
+        this.path_position = 0;
+        this.path_positionprevious = 0;
+        this.path_speed = 0;
+        this.path_scale = 1;
+        this.path_orientation = 0;
+        this.path_endaction = 0;
+        this._path_off_x = 0;
+        this._path_off_y = 0;
+        this._bound_step_begin = () => {
+        };
+        this._bound_step = () => {
+        };
+        this._bound_step_end = () => {
+        };
+        this._bound_draw_gui = () => {
+        };
+        this.room = room2;
+        this._bound_step_begin = this.on_step_begin.bind(this);
+        this._bound_step = this.internal_step.bind(this);
+        this._bound_step_end = this.on_step_end.bind(this);
+        this._bound_draw_gui = this.on_draw_gui.bind(this);
       }
-    }
-    this.speed = Math.sqrt(this.hspeed * this.hspeed + this.vspeed * this.vspeed);
-    if (this.hspeed !== 0 || this.vspeed !== 0) {
-      this.direction = Math.atan2(-this.vspeed, this.hspeed) * (180 / Math.PI);
-      if (this.direction < 0) this.direction += 360;
-    }
-    this.x += this.hspeed;
-    this.y += this.vspeed;
-    this._advance_animation();
-    update_bbox(this);
-    this._process_collisions();
-    if (this._destroyed) return;
-    this.on_step();
-  }
-  /** Decrements active alarms; fires on_alarm(i) when one reaches zero. */
-  _process_alarms() {
-    for (let i = 0; i < ALARM_COUNT; i++) {
-      const a = this.alarm[i] ?? -1;
-      if (a > 0) {
-        const next = a - 1;
-        this.alarm[i] = next;
-        if (next === 0) {
-          this.alarm[i] = -1;
-          this.on_alarm(i);
-        }
-        if (this._destroyed) return;
-      }
-    }
-  }
-  /** Fires keyboard and mouse-over-instance events for this step. */
-  _process_input_events() {
-    if (keyboard_check_pressed(vk_anykey)) {
-      this.on_key_press();
-      if (this._destroyed) return;
-    }
-    if (keyboard_check_released(vk_anykey)) {
-      this.on_key_release();
-      if (this._destroyed) return;
-    }
-    if (keyboard_check(vk_anykey)) {
-      this.on_key_held();
-      if (this._destroyed) return;
-    }
-    const mx = window_mouse_get_x();
-    const my = window_mouse_get_y();
-    if (point_in_instance(mx, my, this)) {
-      if (mouse_check_button_pressed(mb_left)) {
-        this.on_mouse_left_press();
-        if (this._destroyed) return;
-      }
-      if (mouse_check_button_released(mb_left)) {
-        this.on_mouse_left_release();
-        if (this._destroyed) return;
-      }
-      if (mouse_check_button_pressed(mb_right)) {
-        this.on_mouse_right_press();
-      }
-    }
-  }
-  /** Advances the sprite animation, firing on_animation_end() on each loop. */
-  _advance_animation() {
-    if (this.image_speed === 0 || this.sprite_index < 0) return;
-    const spr = resource.findByID(this.sprite_index);
-    const frame_count = spr && "frames" in spr ? spr.frames.length : 1;
-    if (frame_count <= 0) return;
-    const prev = this.image_index;
-    this.image_index = (this.image_index + this.image_speed) % frame_count;
-    if (this.image_index < 0) this.image_index += frame_count;
-    const looped = this.image_speed > 0 ? this.image_index < prev : this.image_index > prev;
-    if (looped) this.on_animation_end();
-  }
-  /** Fires on_collision(other) for each instance this one overlaps (collision-event objects only). */
-  _process_collisions() {
-    if (this.on_collision === _instance.prototype.on_collision) return;
-    for (const other of this.room.instance_get_all()) {
-      if (other === this || !other.active) continue;
-      if (instances_collide(this, this.x, this.y, other)) {
-        this.on_collision(other);
-        if (this._destroyed) return;
-      }
-    }
-  }
-  /**
-   * Internal draw: skips hidden instances, then calls on_draw().
-   * If on_draw() has not been overridden, draws the current sprite automatically.
-   */
-  internal_draw() {
-    if (!this.visible || !this.active) return;
-    this.on_draw();
-  }
-  // =========================================================================
-  // Instance queries (static)
-  // =========================================================================
-  /**
-   * Checks if an instance with the given ID exists.
-   * @param id - The instance ID to check
-   * @returns True if the instance exists
-   */
-  static instance_exists(id) {
-    const res = resource.findByID(id);
-    if (res === void 0) return false;
-    return res instanceof _instance;
-  }
-  /**
-   * Finds an instance by its ID.
-   * @param id - The instance ID to find
-   * @returns The instance, or undefined if not found
-   */
-  static instance_find(id) {
-    const res = resource.findByID(id);
-    if (res instanceof _instance) return res;
-    return void 0;
-  }
-  /**
-   * Returns the number of active instances of a given object class in the current room.
-   * @param obj - Object class to count
-   * @returns Instance count
-   */
-  static instance_number(obj) {
-    const rm = game_loop.room;
-    if (!rm) return 0;
-    let count = 0;
-    for (const inst of rm.instance_get_all()) {
-      if (inst instanceof obj && inst.active) count++;
-    }
-    return count;
-  }
-  /**
-   * Finds the nth instance of a given object class in the current room (0-indexed).
-   * @param obj - Object class to search for
-   * @param n - Zero-based index
-   * @returns The instance, or undefined if not found
-   */
-  static instance_find_nth(obj, n) {
-    const rm = game_loop.room;
-    if (!rm) return void 0;
-    let i = 0;
-    for (const inst of rm.instance_get_all()) {
-      if (inst instanceof obj && inst.active) {
-        if (i === n) return inst;
-        i++;
-      }
-    }
-    return void 0;
-  }
-  /**
-   * Finds the first instance of a given object class at a specific position.
-   * @param x - X position to test
-   * @param y - Y position to test
-   * @param obj - Object class to check
-   * @returns The instance at that position, or undefined
-   */
-  static instance_position(x, y, obj) {
-    const rm = game_loop.room;
-    if (!rm) return void 0;
-    for (const inst of rm.instance_get_all()) {
-      if (inst instanceof obj && inst.active && point_in_instance(x, y, inst)) {
+      // =========================================================================
+      // Lifecycle
+      // =========================================================================
+      /**
+       * Creates a new instance of an object at the specified position.
+       * @param x - X position for the new instance
+       * @param y - Y position for the new instance
+       * @param obj - The object class to instantiate
+       * @returns The newly created instance
+       */
+      static instance_create(x, y, obj) {
+        const currentRoom = game_loop.room;
+        const inst = new obj(currentRoom);
+        inst.x = x;
+        inst.y = y;
+        inst.xstart = x;
+        inst.ystart = y;
+        inst.xprevious = x;
+        inst.yprevious = y;
+        currentRoom.instance_add(inst);
+        inst.register_events();
+        game_loop.register(EVENT_TYPE.create, inst.on_create.bind(inst));
         return inst;
       }
-    }
-    return void 0;
-  }
-  /**
-   * Returns the nearest instance of obj to a given point.
-   * @param x - Reference X
-   * @param y - Reference Y
-   * @param obj - Object class to search
-   * @returns Nearest instance, or undefined if none exist
-   */
-  static instance_nearest(x, y, obj) {
-    const rm = game_loop.room;
-    if (!rm) return void 0;
-    let nearest;
-    let min_dist = Infinity;
-    for (const inst of rm.instance_get_all()) {
-      if (inst instanceof obj && inst.active) {
-        const dx = inst.x - x;
-        const dy = inst.y - y;
-        const d = dx * dx + dy * dy;
-        if (d < min_dist) {
-          min_dist = d;
-          nearest = inst;
+      /**
+       * Creates a new instance at the specified position with an explicit depth.
+       * @param x - X position
+       * @param y - Y position
+       * @param depth - Drawing depth
+       * @param obj - The object class to instantiate
+       * @returns The newly created instance
+       */
+      static instance_create_depth(x, y, depth, obj) {
+        const inst = _instance.instance_create(x, y, obj);
+        inst.depth = depth;
+        return inst;
+      }
+      /**
+       * Destroys this instance, removing it from the room.
+       * Queues the destroy event to run at the end of the current step.
+       */
+      instance_destroy() {
+        if (this._destroyed)
+          return;
+        this._destroyed = true;
+        if (this.phy_body_id >= 0) {
+          physics_body_destroy(this.phy_body_id);
+          this.phy_body_id = -1;
+        }
+        game_loop.register(EVENT_TYPE.destroy, this.on_destroy.bind(this));
+        this.unregister_events();
+        this.room.instance_remove(this.id);
+        resource.removeByID(this.id);
+      }
+      /**
+       * Destroys an instance by its numeric ID.
+       * @param id - ID of the instance to destroy
+       */
+      static instance_destroy_id(id) {
+        const inst = _instance.instance_find(id);
+        if (inst)
+          inst.instance_destroy();
+      }
+      /**
+       * Registers this instance's event handlers with the game loop.
+       */
+      register_events() {
+        game_loop.register(EVENT_TYPE.step_begin, this._bound_step_begin);
+        game_loop.register(EVENT_TYPE.step, this._bound_step);
+        game_loop.register(EVENT_TYPE.step_end, this._bound_step_end);
+        game_loop.register(EVENT_TYPE.draw_gui, this._bound_draw_gui);
+      }
+      /**
+       * Unregisters this instance's event handlers from the game loop.
+       */
+      unregister_events() {
+        game_loop.unregister(EVENT_TYPE.step_begin, this._bound_step_begin);
+        game_loop.unregister(EVENT_TYPE.step, this._bound_step);
+        game_loop.unregister(EVENT_TYPE.step_end, this._bound_step_end);
+        game_loop.unregister(EVENT_TYPE.draw_gui, this._bound_draw_gui);
+      }
+      /**
+       * Internal step: alarms, input events, physics, animation, bbox, collision
+       * events, then on_step(). Bails out early if an event destroys the instance.
+       */
+      internal_step() {
+        if (!this.active || this._destroyed)
+          return;
+        this.xprevious = this.x;
+        this.yprevious = this.y;
+        this._process_alarms();
+        if (this._destroyed)
+          return;
+        this._process_input_events();
+        if (this._destroyed)
+          return;
+        if (this.gravity !== 0) {
+          const grav_rad = this.gravity_direction * (Math.PI / 180);
+          this.hspeed += Math.cos(grav_rad) * this.gravity;
+          this.vspeed -= Math.sin(grav_rad) * this.gravity;
+        }
+        if (this.friction !== 0 && (this.hspeed !== 0 || this.vspeed !== 0)) {
+          const currentSpeed = Math.sqrt(this.hspeed * this.hspeed + this.vspeed * this.vspeed);
+          const newSpeed = Math.max(0, currentSpeed - this.friction);
+          if (currentSpeed > 0) {
+            const ratio = newSpeed / currentSpeed;
+            this.hspeed *= ratio;
+            this.vspeed *= ratio;
+          }
+        }
+        this.speed = Math.sqrt(this.hspeed * this.hspeed + this.vspeed * this.vspeed);
+        if (this.hspeed !== 0 || this.vspeed !== 0) {
+          this.direction = Math.atan2(-this.vspeed, this.hspeed) * (180 / Math.PI);
+          if (this.direction < 0)
+            this.direction += 360;
+        }
+        this.x += this.hspeed;
+        this.y += this.vspeed;
+        if (this.path_index >= 0) {
+          this._advance_path();
+          if (this._destroyed)
+            return;
+        }
+        this._advance_animation();
+        update_bbox(this);
+        this._process_collisions();
+        if (this._destroyed)
+          return;
+        this._process_boundary_events();
+        if (this._destroyed)
+          return;
+        this.on_step();
+      }
+      /** Decrements active alarms; fires on_alarm(i) when one reaches zero. */
+      _process_alarms() {
+        for (let i = 0; i < ALARM_COUNT; i++) {
+          const a = this.alarm[i] ?? -1;
+          if (a > 0) {
+            const next = a - 1;
+            this.alarm[i] = next;
+            if (next === 0) {
+              this.alarm[i] = -1;
+              this.on_alarm(i);
+            }
+            if (this._destroyed)
+              return;
+          }
         }
       }
-    }
-    return nearest;
-  }
-  /**
-   * Returns the furthest instance of obj from a given point.
-   * @param x - Reference X
-   * @param y - Reference Y
-   * @param obj - Object class to search
-   * @returns Furthest instance, or undefined if none exist
-   */
-  static instance_furthest(x, y, obj) {
-    const rm = game_loop.room;
-    if (!rm) return void 0;
-    let furthest;
-    let max_dist = -1;
-    for (const inst of rm.instance_get_all()) {
-      if (inst instanceof obj && inst.active) {
-        const dx = inst.x - x;
-        const dy = inst.y - y;
-        const d = dx * dx + dy * dy;
-        if (d > max_dist) {
-          max_dist = d;
-          furthest = inst;
+      /** Fires keyboard and mouse-over-instance events for this step. */
+      _process_input_events() {
+        if (keyboard_check_pressed(vk_anykey)) {
+          this.on_key_press();
+          if (this._destroyed)
+            return;
+        }
+        if (keyboard_check_released(vk_anykey)) {
+          this.on_key_release();
+          if (this._destroyed)
+            return;
+        }
+        if (keyboard_check(vk_anykey)) {
+          this.on_key_held();
+          if (this._destroyed)
+            return;
+        }
+        const mx = window_mouse_get_x();
+        const my = window_mouse_get_y();
+        if (point_in_instance(mx, my, this)) {
+          if (mouse_check_button_pressed(mb_left)) {
+            this.on_mouse_left_press();
+            if (this._destroyed)
+              return;
+          }
+          if (mouse_check_button_released(mb_left)) {
+            this.on_mouse_left_release();
+            if (this._destroyed)
+              return;
+          }
+          if (mouse_check_button_pressed(mb_right)) {
+            this.on_mouse_right_press();
+          }
         }
       }
-    }
-    return furthest;
+      /** Advances the sprite animation, firing on_animation_end() on each loop. */
+      _advance_animation() {
+        if (this.image_speed === 0 || this.sprite_index < 0)
+          return;
+        const spr = resource.findByID(this.sprite_index);
+        const frame_count = spr && "frames" in spr ? spr.frames.length : 1;
+        if (frame_count <= 0)
+          return;
+        const prev = this.image_index;
+        this.image_index = (this.image_index + this.image_speed) % frame_count;
+        if (this.image_index < 0)
+          this.image_index += frame_count;
+        const looped = this.image_speed > 0 ? this.image_index < prev : this.image_index > prev;
+        if (looped)
+          this.on_animation_end();
+      }
+      /** Fires on_collision(other) for each instance this one overlaps (collision-event objects only). */
+      _process_collisions() {
+        if (this.on_collision === _instance.prototype.on_collision)
+          return;
+        for (const other of this.room.instance_get_all()) {
+          if (other === this || !other.active)
+            continue;
+          if (instances_collide(this, this.x, this.y, other)) {
+            this.on_collision(other);
+            if (this._destroyed)
+              return;
+          }
+        }
+      }
+      /**
+       * Internal draw: skips hidden instances, then calls on_draw().
+       * If on_draw() has not been overridden, draws the current sprite automatically.
+       */
+      /**
+       * Runs the main Draw event (skips hidden/inactive instances).
+       * Called by the game loop in depth order — not registered as an event.
+       */
+      run_draw() {
+        if (!this.visible || !this.active)
+          return;
+        this.on_draw();
+      }
+      /** Runs the Draw Begin event (skips hidden/inactive instances). */
+      run_draw_begin() {
+        if (!this.visible || !this.active)
+          return;
+        this.on_draw_begin();
+      }
+      /** Runs the Draw End event (skips hidden/inactive instances). */
+      run_draw_end() {
+        if (!this.visible || !this.active)
+          return;
+        this.on_draw_end();
+      }
+      // =========================================================================
+      // Instance queries (static)
+      // =========================================================================
+      /**
+       * Checks if an instance with the given ID exists.
+       * @param id - The instance ID to check
+       * @returns True if the instance exists
+       */
+      static instance_exists(id) {
+        const res = resource.findByID(id);
+        if (res === void 0)
+          return false;
+        return res instanceof _instance;
+      }
+      /**
+       * Finds an instance by its ID.
+       * @param id - The instance ID to find
+       * @returns The instance, or undefined if not found
+       */
+      static instance_find(id) {
+        const res = resource.findByID(id);
+        if (res instanceof _instance)
+          return res;
+        return void 0;
+      }
+      /**
+       * Returns the number of active instances of a given object class in the current room.
+       * @param obj - Object class to count
+       * @returns Instance count
+       */
+      static instance_number(obj) {
+        const rm = game_loop.room;
+        if (!rm)
+          return 0;
+        let count = 0;
+        for (const inst of rm.instance_get_all()) {
+          if (inst instanceof obj && inst.active)
+            count++;
+        }
+        return count;
+      }
+      /**
+       * Finds the nth instance of a given object class in the current room (0-indexed).
+       * @param obj - Object class to search for
+       * @param n - Zero-based index
+       * @returns The instance, or undefined if not found
+       */
+      static instance_find_nth(obj, n) {
+        const rm = game_loop.room;
+        if (!rm)
+          return void 0;
+        let i = 0;
+        for (const inst of rm.instance_get_all()) {
+          if (inst instanceof obj && inst.active) {
+            if (i === n)
+              return inst;
+            i++;
+          }
+        }
+        return void 0;
+      }
+      /**
+       * Finds the first instance of a given object class at a specific position.
+       * @param x - X position to test
+       * @param y - Y position to test
+       * @param obj - Object class to check
+       * @returns The instance at that position, or undefined
+       */
+      static instance_position(x, y, obj) {
+        const rm = game_loop.room;
+        if (!rm)
+          return void 0;
+        for (const inst of rm.instance_get_all()) {
+          if (inst instanceof obj && inst.active && point_in_instance(x, y, inst)) {
+            return inst;
+          }
+        }
+        return void 0;
+      }
+      /**
+       * Returns the nearest instance of obj to a given point.
+       * @param x - Reference X
+       * @param y - Reference Y
+       * @param obj - Object class to search
+       * @returns Nearest instance, or undefined if none exist
+       */
+      static instance_nearest(x, y, obj) {
+        const rm = game_loop.room;
+        if (!rm)
+          return void 0;
+        let nearest;
+        let min_dist = Infinity;
+        for (const inst of rm.instance_get_all()) {
+          if (inst instanceof obj && inst.active) {
+            const dx = inst.x - x;
+            const dy = inst.y - y;
+            const d = dx * dx + dy * dy;
+            if (d < min_dist) {
+              min_dist = d;
+              nearest = inst;
+            }
+          }
+        }
+        return nearest;
+      }
+      /**
+       * Returns the furthest instance of obj from a given point.
+       * @param x - Reference X
+       * @param y - Reference Y
+       * @param obj - Object class to search
+       * @returns Furthest instance, or undefined if none exist
+       */
+      static instance_furthest(x, y, obj) {
+        const rm = game_loop.room;
+        if (!rm)
+          return void 0;
+        let furthest;
+        let max_dist = -1;
+        for (const inst of rm.instance_get_all()) {
+          if (inst instanceof obj && inst.active) {
+            const dx = inst.x - x;
+            const dy = inst.y - y;
+            const d = dx * dx + dy * dy;
+            if (d > max_dist) {
+              max_dist = d;
+              furthest = inst;
+            }
+          }
+        }
+        return furthest;
+      }
+      /**
+       * Deactivates all instances (optionally excluding self).
+       * Deactivated instances are skipped in step and draw.
+       * @param not_me - If true, this instance is excluded from deactivation
+       */
+      instance_deactivate_all(not_me = false) {
+        const rm = game_loop.room;
+        if (!rm)
+          return;
+        for (const inst of rm.instance_get_all()) {
+          if (not_me && inst === this)
+            continue;
+          inst.active = false;
+        }
+      }
+      /**
+       * Deactivates all instances of a specific object class.
+       * @param obj - Object class to deactivate
+       */
+      static instance_deactivate_object(obj) {
+        const rm = game_loop.room;
+        if (!rm)
+          return;
+        for (const inst of rm.instance_get_all()) {
+          if (inst instanceof obj)
+            inst.active = false;
+        }
+      }
+      /**
+       * Activates all instances in the current room.
+       */
+      static instance_activate_all() {
+        const rm = game_loop.room;
+        if (!rm)
+          return;
+        for (const inst of rm.instance_get_all()) {
+          inst.active = true;
+        }
+      }
+      /**
+       * Activates all instances of a specific object class.
+       * @param obj - Object class to activate
+       */
+      static instance_activate_object(obj) {
+        const rm = game_loop.room;
+        if (!rm)
+          return;
+        for (const inst of rm.instance_get_all()) {
+          if (inst instanceof obj)
+            inst.active = true;
+        }
+      }
+      /**
+       * True if the instance's bounding box overlaps the given region.
+       * @param inst - Instance to test
+       * @param l - Region left
+       * @param t - Region top
+       * @param r - Region right
+       * @param b - Region bottom
+       */
+      static _bbox_in_region(inst, l, t, r, b) {
+        update_bbox(inst);
+        return inst.bbox_right >= l && inst.bbox_left <= r && inst.bbox_bottom >= t && inst.bbox_top <= b;
+      }
+      /**
+       * Deactivates instances within (or outside) a rectangular region.
+       * @param left - Region left
+       * @param top - Region top
+       * @param width - Region width
+       * @param height - Region height
+       * @param inside - Deactivate instances overlapping the region (true) or those not overlapping it (false)
+       * @param not_me - If true, this instance is excluded
+       */
+      instance_deactivate_region(left, top, width, height, inside = true, not_me = false) {
+        const rm = game_loop.room;
+        if (!rm)
+          return;
+        const r = left + width, b = top + height;
+        for (const inst of rm.instance_get_all()) {
+          if (not_me && inst === this)
+            continue;
+          if (_instance._bbox_in_region(inst, left, top, r, b) === inside)
+            inst.active = false;
+        }
+      }
+      /**
+       * Activates instances within (or outside) a rectangular region.
+       * @param left - Region left
+       * @param top - Region top
+       * @param width - Region width
+       * @param height - Region height
+       * @param inside - Activate instances overlapping the region (true) or those not overlapping it (false)
+       */
+      static instance_activate_region(left, top, width, height, inside = true) {
+        const rm = game_loop.room;
+        if (!rm)
+          return;
+        const r = left + width, b = top + height;
+        for (const inst of rm.instance_get_all()) {
+          if (_instance._bbox_in_region(inst, left, top, r, b) === inside)
+            inst.active = true;
+        }
+      }
+      // =========================================================================
+      // Collision methods (instance-level)
+      // =========================================================================
+      /**
+       * Checks if this instance would collide with any instance of obj at position (x, y).
+       * Does not move the instance.
+       * @param x - X position to test
+       * @param y - Y position to test
+       * @param obj - Object class to check against
+       * @returns True if a collision would occur
+       */
+      place_meeting(x, y, obj) {
+        const rm = game_loop.room;
+        if (!rm)
+          return false;
+        for (const other of rm.instance_get_all()) {
+          if (other === this)
+            continue;
+          if (!(other instanceof obj))
+            continue;
+          if (!other.active)
+            continue;
+          if (instances_collide(this, x, y, other))
+            return true;
+        }
+        return false;
+      }
+      /**
+       * Checks if position (x, y) is free of solid instances.
+       * @param x - X position to test
+       * @param y - Y position to test
+       * @returns True if no solid instances occupy that position
+       */
+      place_free(x, y) {
+        const rm = game_loop.room;
+        if (!rm)
+          return true;
+        for (const other of rm.instance_get_all()) {
+          if (other === this)
+            continue;
+          if (!other.solid || !other.active)
+            continue;
+          if (instances_collide(this, x, y, other))
+            return false;
+        }
+        return true;
+      }
+      /**
+       * Checks if position (x, y) is completely empty (no instances of any kind).
+       * @param x - X position to test
+       * @param y - Y position to test
+       * @returns True if no instances occupy that position
+       */
+      place_empty(x, y) {
+        const rm = game_loop.room;
+        if (!rm)
+          return true;
+        for (const other of rm.instance_get_all()) {
+          if (other === this)
+            continue;
+          if (!other.active)
+            continue;
+          if (instances_collide(this, x, y, other))
+            return false;
+        }
+        return true;
+      }
+      /**
+       * Like place_meeting, but returns the first instance collided with at (x, y),
+       * or undefined if none.
+       * @param x - X position to test
+       * @param y - Y position to test
+       * @param obj - Object class to check against (pass the base `instance` for "all")
+       */
+      instance_place(x, y, obj) {
+        const rm = game_loop.room;
+        if (!rm)
+          return void 0;
+        for (const other of rm.instance_get_all()) {
+          if (other === this || !other.active)
+            continue;
+          if (!(other instanceof obj))
+            continue;
+          if (instances_collide(this, x, y, other))
+            return other;
+        }
+        return void 0;
+      }
+      // =========================================================================
+      // Collision mask (manual)
+      // =========================================================================
+      /**
+       * Sets a manual rectangular collision mask, as offsets from the instance
+       * origin (x, y). Use this for spriteless objects so collision functions work.
+       * @param left - Left offset from x
+       * @param top - Top offset from y
+       * @param right - Right offset from x
+       * @param bottom - Bottom offset from y
+       */
+      mask_set_rectangle(left, top, right, bottom) {
+        this.mask_manual = true;
+        this.mask_off_left = left;
+        this.mask_off_top = top;
+        this.mask_off_right = right;
+        this.mask_off_bottom = bottom;
+        update_bbox(this);
+      }
+      /**
+       * Convenience: sets a manual width×height mask with its top-left at the origin.
+       * @param width - Mask width
+       * @param height - Mask height
+       */
+      mask_set_size(width, height) {
+        this.mask_set_rectangle(0, 0, width, height);
+      }
+      /** Removes the manual mask, reverting to the sprite/mask_index-derived bbox. */
+      mask_clear() {
+        this.mask_manual = false;
+        update_bbox(this);
+      }
+      // =========================================================================
+      // Physics (matter.js body binding)
+      // =========================================================================
+      /**
+       * Marks this instance as physics-enabled (called from `gm_object` when the object
+       * declares `static physics = true`). The matter.js body is created lazily on the
+       * first physics step, so x/y and any collision mask are already in place. A density
+       * of ≤ 0 makes the body static (immovable) — e.g. for floors and walls.
+       * @param shape - 'box' or 'circle'
+       * @param density - Mass density; ≤ 0 ⇒ static body
+       * @param restitution - Bounciness, 0–1
+       * @param friction - Surface friction
+       * @param sensor - True = detects overlaps without a physical response
+       */
+      phy_request(shape, density, restitution, friction, sensor) {
+        this._phy_wants = true;
+        this._phy_shape = shape;
+        this._phy_density = density;
+        this._phy_restitution = restitution;
+        this._phy_friction = friction;
+        this._phy_sensor = sensor;
+      }
+      /**
+       * Creates the matter.js body if this instance wants physics, has none yet, and a
+       * physics world exists. Called by the game loop each step (a no-op once bound).
+       */
+      phy_ensure_body() {
+        if (!this._phy_wants || this.phy_body_id >= 0)
+          return;
+        if (!physics_world_get_engine())
+          return;
+        const { w, h } = this._phy_extent();
+        const fix = physics_fixture_create();
+        if (this._phy_shape === "circle")
+          physics_fixture_set_circle(fix, Math.max(w, h) / 2);
+        else
+          physics_fixture_set_box(fix, w, h);
+        physics_fixture_set_density(fix, Math.max(0, this._phy_density));
+        physics_fixture_set_restitution(fix, this._phy_restitution);
+        physics_fixture_set_friction(fix, this._phy_friction);
+        physics_fixture_set_sensor(fix, this._phy_sensor);
+        this.phy_body_id = physics_fixture_bind(fix, this.x, this.y, this._phy_density <= 0);
+        physics_fixture_delete(fix);
+      }
+      /** Syncs x/y/image_angle from the physics body. Called by the loop after stepping. */
+      phy_sync_from_body() {
+        if (this.phy_body_id < 0)
+          return;
+        this.x = physics_body_get_x(this.phy_body_id);
+        this.y = physics_body_get_y(this.phy_body_id);
+        this.image_angle = physics_body_get_angle(this.phy_body_id);
+      }
+      /** The body's pixel extent: manual mask, else sprite bbox, else a 32×32 default. */
+      _phy_extent() {
+        if (this.mask_manual) {
+          const w = this.mask_off_right - this.mask_off_left;
+          const h = this.mask_off_bottom - this.mask_off_top;
+          if (w > 0 && h > 0)
+            return { w, h };
+        }
+        const bw = this.bbox_right - this.bbox_left;
+        const bh = this.bbox_bottom - this.bbox_top;
+        if (bw > 0 && bh > 0)
+          return { w: bw, h: bh };
+        return { w: 32, h: 32 };
+      }
+      /** Applies a continuous force at the body's centre (pixel-space units). */
+      phy_apply_force(fx, fy) {
+        if (this.phy_body_id >= 0)
+          physics_body_apply_force(this.phy_body_id, fx, fy);
+      }
+      /** Applies an instantaneous impulse at the body's centre. */
+      phy_apply_impulse(fx, fy) {
+        if (this.phy_body_id >= 0)
+          physics_body_apply_impulse(this.phy_body_id, fx, fy);
+      }
+      /** Teleports the physics body (and the instance) to a position. */
+      phy_set_position(x, y) {
+        if (this.phy_body_id >= 0)
+          physics_body_set_position(this.phy_body_id, x, y);
+        this.x = x;
+        this.y = y;
+      }
+      /** Horizontal velocity of the physics body (pixels/step). */
+      get phy_speed_x() {
+        return this.phy_body_id >= 0 ? physics_body_get_vx(this.phy_body_id) : 0;
+      }
+      set phy_speed_x(v) {
+        if (this.phy_body_id >= 0)
+          physics_body_set_velocity(this.phy_body_id, v, physics_body_get_vy(this.phy_body_id));
+      }
+      /** Vertical velocity of the physics body (pixels/step). */
+      get phy_speed_y() {
+        return this.phy_body_id >= 0 ? physics_body_get_vy(this.phy_body_id) : 0;
+      }
+      set phy_speed_y(v) {
+        if (this.phy_body_id >= 0)
+          physics_body_set_velocity(this.phy_body_id, physics_body_get_vx(this.phy_body_id), v);
+      }
+      /**
+       * Moves the instance by the given amount, stopping when it hits a solid.
+       * @param hspd - Horizontal movement
+       * @param vspd - Vertical movement
+       * @returns True if the movement was blocked by a solid
+       */
+      move_contact_solid(hspd, vspd) {
+        const target_x = this.x + hspd;
+        const target_y = this.y + vspd;
+        if (this.place_free(target_x, target_y)) {
+          this.x = target_x;
+          this.y = target_y;
+          return false;
+        }
+        return true;
+      }
+      /**
+       * Wraps the instance around the room edges.
+       * @param hor - Wrap horizontally
+       * @param vert - Wrap vertically
+       * @param margin - Extra margin (pixels outside room edge before wrapping)
+       */
+      move_wrap(hor, vert, margin = 0) {
+        const rm = game_loop.room;
+        if (!rm)
+          return;
+        const bbox_w = this.bbox_right - this.bbox_left;
+        const bbox_h = this.bbox_bottom - this.bbox_top;
+        if (hor) {
+          if (this.x + bbox_w < -margin)
+            this.x = rm.room_width + margin;
+          else if (this.x - bbox_w > rm.room_width + margin)
+            this.x = -margin;
+        }
+        if (vert) {
+          if (this.y + bbox_h < -margin)
+            this.y = rm.room_height + margin;
+          else if (this.y - bbox_h > rm.room_height + margin)
+            this.y = -margin;
+        }
+      }
+      /**
+       * Returns the shortest distance from this instance to any instance of obj.
+       * @param obj - Object class to measure distance to
+       * @returns Distance in pixels, or Infinity if no instance found
+       */
+      distance_to_object(obj) {
+        const rm = game_loop.room;
+        if (!rm)
+          return Infinity;
+        let min_dist = Infinity;
+        for (const inst of rm.instance_get_all()) {
+          if (inst === this || !inst.active)
+            continue;
+          if (!(inst instanceof obj))
+            continue;
+          const dx = inst.x - this.x;
+          const dy = inst.y - this.y;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          if (d < min_dist)
+            min_dist = d;
+        }
+        return min_dist;
+      }
+      // =========================================================================
+      // Movement
+      // =========================================================================
+      /**
+       * Sets the instance's motion using speed and direction.
+       * @param dir - Direction in degrees (0 = right, counter-clockwise)
+       * @param spd - Speed in pixels per step
+       */
+      motion_set(dir, spd) {
+        this.direction = dir;
+        this.speed = spd;
+        const rad = dir * (Math.PI / 180);
+        this.hspeed = Math.cos(rad) * spd;
+        this.vspeed = -Math.sin(rad) * spd;
+      }
+      /**
+       * Adds motion to the instance's current movement.
+       * @param dir - Direction in degrees
+       * @param spd - Speed to add
+       */
+      motion_add(dir, spd) {
+        const rad = dir * (Math.PI / 180);
+        this.hspeed += Math.cos(rad) * spd;
+        this.vspeed += -Math.sin(rad) * spd;
+        this.speed = Math.sqrt(this.hspeed * this.hspeed + this.vspeed * this.vspeed);
+        if (this.hspeed !== 0 || this.vspeed !== 0) {
+          this.direction = Math.atan2(-this.vspeed, this.hspeed) * (180 / Math.PI);
+          if (this.direction < 0)
+            this.direction += 360;
+        }
+      }
+      /**
+       * Moves the instance toward a point at the given speed.
+       * @param x - Target X position
+       * @param y - Target Y position
+       * @param spd - Speed to move at
+       */
+      move_towards_point(x, y, spd) {
+        const dir = Math.atan2(-(y - this.y), x - this.x) * (180 / Math.PI);
+        this.motion_set(dir < 0 ? dir + 360 : dir, spd);
+      }
+      /**
+       * Returns the distance from this instance's bounding box to a point.
+       * Returns 0 if the point lies inside the bounding box.
+       * @param x - Point X
+       * @param y - Point Y
+       */
+      distance_to_point(x, y) {
+        update_bbox(this);
+        const dx = Math.max(this.bbox_left - x, 0, x - this.bbox_right);
+        const dy = Math.max(this.bbox_top - y, 0, y - this.bbox_bottom);
+        return Math.sqrt(dx * dx + dy * dy);
+      }
+      /**
+       * Snaps the instance position to a grid.
+       * @param hsnap - Horizontal grid size (ignored if ≤ 0)
+       * @param vsnap - Vertical grid size (ignored if ≤ 0)
+       */
+      move_snap(hsnap, vsnap) {
+        if (hsnap > 0)
+          this.x = Math.round(this.x / hsnap) * hsnap;
+        if (vsnap > 0)
+          this.y = Math.round(this.y / vsnap) * vsnap;
+      }
+      /**
+       * True if the instance position is aligned to the given grid.
+       * @param hsnap - Horizontal grid size
+       * @param vsnap - Vertical grid size
+       */
+      place_snapped(hsnap, vsnap) {
+        const hok = hsnap <= 0 || this.x % hsnap === 0;
+        const vok = vsnap <= 0 || this.y % vsnap === 0;
+        return hok && vok;
+      }
+      /**
+       * Moves the instance to a random, grid-snapped, collision-free position in
+       * the room (tries a number of times before giving up).
+       * @param hsnap - Horizontal grid size (use 1 for any pixel)
+       * @param vsnap - Vertical grid size
+       */
+      move_random(hsnap, vsnap) {
+        const rm = game_loop.room;
+        if (!rm)
+          return;
+        const hs = hsnap > 0 ? hsnap : 1;
+        const vs = vsnap > 0 ? vsnap : 1;
+        const hcells = Math.max(1, Math.floor(rm.room_width / hs));
+        const vcells = Math.max(1, Math.floor(rm.room_height / vs));
+        for (let tries = 0; tries < 1e3; tries++) {
+          const nx = irandom_range(0, hcells - 1) * hs;
+          const ny = irandom_range(0, vcells - 1) * vs;
+          if (this.place_free(nx, ny)) {
+            this.x = nx;
+            this.y = ny;
+            return;
+          }
+        }
+      }
+      /**
+       * Like move_contact_solid but treats all instances as obstacles.
+       * @param hspd - Horizontal movement
+       * @param vspd - Vertical movement
+       * @returns True if the movement was blocked
+       */
+      move_contact_all(hspd, vspd) {
+        const tx = this.x + hspd, ty = this.y + vspd;
+        if (this.place_empty(tx, ty)) {
+          this.x = tx;
+          this.y = ty;
+          return false;
+        }
+        return true;
+      }
+      /**
+       * Steps the instance in the given direction until it is no longer colliding
+       * with a solid (up to its bounding-box size in steps).
+       * @param hspd - Horizontal step
+       * @param vspd - Vertical step
+       */
+      move_outside_solid(hspd, vspd) {
+        this._move_outside(hspd, vspd, false);
+      }
+      /** As move_outside_solid but treats all instances as obstacles. */
+      move_outside_all(hspd, vspd) {
+        this._move_outside(hspd, vspd, true);
+      }
+      /** Steps in (hspd,vspd) until the position is free (or a step cap is hit). */
+      _move_outside(hspd, vspd, all) {
+        const free = (x, y) => all ? this.place_empty(x, y) : this.place_free(x, y);
+        const step = Math.hypot(hspd, vspd);
+        if (step < 1e-9)
+          return;
+        const max_steps = 1e3;
+        for (let i = 0; i < max_steps; i++) {
+          if (free(this.x, this.y))
+            return;
+          this.x += hspd;
+          this.y += vspd;
+        }
+      }
+      /**
+       * Bounces the instance off solid instances by reflecting its hspeed/vspeed.
+       * @param advanced - Reserved for slanted-wall handling (currently axis-aligned reflection)
+       */
+      move_bounce_solid(advanced = false) {
+        this._move_bounce(advanced, false);
+      }
+      /** As move_bounce_solid but bounces off all instances. */
+      move_bounce_all(advanced = false) {
+        this._move_bounce(advanced, true);
+      }
+      /** Axis-aligned bounce: flips the blocked velocity component(s). */
+      _move_bounce(_advanced, all) {
+        const free = (x, y) => all ? this.place_empty(x, y) : this.place_free(x, y);
+        const nx = this.x + this.hspeed, ny = this.y + this.vspeed;
+        if (free(nx, ny))
+          return;
+        const blocked_h = !free(this.x + this.hspeed, this.y);
+        const blocked_v = !free(this.x, this.y + this.vspeed);
+        if (blocked_h)
+          this.hspeed = -this.hspeed;
+        if (blocked_v)
+          this.vspeed = -this.vspeed;
+        if (!blocked_h && !blocked_v) {
+          this.hspeed = -this.hspeed;
+          this.vspeed = -this.vspeed;
+        }
+        this.speed = Math.hypot(this.hspeed, this.vspeed);
+        if (this.hspeed !== 0 || this.vspeed !== 0) {
+          this.direction = Math.atan2(-this.vspeed, this.hspeed) * (180 / Math.PI);
+          if (this.direction < 0)
+            this.direction += 360;
+        }
+      }
+      // =========================================================================
+      // Motion planning steppers (GMS mp_*_step)
+      // =========================================================================
+      /** True if (x,y) is clear: `checkall` ⇒ no instances at all, else no solids. */
+      _mp_free(x, y, checkall) {
+        return checkall ? this.place_empty(x, y) : this.place_free(x, y);
+      }
+      /**
+       * Moves up to `stepsize` straight toward (x, y), stopping if the step is blocked.
+       * @param checkall - True = treat all instances as obstacles; false = only solids
+       * @returns True once the instance is at the target
+       */
+      mp_linear_step(x, y, stepsize, checkall) {
+        const dx = x - this.x, dy = y - this.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1e-6)
+          return true;
+        const step = Math.min(stepsize, dist);
+        const nx = this.x + dx / dist * step;
+        const ny = this.y + dy / dist * step;
+        if (this._mp_free(nx, ny, checkall)) {
+          this.x = nx;
+          this.y = ny;
+        }
+        return Math.hypot(x - this.x, y - this.y) < 1e-6;
+      }
+      /** Like `mp_linear_step`, but only instances of `obj` block the move. */
+      mp_linear_step_object(x, y, stepsize, obj) {
+        const dx = x - this.x, dy = y - this.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1e-6)
+          return true;
+        const step = Math.min(stepsize, dist);
+        const nx = this.x + dx / dist * step;
+        const ny = this.y + dy / dist * step;
+        if (!this.place_meeting(nx, ny, obj)) {
+          this.x = nx;
+          this.y = ny;
+        }
+        return Math.hypot(x - this.x, y - this.y) < 1e-6;
+      }
+      /**
+       * Steps `stepsize` toward (x, y) while steering around obstacles (potential field).
+       * Sweeps outward from the direct heading (see `mp_potential_settings`) for a free step.
+       * @returns True once near the target
+       */
+      mp_potential_step(x, y, stepsize, checkall) {
+        return this._mp_potential(x, y, stepsize, (nx, ny) => this._mp_free(nx, ny, checkall));
+      }
+      /** Like `mp_potential_step`, but only instances of `obj` block the move. */
+      mp_potential_step_object(x, y, stepsize, obj) {
+        return this._mp_potential(x, y, stepsize, (nx, ny) => !this.place_meeting(nx, ny, obj));
+      }
+      _mp_potential(x, y, stepsize, is_free) {
+        const dx = x - this.x, dy = y - this.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1e-6)
+          return true;
+        const step = Math.min(stepsize, dist);
+        const { maxrot, rotstep } = _mp_potential_settings();
+        const rstep = rotstep * (Math.PI / 180);
+        const max_rad = maxrot * (Math.PI / 180);
+        const desired = Math.atan2(dy, dx);
+        let dir = Number.isNaN(this._mp_dir) ? desired : this._mp_dir;
+        const free_at = (d) => is_free(this.x + Math.cos(d) * step, this.y + Math.sin(d) * step);
+        const want = this._approach_angle(dir, desired, rstep);
+        if (free_at(want)) {
+          dir = want;
+        } else {
+          let found = false;
+          for (let a = rstep; a <= max_rad + 1e-6 && !found; a += rstep) {
+            for (const sgn of [1, -1]) {
+              if (free_at(dir + sgn * a)) {
+                dir += sgn * a;
+                found = true;
+                break;
+              }
+            }
+          }
+          if (!found) {
+            this._mp_dir = dir;
+            return false;
+          }
+        }
+        this._mp_dir = dir;
+        this.x += Math.cos(dir) * step;
+        this.y += Math.sin(dir) * step;
+        this.direction = (-dir * 180 / Math.PI % 360 + 360) % 360;
+        return Math.hypot(x - this.x, y - this.y) < stepsize;
+      }
+      /** Rotates `from` toward `to` by at most `max_step` radians, the short way. */
+      _approach_angle(from, to, max_step) {
+        let diff = to - from;
+        while (diff > Math.PI)
+          diff -= 2 * Math.PI;
+        while (diff < -Math.PI)
+          diff += 2 * Math.PI;
+        if (Math.abs(diff) <= max_step)
+          return to;
+        return from + Math.sign(diff) * max_step;
+      }
+      // =========================================================================
+      // Path following (GMS path_start / path_end + the Path End event)
+      // =========================================================================
+      /**
+       * Makes this instance follow a path.
+       * @param path_id - The path resource to follow
+       * @param speed - Pixels per step along the path
+       * @param endaction - `path_action_*` (stop / restart / continue / reverse)
+       * @param absolute - True = the path's own coordinates; false = offset so it starts at the instance
+       */
+      path_start(path_id, speed, endaction = path_action_stop, absolute = true) {
+        if (!path_exists(path_id))
+          return;
+        this.path_index = path_id;
+        this.path_speed = speed;
+        this.path_endaction = endaction;
+        this.path_position = 0;
+        this.path_positionprevious = 0;
+        const sx = path_get_x(path_id, 0) * this.path_scale;
+        const sy = path_get_y(path_id, 0) * this.path_scale;
+        if (absolute) {
+          this._path_off_x = 0;
+          this._path_off_y = 0;
+          this.x = sx;
+          this.y = sy;
+        } else {
+          this._path_off_x = this.x - sx;
+          this._path_off_y = this.y - sy;
+        }
+      }
+      /** Stops following the current path (does not fire the Path End event). */
+      path_end() {
+        this.path_index = -1;
+        this.path_speed = 0;
+      }
+      /** Advances along the current path by `path_speed`, applying the end action and firing on_path_end. */
+      _advance_path() {
+        const path = this.path_index;
+        const len = path_get_length(path);
+        if (len <= 0) {
+          this.path_end();
+          return;
+        }
+        this.path_positionprevious = this.path_position;
+        this.path_position += this.path_speed / len;
+        let ended = false;
+        if (this.path_position >= 1) {
+          ended = true;
+          switch (this.path_endaction) {
+            case path_action_restart:
+              this.path_position = (this.path_position % 1 + 1) % 1;
+              break;
+            case path_action_continue:
+              this.path_position = (this.path_position % 1 + 1) % 1;
+              this._path_off_x = this.x - path_get_x(path, this.path_position) * this.path_scale;
+              this._path_off_y = this.y - path_get_y(path, this.path_position) * this.path_scale;
+              break;
+            case path_action_reverse:
+              this.path_speed = -Math.abs(this.path_speed);
+              this.path_position = 1;
+              break;
+            default:
+              this.path_position = 1;
+          }
+        } else if (this.path_position <= 0 && this.path_speed < 0) {
+          ended = true;
+          switch (this.path_endaction) {
+            case path_action_restart:
+              this.path_position = (this.path_position % 1 + 1) % 1;
+              break;
+            case path_action_reverse:
+              this.path_speed = Math.abs(this.path_speed);
+              this.path_position = 0;
+              break;
+            default:
+              this.path_position = 0;
+          }
+        }
+        const t = Math.max(0, Math.min(1, this.path_position));
+        this.x = path_get_x(path, t) * this.path_scale + this._path_off_x;
+        this.y = path_get_y(path, t) * this.path_scale + this._path_off_y;
+        if (ended) {
+          if (this.path_endaction === path_action_stop)
+            this.path_end();
+          this.on_path_end();
+        }
+      }
+      /** Read-only: the number of sub-images (frames) of the current sprite (GMS `image_number`). */
+      get image_number() {
+        const s = resource.findByID(this.sprite_index);
+        return s && Array.isArray(s.frames) ? s.frames.length : 0;
+      }
+      /**
+       * Calculates the distance to a point.
+       * @param x - Target X position
+       * @param y - Target Y position
+       * @returns Distance in pixels
+       */
+      point_distance(x, y) {
+        const dx = x - this.x;
+        const dy = y - this.y;
+        return Math.sqrt(dx * dx + dy * dy);
+      }
+      /**
+       * Calculates the direction toward a point.
+       * @param x - Target X position
+       * @param y - Target Y position
+       * @returns Direction in degrees (0 = right, counter-clockwise)
+       */
+      point_direction(x, y) {
+        const dir = Math.atan2(-(y - this.y), x - this.x) * (180 / Math.PI);
+        return dir < 0 ? dir + 360 : dir;
+      }
+      // =========================================================================
+      // Drawing helpers
+      // =========================================================================
+      /**
+       * Draws this instance's current sprite at its position with all image_ properties.
+       * Call this from on_draw() or it will be called automatically if on_draw() is not overridden.
+       */
+      draw_self() {
+        if (this.sprite_index < 0 || !_renderer_draw_sprite_ext)
+          return;
+        const spr = resource.findByID(this.sprite_index);
+        if (!spr || !("frames" in spr))
+          return;
+        _renderer_draw_sprite_ext(spr, this.image_index, this.x, this.y, this.image_xscale, this.image_yscale, this.image_angle, this.image_blend, this.image_alpha);
+      }
+      // =========================================================================
+      // Events (Override in subclasses)
+      // =========================================================================
+      /** Called once when the instance is created. */
+      on_create() {
+      }
+      /** Called once when the instance is destroyed. */
+      on_destroy() {
+      }
+      /** Called at the start of each step. */
+      on_step_begin() {
+      }
+      /** Called every step (main update logic). Override this in subclasses. */
+      on_step() {
+      }
+      /** Called at the end of each step. */
+      on_step_end() {
+      }
+      /**
+       * Called every frame to draw the instance.
+       * Default implementation calls draw_self() to draw sprite_index at (x, y).
+       * Override to customize drawing behaviour.
+       */
+      on_draw() {
+        this.draw_self();
+      }
+      /** Called before the main Draw event (world space). Override to draw underlays. */
+      on_draw_begin() {
+      }
+      /** Called after the main Draw event (world space). Override to draw overlays. */
+      on_draw_end() {
+      }
+      /** Called every frame to draw GUI elements (fixed to the screen, not the room). */
+      on_draw_gui() {
+      }
+      // ── Alarm ────────────────────────────────────────────────────────────────
+      /** Called when alarm[index] counts down to zero. */
+      on_alarm(_index) {
+      }
+      // ── Keyboard (generic — check specific keys with keyboard_check* inside) ──
+      /** Called the step any key is pressed. */
+      on_key_press() {
+      }
+      /** Called the step any key is released. */
+      on_key_release() {
+      }
+      /** Called every step any key is held down. */
+      on_key_held() {
+      }
+      // ── Mouse (fired only while the pointer is over this instance) ────────────
+      /** Called when the left mouse button is pressed over this instance. */
+      on_mouse_left_press() {
+      }
+      /** Called when the left mouse button is released over this instance. */
+      on_mouse_left_release() {
+      }
+      /** Called when the right mouse button is pressed over this instance. */
+      on_mouse_right_press() {
+      }
+      // ── Collision ─────────────────────────────────────────────────────────────
+      /** Called for each other instance this one overlaps this step. */
+      on_collision(_other) {
+      }
+      // ── Room / Game lifecycle ────────────────────────────────────────────────
+      /** Called when the room this instance is in starts. */
+      on_room_start() {
+      }
+      /** Called when the room this instance is in ends (before leaving it). */
+      on_room_end() {
+      }
+      /** Called once when the game starts, for instances present in the first room. */
+      on_game_start() {
+      }
+      /** Called once when the game ends. */
+      on_game_end() {
+      }
+      // ── Other ─────────────────────────────────────────────────────────────────
+      /** Called when the sprite animation completes a loop. */
+      on_animation_end() {
+      }
+      /** Called when path following ends. */
+      on_path_end() {
+      }
+      /** Called each step while the instance's bbox is entirely outside the room. */
+      on_outside_room() {
+      }
+      /** Called each step while the instance's bbox crosses a room edge. */
+      on_intersect_boundary() {
+      }
+      /** A user-defined event (0–15), triggered by `event_user(index)`. */
+      on_user(index) {
+        void index;
+      }
+      /** Called once when `lives` transitions to ≤ 0. */
+      on_no_more_lives() {
+      }
+      /** Called once when `health` transitions to ≤ 0. */
+      on_no_more_health() {
+      }
+      /** Triggers this instance's user event `index` (0–15) → `on_user(index)`. */
+      event_user(index) {
+        if (index >= 0 && index <= 15)
+          this.on_user(index);
+      }
+      /** Fires the Outside Room / Intersect Boundary events when the bbox leaves/crosses the room. */
+      _process_boundary_events() {
+        const rm = this.room;
+        if (!rm)
+          return;
+        const outside = this.bbox_right < 0 || this.bbox_left > rm.room_width || this.bbox_bottom < 0 || this.bbox_top > rm.room_height;
+        if (outside) {
+          this.on_outside_room();
+          if (this._destroyed)
+            return;
+        } else if (this.bbox_left < 0 || this.bbox_top < 0 || this.bbox_right > rm.room_width || this.bbox_bottom > rm.room_height) {
+          this.on_intersect_boundary();
+        }
+      }
+    };
   }
-  /**
-   * Deactivates all instances (optionally excluding self).
-   * Deactivated instances are skipped in step and draw.
-   * @param not_me - If true, this instance is excluded from deactivation
-   */
-  instance_deactivate_all(not_me = false) {
-    const rm = game_loop.room;
-    if (!rm) return;
-    for (const inst of rm.instance_get_all()) {
-      if (not_me && inst === this) continue;
-      inst.active = false;
-    }
-  }
-  /**
-   * Deactivates all instances of a specific object class.
-   * @param obj - Object class to deactivate
-   */
-  static instance_deactivate_object(obj) {
-    const rm = game_loop.room;
-    if (!rm) return;
-    for (const inst of rm.instance_get_all()) {
-      if (inst instanceof obj) inst.active = false;
-    }
-  }
-  /**
-   * Activates all instances in the current room.
-   */
-  static instance_activate_all() {
-    const rm = game_loop.room;
-    if (!rm) return;
-    for (const inst of rm.instance_get_all()) {
-      inst.active = true;
-    }
-  }
-  /**
-   * Activates all instances of a specific object class.
-   * @param obj - Object class to activate
-   */
-  static instance_activate_object(obj) {
-    const rm = game_loop.room;
-    if (!rm) return;
-    for (const inst of rm.instance_get_all()) {
-      if (inst instanceof obj) inst.active = true;
-    }
-  }
-  // =========================================================================
-  // Collision methods (instance-level)
-  // =========================================================================
-  /**
-   * Checks if this instance would collide with any instance of obj at position (x, y).
-   * Does not move the instance.
-   * @param x - X position to test
-   * @param y - Y position to test
-   * @param obj - Object class to check against
-   * @returns True if a collision would occur
-   */
-  place_meeting(x, y, obj) {
-    const rm = game_loop.room;
-    if (!rm) return false;
-    for (const other of rm.instance_get_all()) {
-      if (other === this) continue;
-      if (!(other instanceof obj)) continue;
-      if (!other.active) continue;
-      if (instances_collide(this, x, y, other)) return true;
-    }
-    return false;
-  }
-  /**
-   * Checks if position (x, y) is free of solid instances.
-   * @param x - X position to test
-   * @param y - Y position to test
-   * @returns True if no solid instances occupy that position
-   */
-  place_free(x, y) {
-    const rm = game_loop.room;
-    if (!rm) return true;
-    for (const other of rm.instance_get_all()) {
-      if (other === this) continue;
-      if (!other.solid || !other.active) continue;
-      if (instances_collide(this, x, y, other)) return false;
-    }
-    return true;
-  }
-  /**
-   * Checks if position (x, y) is completely empty (no instances of any kind).
-   * @param x - X position to test
-   * @param y - Y position to test
-   * @returns True if no instances occupy that position
-   */
-  place_empty(x, y) {
-    const rm = game_loop.room;
-    if (!rm) return true;
-    for (const other of rm.instance_get_all()) {
-      if (other === this) continue;
-      if (!other.active) continue;
-      if (instances_collide(this, x, y, other)) return false;
-    }
-    return true;
-  }
-  /**
-   * Like place_meeting, but returns the first instance collided with at (x, y),
-   * or undefined if none.
-   * @param x - X position to test
-   * @param y - Y position to test
-   * @param obj - Object class to check against (pass the base `instance` for "all")
-   */
-  instance_place(x, y, obj) {
-    const rm = game_loop.room;
-    if (!rm) return void 0;
-    for (const other of rm.instance_get_all()) {
-      if (other === this || !other.active) continue;
-      if (!(other instanceof obj)) continue;
-      if (instances_collide(this, x, y, other)) return other;
-    }
-    return void 0;
-  }
-  // =========================================================================
-  // Collision mask (manual)
-  // =========================================================================
-  /**
-   * Sets a manual rectangular collision mask, as offsets from the instance
-   * origin (x, y). Use this for spriteless objects so collision functions work.
-   * @param left - Left offset from x
-   * @param top - Top offset from y
-   * @param right - Right offset from x
-   * @param bottom - Bottom offset from y
-   */
-  mask_set_rectangle(left, top, right, bottom) {
-    this.mask_manual = true;
-    this.mask_off_left = left;
-    this.mask_off_top = top;
-    this.mask_off_right = right;
-    this.mask_off_bottom = bottom;
-    update_bbox(this);
-  }
-  /**
-   * Convenience: sets a manual width×height mask with its top-left at the origin.
-   * @param width - Mask width
-   * @param height - Mask height
-   */
-  mask_set_size(width, height) {
-    this.mask_set_rectangle(0, 0, width, height);
-  }
-  /** Removes the manual mask, reverting to the sprite/mask_index-derived bbox. */
-  mask_clear() {
-    this.mask_manual = false;
-    update_bbox(this);
-  }
-  /**
-   * Moves the instance by the given amount, stopping when it hits a solid.
-   * @param hspd - Horizontal movement
-   * @param vspd - Vertical movement
-   * @returns True if the movement was blocked by a solid
-   */
-  move_contact_solid(hspd, vspd) {
-    const target_x = this.x + hspd;
-    const target_y = this.y + vspd;
-    if (this.place_free(target_x, target_y)) {
-      this.x = target_x;
-      this.y = target_y;
-      return false;
-    }
-    return true;
-  }
-  /**
-   * Wraps the instance around the room edges.
-   * @param hor - Wrap horizontally
-   * @param vert - Wrap vertically
-   * @param margin - Extra margin (pixels outside room edge before wrapping)
-   */
-  move_wrap(hor, vert, margin = 0) {
-    const rm = game_loop.room;
-    if (!rm) return;
-    const bbox_w = this.bbox_right - this.bbox_left;
-    const bbox_h = this.bbox_bottom - this.bbox_top;
-    if (hor) {
-      if (this.x + bbox_w < -margin) this.x = rm.room_width + margin;
-      else if (this.x - bbox_w > rm.room_width + margin) this.x = -margin;
-    }
-    if (vert) {
-      if (this.y + bbox_h < -margin) this.y = rm.room_height + margin;
-      else if (this.y - bbox_h > rm.room_height + margin) this.y = -margin;
-    }
-  }
-  /**
-   * Returns the shortest distance from this instance to any instance of obj.
-   * @param obj - Object class to measure distance to
-   * @returns Distance in pixels, or Infinity if no instance found
-   */
-  distance_to_object(obj) {
-    const rm = game_loop.room;
-    if (!rm) return Infinity;
-    let min_dist = Infinity;
-    for (const inst of rm.instance_get_all()) {
-      if (inst === this || !inst.active) continue;
-      if (!(inst instanceof obj)) continue;
-      const dx = inst.x - this.x;
-      const dy = inst.y - this.y;
-      const d = Math.sqrt(dx * dx + dy * dy);
-      if (d < min_dist) min_dist = d;
-    }
-    return min_dist;
-  }
-  // =========================================================================
-  // Movement
-  // =========================================================================
-  /**
-   * Sets the instance's motion using speed and direction.
-   * @param dir - Direction in degrees (0 = right, counter-clockwise)
-   * @param spd - Speed in pixels per step
-   */
-  motion_set(dir, spd) {
-    this.direction = dir;
-    this.speed = spd;
-    const rad = dir * (Math.PI / 180);
-    this.hspeed = Math.cos(rad) * spd;
-    this.vspeed = -Math.sin(rad) * spd;
-  }
-  /**
-   * Adds motion to the instance's current movement.
-   * @param dir - Direction in degrees
-   * @param spd - Speed to add
-   */
-  motion_add(dir, spd) {
-    const rad = dir * (Math.PI / 180);
-    this.hspeed += Math.cos(rad) * spd;
-    this.vspeed += -Math.sin(rad) * spd;
-    this.speed = Math.sqrt(this.hspeed * this.hspeed + this.vspeed * this.vspeed);
-    if (this.hspeed !== 0 || this.vspeed !== 0) {
-      this.direction = Math.atan2(-this.vspeed, this.hspeed) * (180 / Math.PI);
-      if (this.direction < 0) this.direction += 360;
-    }
-  }
-  /**
-   * Moves the instance toward a point at the given speed.
-   * @param x - Target X position
-   * @param y - Target Y position
-   * @param spd - Speed to move at
-   */
-  move_towards_point(x, y, spd) {
-    const dir = Math.atan2(-(y - this.y), x - this.x) * (180 / Math.PI);
-    this.motion_set(dir < 0 ? dir + 360 : dir, spd);
-  }
-  /**
-   * Calculates the distance to a point.
-   * @param x - Target X position
-   * @param y - Target Y position
-   * @returns Distance in pixels
-   */
-  point_distance(x, y) {
-    const dx = x - this.x;
-    const dy = y - this.y;
-    return Math.sqrt(dx * dx + dy * dy);
-  }
-  /**
-   * Calculates the direction toward a point.
-   * @param x - Target X position
-   * @param y - Target Y position
-   * @returns Direction in degrees (0 = right, counter-clockwise)
-   */
-  point_direction(x, y) {
-    const dir = Math.atan2(-(y - this.y), x - this.x) * (180 / Math.PI);
-    return dir < 0 ? dir + 360 : dir;
-  }
-  // =========================================================================
-  // Drawing helpers
-  // =========================================================================
-  /**
-   * Draws this instance's current sprite at its position with all image_ properties.
-   * Call this from on_draw() or it will be called automatically if on_draw() is not overridden.
-   */
-  draw_self() {
-    if (this.sprite_index < 0 || !_renderer_draw_sprite_ext) return;
-    const spr = resource.findByID(this.sprite_index);
-    if (!spr || !("frames" in spr)) return;
-    _renderer_draw_sprite_ext(
-      spr,
-      this.image_index,
-      this.x,
-      this.y,
-      this.image_xscale,
-      this.image_yscale,
-      this.image_angle,
-      this.image_blend,
-      this.image_alpha
-    );
-  }
-  // =========================================================================
-  // Events (Override in subclasses)
-  // =========================================================================
-  /** Called once when the instance is created. */
-  on_create() {
-  }
-  /** Called once when the instance is destroyed. */
-  on_destroy() {
-  }
-  /** Called at the start of each step. */
-  on_step_begin() {
-  }
-  /** Called every step (main update logic). Override this in subclasses. */
-  on_step() {
-  }
-  /** Called at the end of each step. */
-  on_step_end() {
-  }
-  /**
-   * Called every frame to draw the instance.
-   * Default implementation calls draw_self() to draw sprite_index at (x, y).
-   * Override to customize drawing behaviour.
-   */
-  on_draw() {
-    this.draw_self();
-  }
-  /** Called every frame to draw GUI elements (fixed to the screen, not the room). */
-  on_draw_gui() {
-  }
-  // ── Alarm ────────────────────────────────────────────────────────────────
-  /** Called when alarm[index] counts down to zero. */
-  on_alarm(_index) {
-  }
-  // ── Keyboard (generic — check specific keys with keyboard_check* inside) ──
-  /** Called the step any key is pressed. */
-  on_key_press() {
-  }
-  /** Called the step any key is released. */
-  on_key_release() {
-  }
-  /** Called every step any key is held down. */
-  on_key_held() {
-  }
-  // ── Mouse (fired only while the pointer is over this instance) ────────────
-  /** Called when the left mouse button is pressed over this instance. */
-  on_mouse_left_press() {
-  }
-  /** Called when the left mouse button is released over this instance. */
-  on_mouse_left_release() {
-  }
-  /** Called when the right mouse button is pressed over this instance. */
-  on_mouse_right_press() {
-  }
-  // ── Collision ─────────────────────────────────────────────────────────────
-  /** Called for each other instance this one overlaps this step. */
-  on_collision(_other) {
-  }
-  // ── Room / Game lifecycle ────────────────────────────────────────────────
-  /** Called when the room this instance is in starts. */
-  on_room_start() {
-  }
-  /** Called when the room this instance is in ends (before leaving it). */
-  on_room_end() {
-  }
-  /** Called once when the game starts, for instances present in the first room. */
-  on_game_start() {
-  }
-  /** Called once when the game ends. */
-  on_game_end() {
-  }
-  // ── Other ─────────────────────────────────────────────────────────────────
-  /** Called when the sprite animation completes a loop. */
-  on_animation_end() {
-  }
-  /** Called when path following ends (requires path_start; not yet wired). */
-  on_path_end() {
-  }
-};
-var gm_object = class extends instance {
-  static {
-    this.default_sprite = null;
-  }
-  static {
-    this.parent = null;
-  }
-  static {
-    this.object_name = "";
-  }
-  /**
-   * Returns the object name. Falls back to the constructor name if not set.
-   */
-  static get_name() {
-    return this.object_name || this.name;
-  }
-  /**
-   * Checks whether this object type is an ancestor (direct or indirect) of another.
-   * @param child - The object type to test
-   * @returns True if this class is somewhere in child's prototype chain
-   */
-  static is_ancestor_of(child) {
-    let current = child.parent;
-    while (current !== null) {
-      if (current === this) return true;
-      current = current.parent;
-    }
-    return false;
-  }
-  /**
-   * Called once when the instance is created. Override in subclasses.
-   */
-  on_create() {
-    const cls = this.constructor;
-    if (this.sprite_index === -1 && cls.default_sprite !== null) {
-      this.sprite_index = cls.default_sprite.id;
-    }
-  }
-};
-var DEFAULT_VERTEX_SHADER = (
-  /*glsl*/
-  `#version 300 es
-layout(location = 0) in vec2 a_position;
-layout(location = 1) in vec2 a_texcoord;
-layout(location = 2) in vec4 a_color;
+});
 
-uniform mat4 u_projection;
+// packages/engine/dist/core/tiles.js
+var init_tiles = __esm({
+  "packages/engine/dist/core/tiles.js"() {
+    "use strict";
+    init_engine_globals();
+    init_game_loop();
+  }
+});
 
-out vec2 v_texcoord;
-out vec4 v_color;
-
-void main() {
-    gl_Position = u_projection * vec4(a_position, 0.0, 1.0);
-    v_texcoord = a_texcoord;
-    v_color = a_color;
-}`
-);
-var DEFAULT_FRAGMENT_SHADER = (
-  /*glsl*/
-  `#version 300 es
-precision mediump float;
-
-in vec2 v_texcoord;
-in vec4 v_color;
-
-uniform sampler2D u_texture;
-
-out vec4 fragColor;
-
-void main() {
-    fragColor = texture(u_texture, v_texcoord) * v_color;
-}`
-);
+// packages/engine/dist/drawing/shader.js
 function compile_shader(gl, type, source) {
   const shader = gl.createShader(type);
-  if (!shader) throw new Error("Failed to create shader object");
+  if (!shader)
+    throw new Error("Failed to create shader object");
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
@@ -7407,7 +8432,8 @@ function create_program(gl, vs_source, fs_source) {
   const vs = compile_shader(gl, gl.VERTEX_SHADER, vs_source);
   const fs = compile_shader(gl, gl.FRAGMENT_SHADER, fs_source);
   const program = gl.createProgram();
-  if (!program) throw new Error("Failed to create shader program");
+  if (!program)
+    throw new Error("Failed to create shader program");
   gl.attachShader(program, vs);
   gl.attachShader(program, fs);
   gl.linkProgram(program);
@@ -7420,426 +8446,482 @@ function create_program(gl, vs_source, fs_source) {
   }
   return program;
 }
-var FLOATS_PER_VERTEX = 8;
-var VERTS_PER_QUAD = 6;
-var FLOATS_PER_QUAD = FLOATS_PER_VERTEX * VERTS_PER_QUAD;
-var MAX_QUADS = 8192;
-var batch_renderer = class {
-  constructor(gl) {
-    this.quad_count = 0;
-    this.current_texture = null;
-    this.gl = gl;
-    this.vertices = new Float32Array(MAX_QUADS * FLOATS_PER_QUAD);
-    const vao = gl.createVertexArray();
-    if (!vao) throw new Error("Failed to create VAO");
-    this.vao = vao;
-    const vbo = gl.createBuffer();
-    if (!vbo) throw new Error("Failed to create VBO");
-    this.vbo = vbo;
-    const STRIDE = FLOATS_PER_VERTEX * 4;
-    gl.bindVertexArray(this.vao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
-    gl.bufferData(gl.ARRAY_BUFFER, this.vertices.byteLength, gl.DYNAMIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, STRIDE, 0);
-    gl.enableVertexAttribArray(1);
-    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, STRIDE, 8);
-    gl.enableVertexAttribArray(2);
-    gl.vertexAttribPointer(2, 4, gl.FLOAT, false, STRIDE, 16);
-    gl.bindVertexArray(null);
-    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+var DEFAULT_VERTEX_SHADER, DEFAULT_FRAGMENT_SHADER;
+var init_shader = __esm({
+  "packages/engine/dist/drawing/shader.js"() {
+    "use strict";
+    init_engine_globals();
+    DEFAULT_VERTEX_SHADER = /*glsl*/
+    `#version 300 es
+layout(location = 0) in vec2 a_position;
+layout(location = 1) in vec2 a_texcoord;
+layout(location = 2) in vec4 a_color;
+
+uniform mat4 u_projection;
+
+out vec2 v_texcoord;
+out vec4 v_color;
+
+void main() {
+    gl_Position = u_projection * vec4(a_position, 0.0, 1.0);
+    v_texcoord = a_texcoord;
+    v_color = a_color;
+}`;
+    DEFAULT_FRAGMENT_SHADER = /*glsl*/
+    `#version 300 es
+precision mediump float;
+
+in vec2 v_texcoord;
+in vec4 v_color;
+
+uniform sampler2D u_texture;
+
+out vec4 fragColor;
+
+void main() {
+    fragColor = texture(u_texture, v_texcoord) * v_color;
+}`;
   }
-  /**
-   * Pushes one axis-aligned quad into the batch.
-   * Flushes the batch if the texture changes or the buffer is full.
-   *
-   * @param x - Left edge
-   * @param y - Top edge
-   * @param w - Width
-   * @param h - Height
-   * @param u0 - Left UV coordinate
-   * @param v0 - Top UV coordinate
-   * @param u1 - Right UV coordinate
-   * @param v1 - Bottom UV coordinate
-   * @param r - Red (0–1)
-   * @param g - Green (0–1)
-   * @param b - Blue (0–1)
-   * @param a - Alpha (0–1)
-   * @param texture - WebGL texture to sample
-   */
-  add_quad(x, y, w, h, u0, v0, u1, v1, r, g, b, a, texture) {
-    if (this.current_texture !== null && this.current_texture !== texture) {
-      this.flush();
-    }
-    this.current_texture = texture;
-    if (this.quad_count >= MAX_QUADS) {
-      this.flush();
-    }
-    const base = this.quad_count * FLOATS_PER_QUAD;
-    const verts = this.vertices;
-    verts[base + 0] = x;
-    verts[base + 1] = y;
-    verts[base + 2] = u0;
-    verts[base + 3] = v0;
-    verts[base + 4] = r;
-    verts[base + 5] = g;
-    verts[base + 6] = b;
-    verts[base + 7] = a;
-    verts[base + 8] = x;
-    verts[base + 9] = y + h;
-    verts[base + 10] = u0;
-    verts[base + 11] = v1;
-    verts[base + 12] = r;
-    verts[base + 13] = g;
-    verts[base + 14] = b;
-    verts[base + 15] = a;
-    verts[base + 16] = x + w;
-    verts[base + 17] = y;
-    verts[base + 18] = u1;
-    verts[base + 19] = v0;
-    verts[base + 20] = r;
-    verts[base + 21] = g;
-    verts[base + 22] = b;
-    verts[base + 23] = a;
-    verts[base + 24] = x + w;
-    verts[base + 25] = y;
-    verts[base + 26] = u1;
-    verts[base + 27] = v0;
-    verts[base + 28] = r;
-    verts[base + 29] = g;
-    verts[base + 30] = b;
-    verts[base + 31] = a;
-    verts[base + 32] = x;
-    verts[base + 33] = y + h;
-    verts[base + 34] = u0;
-    verts[base + 35] = v1;
-    verts[base + 36] = r;
-    verts[base + 37] = g;
-    verts[base + 38] = b;
-    verts[base + 39] = a;
-    verts[base + 40] = x + w;
-    verts[base + 41] = y + h;
-    verts[base + 42] = u1;
-    verts[base + 43] = v1;
-    verts[base + 44] = r;
-    verts[base + 45] = g;
-    verts[base + 46] = b;
-    verts[base + 47] = a;
-    this.quad_count++;
-  }
-  /**
-   * Pushes a rotated/scaled quad into the batch.
-   * Used for draw_sprite_ext with rotation and scale.
-   *
-   * @param cx - Center X
-   * @param cy - Center Y
-   * @param w - Width before scaling
-   * @param h - Height before scaling
-   * @param ox - Origin X offset from center
-   * @param oy - Origin Y offset from center
-   * @param xscale - Horizontal scale
-   * @param yscale - Vertical scale
-   * @param angle_deg - Rotation in degrees (counter-clockwise)
-   * @param u0 - Left UV
-   * @param v0 - Top UV
-   * @param u1 - Right UV
-   * @param v1 - Bottom UV
-   * @param r - Red (0–1)
-   * @param g - Green (0–1)
-   * @param b - Blue (0–1)
-   * @param a - Alpha (0–1)
-   * @param texture - WebGL texture
-   */
-  add_quad_transformed(cx, cy, w, h, ox, oy, xscale, yscale, angle_deg, u0, v0, u1, v1, r, g, b, a, texture) {
-    if (this.current_texture !== null && this.current_texture !== texture) {
-      this.flush();
-    }
-    this.current_texture = texture;
-    if (this.quad_count >= MAX_QUADS) {
-      this.flush();
-    }
-    const rad = -angle_deg * (Math.PI / 180);
-    const cos_a = Math.cos(rad);
-    const sin_a = Math.sin(rad);
-    const hw = w * xscale;
-    const hh = h * yscale;
-    const lx = -ox * xscale;
-    const ty = -oy * yscale;
-    const rx = lx + hw;
-    const by = ty + hh;
-    const transform = (lx2, ly) => {
-      return [
-        cx + lx2 * cos_a - ly * sin_a,
-        cy + lx2 * sin_a + ly * cos_a
-      ];
+});
+
+// packages/engine/dist/drawing/batch_renderer.js
+var FLOATS_PER_VERTEX, VERTS_PER_QUAD, FLOATS_PER_QUAD, MAX_QUADS, batch_renderer;
+var init_batch_renderer = __esm({
+  "packages/engine/dist/drawing/batch_renderer.js"() {
+    "use strict";
+    init_engine_globals();
+    FLOATS_PER_VERTEX = 8;
+    VERTS_PER_QUAD = 6;
+    FLOATS_PER_QUAD = FLOATS_PER_VERTEX * VERTS_PER_QUAD;
+    MAX_QUADS = 8192;
+    batch_renderer = class {
+      constructor(gl) {
+        this.quad_count = 0;
+        this.current_texture = null;
+        this.gl = gl;
+        this.vertices = new Float32Array(MAX_QUADS * FLOATS_PER_QUAD);
+        const vao = gl.createVertexArray();
+        if (!vao)
+          throw new Error("Failed to create VAO");
+        this.vao = vao;
+        const vbo = gl.createBuffer();
+        if (!vbo)
+          throw new Error("Failed to create VBO");
+        this.vbo = vbo;
+        const STRIDE = FLOATS_PER_VERTEX * 4;
+        gl.bindVertexArray(this.vao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+        gl.bufferData(gl.ARRAY_BUFFER, this.vertices.byteLength, gl.DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 2, gl.FLOAT, false, STRIDE, 0);
+        gl.enableVertexAttribArray(1);
+        gl.vertexAttribPointer(1, 2, gl.FLOAT, false, STRIDE, 8);
+        gl.enableVertexAttribArray(2);
+        gl.vertexAttribPointer(2, 4, gl.FLOAT, false, STRIDE, 16);
+        gl.bindVertexArray(null);
+        gl.bindBuffer(gl.ARRAY_BUFFER, null);
+      }
+      /**
+       * Pushes one axis-aligned quad into the batch.
+       * Flushes the batch if the texture changes or the buffer is full.
+       *
+       * @param x - Left edge
+       * @param y - Top edge
+       * @param w - Width
+       * @param h - Height
+       * @param u0 - Left UV coordinate
+       * @param v0 - Top UV coordinate
+       * @param u1 - Right UV coordinate
+       * @param v1 - Bottom UV coordinate
+       * @param r - Red (0–1)
+       * @param g - Green (0–1)
+       * @param b - Blue (0–1)
+       * @param a - Alpha (0–1)
+       * @param texture - WebGL texture to sample
+       */
+      add_quad(x, y, w, h, u0, v0, u1, v1, r, g, b, a, texture) {
+        if (this.current_texture !== null && this.current_texture !== texture) {
+          this.flush();
+        }
+        this.current_texture = texture;
+        if (this.quad_count >= MAX_QUADS) {
+          this.flush();
+        }
+        const base = this.quad_count * FLOATS_PER_QUAD;
+        const verts = this.vertices;
+        verts[base + 0] = x;
+        verts[base + 1] = y;
+        verts[base + 2] = u0;
+        verts[base + 3] = v0;
+        verts[base + 4] = r;
+        verts[base + 5] = g;
+        verts[base + 6] = b;
+        verts[base + 7] = a;
+        verts[base + 8] = x;
+        verts[base + 9] = y + h;
+        verts[base + 10] = u0;
+        verts[base + 11] = v1;
+        verts[base + 12] = r;
+        verts[base + 13] = g;
+        verts[base + 14] = b;
+        verts[base + 15] = a;
+        verts[base + 16] = x + w;
+        verts[base + 17] = y;
+        verts[base + 18] = u1;
+        verts[base + 19] = v0;
+        verts[base + 20] = r;
+        verts[base + 21] = g;
+        verts[base + 22] = b;
+        verts[base + 23] = a;
+        verts[base + 24] = x + w;
+        verts[base + 25] = y;
+        verts[base + 26] = u1;
+        verts[base + 27] = v0;
+        verts[base + 28] = r;
+        verts[base + 29] = g;
+        verts[base + 30] = b;
+        verts[base + 31] = a;
+        verts[base + 32] = x;
+        verts[base + 33] = y + h;
+        verts[base + 34] = u0;
+        verts[base + 35] = v1;
+        verts[base + 36] = r;
+        verts[base + 37] = g;
+        verts[base + 38] = b;
+        verts[base + 39] = a;
+        verts[base + 40] = x + w;
+        verts[base + 41] = y + h;
+        verts[base + 42] = u1;
+        verts[base + 43] = v1;
+        verts[base + 44] = r;
+        verts[base + 45] = g;
+        verts[base + 46] = b;
+        verts[base + 47] = a;
+        this.quad_count++;
+      }
+      /**
+       * Pushes a rotated/scaled quad into the batch.
+       * Used for draw_sprite_ext with rotation and scale.
+       *
+       * @param cx - Center X
+       * @param cy - Center Y
+       * @param w - Width before scaling
+       * @param h - Height before scaling
+       * @param ox - Origin X offset from center
+       * @param oy - Origin Y offset from center
+       * @param xscale - Horizontal scale
+       * @param yscale - Vertical scale
+       * @param angle_deg - Rotation in degrees (counter-clockwise)
+       * @param u0 - Left UV
+       * @param v0 - Top UV
+       * @param u1 - Right UV
+       * @param v1 - Bottom UV
+       * @param r - Red (0–1)
+       * @param g - Green (0–1)
+       * @param b - Blue (0–1)
+       * @param a - Alpha (0–1)
+       * @param texture - WebGL texture
+       */
+      add_quad_transformed(cx, cy, w, h, ox, oy, xscale, yscale, angle_deg, u0, v0, u1, v1, r, g, b, a, texture) {
+        if (this.current_texture !== null && this.current_texture !== texture) {
+          this.flush();
+        }
+        this.current_texture = texture;
+        if (this.quad_count >= MAX_QUADS) {
+          this.flush();
+        }
+        const rad = -angle_deg * (Math.PI / 180);
+        const cos_a = Math.cos(rad);
+        const sin_a = Math.sin(rad);
+        const hw = w * xscale;
+        const hh = h * yscale;
+        const lx = -ox * xscale;
+        const ty = -oy * yscale;
+        const rx = lx + hw;
+        const by = ty + hh;
+        const transform = (lx2, ly) => {
+          return [
+            cx + lx2 * cos_a - ly * sin_a,
+            cy + lx2 * sin_a + ly * cos_a
+          ];
+        };
+        const [tl_x, tl_y] = transform(lx, ty);
+        const [tr_x, tr_y] = transform(rx, ty);
+        const [bl_x, bl_y] = transform(lx, by);
+        const [br_x, br_y] = transform(rx, by);
+        const base = this.quad_count * FLOATS_PER_QUAD;
+        const verts = this.vertices;
+        const write = (off, px, py, u, v) => {
+          verts[off + 0] = px;
+          verts[off + 1] = py;
+          verts[off + 2] = u;
+          verts[off + 3] = v;
+          verts[off + 4] = r;
+          verts[off + 5] = g;
+          verts[off + 6] = b;
+          verts[off + 7] = a;
+        };
+        write(base + 0, tl_x, tl_y, u0, v0);
+        write(base + 8, bl_x, bl_y, u0, v1);
+        write(base + 16, tr_x, tr_y, u1, v0);
+        write(base + 24, tr_x, tr_y, u1, v0);
+        write(base + 32, bl_x, bl_y, u0, v1);
+        write(base + 40, br_x, br_y, u1, v1);
+        this.quad_count++;
+      }
+      /**
+       * Flushes accumulated quads to the GPU with a single draw call.
+       * Resets the batch state after drawing.
+       */
+      flush() {
+        if (this.quad_count === 0)
+          return;
+        const gl = this.gl;
+        gl.bindVertexArray(this.vao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.vertices.subarray(0, this.quad_count * FLOATS_PER_QUAD));
+        if (this.current_texture) {
+          gl.bindTexture(gl.TEXTURE_2D, this.current_texture);
+        }
+        gl.drawArrays(gl.TRIANGLES, 0, this.quad_count * VERTS_PER_QUAD);
+        gl.bindVertexArray(null);
+        this.quad_count = 0;
+        this.current_texture = null;
+      }
+      /**
+       * Frees the VAO and VBO GPU resources.
+       */
+      destroy() {
+        this.gl.deleteVertexArray(this.vao);
+        this.gl.deleteBuffer(this.vbo);
+      }
     };
-    const [tl_x, tl_y] = transform(lx, ty);
-    const [tr_x, tr_y] = transform(rx, ty);
-    const [bl_x, bl_y] = transform(lx, by);
-    const [br_x, br_y] = transform(rx, by);
-    const base = this.quad_count * FLOATS_PER_QUAD;
-    const verts = this.vertices;
-    const write = (off, px, py, u, v) => {
-      verts[off + 0] = px;
-      verts[off + 1] = py;
-      verts[off + 2] = u;
-      verts[off + 3] = v;
-      verts[off + 4] = r;
-      verts[off + 5] = g;
-      verts[off + 6] = b;
-      verts[off + 7] = a;
+  }
+});
+
+// packages/engine/dist/drawing/texture_manager.js
+var texture_manager;
+var init_texture_manager = __esm({
+  "packages/engine/dist/drawing/texture_manager.js"() {
+    "use strict";
+    init_engine_globals();
+    texture_manager = class {
+      constructor(gl) {
+        this.textures = /* @__PURE__ */ new Map();
+        this.gl = gl;
+        this.white_pixel = this.create_white_pixel();
+      }
+      /**
+       * Creates the 1x1 white pixel texture used when drawing solid-colored shapes.
+       * @returns WebGLTexture handle
+       */
+      create_white_pixel() {
+        const gl = this.gl;
+        const tex = gl.createTexture();
+        if (!tex)
+          throw new Error("Failed to create white pixel texture");
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        return tex;
+      }
+      /**
+       * Loads a texture from a URL and caches it by URL.
+       * @param url - Image URL
+       * @param smooth - Use LINEAR filtering (true) or NEAREST for pixel art (false)
+       * @returns Promise resolving to the texture entry
+       */
+      load(url, smooth = false) {
+        if (this.textures.has(url)) {
+          return Promise.resolve(this.textures.get(url));
+        }
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => {
+            const entry = this.from_image(img, smooth);
+            this.textures.set(url, entry);
+            resolve(entry);
+          };
+          img.onerror = () => reject(new Error(`Failed to load texture: ${url}`));
+          img.src = url;
+        });
+      }
+      /**
+       * Creates a texture from an already-loaded HTMLImageElement.
+       * @param img - Source image element
+       * @param smooth - Use LINEAR filtering (true) or NEAREST for pixel art (false)
+       * @returns texture_entry
+       */
+      from_image(img, smooth = false) {
+        const gl = this.gl;
+        const filter = smooth ? gl.LINEAR : gl.NEAREST;
+        const tex = gl.createTexture();
+        if (!tex)
+          throw new Error("Failed to create texture");
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        return { texture: tex, width: img.width, height: img.height };
+      }
+      /**
+       * Creates a texture from a raw HTMLCanvasElement (used for text rendering).
+       * @param canvas - Source canvas element
+       * @param smooth - Use LINEAR filtering (true) or NEAREST (false)
+       * @returns texture_entry
+       */
+      from_canvas(canvas, smooth = true) {
+        const gl = this.gl;
+        const filter = smooth ? gl.LINEAR : gl.NEAREST;
+        const tex = gl.createTexture();
+        if (!tex)
+          throw new Error("Failed to create texture from canvas");
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        return { texture: tex, width: canvas.width, height: canvas.height };
+      }
+      /**
+       * Frees a texture from GPU memory and removes it from the cache.
+       * @param url - URL key used when loading
+       */
+      free(url) {
+        const entry = this.textures.get(url);
+        if (entry) {
+          this.gl.deleteTexture(entry.texture);
+          this.textures.delete(url);
+        }
+      }
+      /**
+       * Frees a raw WebGLTexture directly (used by font_renderer cache cleanup).
+       * @param texture - The GPU texture handle to delete
+       */
+      free_texture(texture) {
+        this.gl.deleteTexture(texture);
+      }
+      /**
+       * Frees all tracked textures and the white pixel texture.
+       */
+      destroy() {
+        for (const entry of this.textures.values()) {
+          this.gl.deleteTexture(entry.texture);
+        }
+        this.textures.clear();
+        this.gl.deleteTexture(this.white_pixel);
+      }
     };
-    write(base + 0, tl_x, tl_y, u0, v0);
-    write(base + 8, bl_x, bl_y, u0, v1);
-    write(base + 16, tr_x, tr_y, u1, v0);
-    write(base + 24, tr_x, tr_y, u1, v0);
-    write(base + 32, bl_x, bl_y, u0, v1);
-    write(base + 40, br_x, br_y, u1, v1);
-    this.quad_count++;
   }
-  /**
-   * Flushes accumulated quads to the GPU with a single draw call.
-   * Resets the batch state after drawing.
-   */
-  flush() {
-    if (this.quad_count === 0) return;
-    const gl = this.gl;
-    gl.bindVertexArray(this.vao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
-    gl.bufferSubData(
-      gl.ARRAY_BUFFER,
-      0,
-      this.vertices.subarray(0, this.quad_count * FLOATS_PER_QUAD)
-    );
-    if (this.current_texture) {
-      gl.bindTexture(gl.TEXTURE_2D, this.current_texture);
-    }
-    gl.drawArrays(gl.TRIANGLES, 0, this.quad_count * VERTS_PER_QUAD);
-    gl.bindVertexArray(null);
-    this.quad_count = 0;
-    this.current_texture = null;
+});
+
+// packages/engine/dist/drawing/font.js
+var font_resource, font_renderer;
+var init_font = __esm({
+  "packages/engine/dist/drawing/font.js"() {
+    "use strict";
+    init_engine_globals();
+    font_resource = class {
+      constructor(family = "Arial", size = 16, bold = false, italic = false) {
+        this.family = family;
+        this.size = size;
+        this.bold = bold;
+        this.italic = italic;
+        this.name = this.build_css();
+      }
+      /** Builds the CSS font string. */
+      build_css() {
+        const style = this.italic ? "italic " : "";
+        const weight = this.bold ? "bold " : "";
+        return `${style}${weight}${this.size}px ${this.family}`;
+      }
+    };
+    font_renderer = class {
+      constructor(tex_manager) {
+        this.cache = /* @__PURE__ */ new Map();
+        this.tex_manager = tex_manager;
+        this.offscreen = document.createElement("canvas");
+        const ctx = this.offscreen.getContext("2d");
+        if (!ctx)
+          throw new Error("Cannot create 2D canvas context for text rendering");
+        this.ctx = ctx;
+      }
+      /**
+       * Returns a cached or newly-rendered texture for the given text string.
+       * @param text - Text to render
+       * @param fnt - Font resource to use
+       * @param color_css - CSS color string (e.g. "#FFFFFF")
+       * @returns text_cache_entry containing the texture and dimensions
+       */
+      get_texture(text, fnt, color_css) {
+        const key = `${fnt.name}|${color_css}|${text}`;
+        const cached = this.cache.get(key);
+        if (cached)
+          return cached;
+        const entry = this.rasterize(text, fnt, color_css);
+        this.cache.set(key, entry);
+        return entry;
+      }
+      /**
+       * Rasterizes text to a canvas and uploads it to a WebGL texture.
+       */
+      rasterize(text, fnt, color_css) {
+        const ctx = this.ctx;
+        ctx.font = fnt.name;
+        const metrics = ctx.measureText(text);
+        const w = Math.max(1, Math.ceil(metrics.width));
+        const h = Math.max(1, Math.ceil(fnt.size * 1.5));
+        this.offscreen.width = w;
+        this.offscreen.height = h;
+        ctx.font = fnt.name;
+        ctx.fillStyle = color_css;
+        ctx.textBaseline = "top";
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillText(text, 0, 0);
+        const tex_entry = this.tex_manager.from_canvas(this.offscreen, true);
+        return { entry: tex_entry, width: w, height: h };
+      }
+      /**
+       * Measures the pixel width of a string with the given font.
+       * @param text - Text to measure
+       * @param fnt - Font resource
+       * @returns Width in pixels
+       */
+      measure_width(text, fnt) {
+        this.ctx.font = fnt.name;
+        return Math.ceil(this.ctx.measureText(text).width);
+      }
+      /**
+       * Measures the pixel height of a string with the given font.
+       * @param fnt - Font resource
+       * @returns Height in pixels
+       */
+      measure_height(fnt) {
+        return Math.ceil(fnt.size * 1.5);
+      }
+      /**
+       * Clears the text texture cache and frees GPU memory.
+       */
+      clear_cache() {
+        for (const entry of this.cache.values()) {
+          this.tex_manager.free_texture(entry.entry.texture);
+        }
+        this.cache.clear();
+      }
+    };
   }
-  /**
-   * Frees the VAO and VBO GPU resources.
-   */
-  destroy() {
-    this.gl.deleteVertexArray(this.vao);
-    this.gl.deleteBuffer(this.vbo);
-  }
-};
-var texture_manager = class {
-  constructor(gl) {
-    this.textures = /* @__PURE__ */ new Map();
-    this.gl = gl;
-    this.white_pixel = this.create_white_pixel();
-  }
-  /**
-   * Creates the 1x1 white pixel texture used when drawing solid-colored shapes.
-   * @returns WebGLTexture handle
-   */
-  create_white_pixel() {
-    const gl = this.gl;
-    const tex = gl.createTexture();
-    if (!tex) throw new Error("Failed to create white pixel texture");
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.RGBA,
-      1,
-      1,
-      0,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      new Uint8Array([255, 255, 255, 255])
-    );
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    return tex;
-  }
-  /**
-   * Loads a texture from a URL and caches it by URL.
-   * @param url - Image URL
-   * @param smooth - Use LINEAR filtering (true) or NEAREST for pixel art (false)
-   * @returns Promise resolving to the texture entry
-   */
-  load(url, smooth = false) {
-    if (this.textures.has(url)) {
-      return Promise.resolve(this.textures.get(url));
-    }
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        const entry = this.from_image(img, smooth);
-        this.textures.set(url, entry);
-        resolve(entry);
-      };
-      img.onerror = () => reject(new Error(`Failed to load texture: ${url}`));
-      img.src = url;
-    });
-  }
-  /**
-   * Creates a texture from an already-loaded HTMLImageElement.
-   * @param img - Source image element
-   * @param smooth - Use LINEAR filtering (true) or NEAREST for pixel art (false)
-   * @returns texture_entry
-   */
-  from_image(img, smooth = false) {
-    const gl = this.gl;
-    const filter = smooth ? gl.LINEAR : gl.NEAREST;
-    const tex = gl.createTexture();
-    if (!tex) throw new Error("Failed to create texture");
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    return { texture: tex, width: img.width, height: img.height };
-  }
-  /**
-   * Creates a texture from a raw HTMLCanvasElement (used for text rendering).
-   * @param canvas - Source canvas element
-   * @param smooth - Use LINEAR filtering (true) or NEAREST (false)
-   * @returns texture_entry
-   */
-  from_canvas(canvas, smooth = true) {
-    const gl = this.gl;
-    const filter = smooth ? gl.LINEAR : gl.NEAREST;
-    const tex = gl.createTexture();
-    if (!tex) throw new Error("Failed to create texture from canvas");
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    return { texture: tex, width: canvas.width, height: canvas.height };
-  }
-  /**
-   * Frees a texture from GPU memory and removes it from the cache.
-   * @param url - URL key used when loading
-   */
-  free(url) {
-    const entry = this.textures.get(url);
-    if (entry) {
-      this.gl.deleteTexture(entry.texture);
-      this.textures.delete(url);
-    }
-  }
-  /**
-   * Frees a raw WebGLTexture directly (used by font_renderer cache cleanup).
-   * @param texture - The GPU texture handle to delete
-   */
-  free_texture(texture) {
-    this.gl.deleteTexture(texture);
-  }
-  /**
-   * Frees all tracked textures and the white pixel texture.
-   */
-  destroy() {
-    for (const entry of this.textures.values()) {
-      this.gl.deleteTexture(entry.texture);
-    }
-    this.textures.clear();
-    this.gl.deleteTexture(this.white_pixel);
-  }
-};
-var font_resource = class {
-  // Italic style
-  constructor(family = "Arial", size = 16, bold = false, italic = false) {
-    this.family = family;
-    this.size = size;
-    this.bold = bold;
-    this.italic = italic;
-    this.name = this.build_css();
-  }
-  /** Builds the CSS font string. */
-  build_css() {
-    const style = this.italic ? "italic " : "";
-    const weight = this.bold ? "bold " : "";
-    return `${style}${weight}${this.size}px ${this.family}`;
-  }
-};
-var font_renderer = class {
-  constructor(tex_manager) {
-    this.cache = /* @__PURE__ */ new Map();
-    this.tex_manager = tex_manager;
-    this.offscreen = document.createElement("canvas");
-    const ctx = this.offscreen.getContext("2d");
-    if (!ctx) throw new Error("Cannot create 2D canvas context for text rendering");
-    this.ctx = ctx;
-  }
-  /**
-   * Returns a cached or newly-rendered texture for the given text string.
-   * @param text - Text to render
-   * @param fnt - Font resource to use
-   * @param color_css - CSS color string (e.g. "#FFFFFF")
-   * @returns text_cache_entry containing the texture and dimensions
-   */
-  get_texture(text, fnt, color_css) {
-    const key = `${fnt.name}|${color_css}|${text}`;
-    const cached = this.cache.get(key);
-    if (cached) return cached;
-    const entry = this.rasterize(text, fnt, color_css);
-    this.cache.set(key, entry);
-    return entry;
-  }
-  /**
-   * Rasterizes text to a canvas and uploads it to a WebGL texture.
-   */
-  rasterize(text, fnt, color_css) {
-    const ctx = this.ctx;
-    ctx.font = fnt.name;
-    const metrics = ctx.measureText(text);
-    const w = Math.max(1, Math.ceil(metrics.width));
-    const h = Math.max(1, Math.ceil(fnt.size * 1.5));
-    this.offscreen.width = w;
-    this.offscreen.height = h;
-    ctx.font = fnt.name;
-    ctx.fillStyle = color_css;
-    ctx.textBaseline = "top";
-    ctx.clearRect(0, 0, w, h);
-    ctx.fillText(text, 0, 0);
-    const tex_entry = this.tex_manager.from_canvas(this.offscreen, true);
-    return { entry: tex_entry, width: w, height: h };
-  }
-  /**
-   * Measures the pixel width of a string with the given font.
-   * @param text - Text to measure
-   * @param fnt - Font resource
-   * @returns Width in pixels
-   */
-  measure_width(text, fnt) {
-    this.ctx.font = fnt.name;
-    return Math.ceil(this.ctx.measureText(text).width);
-  }
-  /**
-   * Measures the pixel height of a string with the given font.
-   * @param fnt - Font resource
-   * @returns Height in pixels
-   */
-  measure_height(fnt) {
-    return Math.ceil(fnt.size * 1.5);
-  }
-  /**
-   * Clears the text texture cache and frees GPU memory.
-   */
-  clear_cache() {
-    for (const entry of this.cache.values()) {
-      this.tex_manager.free_texture(entry.entry.texture);
-    }
-    this.cache.clear();
-  }
-};
-var c_black = 0;
-var c_white = 16777215;
-var bm_normal = 0;
+});
+
+// packages/engine/dist/drawing/color.js
 function make_color_rgb(r, g, b) {
   r = Math.max(0, Math.min(255, Math.round(r)));
   g = Math.max(0, Math.min(255, Math.round(g)));
@@ -7862,804 +8944,1112 @@ function color_to_rgb_normalized(col) {
     color_get_blue(col) / 255
   ];
 }
-var renderer = class {
-  static {
-    this.projection_loc = null;
+var c_black, c_white, bm_normal;
+var init_color = __esm({
+  "packages/engine/dist/drawing/color.js"() {
+    "use strict";
+    init_engine_globals();
+    c_black = 0;
+    c_white = 16777215;
+    bm_normal = 0;
   }
-  static {
-    this.active_proj_loc = null;
-  }
-  static {
-    this.draw_color = 16777215;
-  }
-  static {
-    this.draw_alpha = 1;
-  }
-  static {
-    this.blend_mode = bm_normal;
-  }
-  static {
-    this.current_font = new font_resource("Arial", 16);
-  }
-  static {
-    this.halign = 0;
-  }
-  static {
-    this.valign = 0;
-  }
-  static {
-    this.active_surface = null;
-  }
-  /**
-   * Initialises the renderer with an existing canvas or creates a new one.
-   * Must be called before any drawing functions.
-   * @param canvas_or_id - Canvas element or CSS selector string
-   * @param width - Canvas width in pixels
-   * @param height - Canvas height in pixels
-   */
-  static init(canvas_or_id, width = 800, height = 600) {
-    if (typeof canvas_or_id === "string") {
-      const el = document.querySelector(canvas_or_id);
-      if (!el) throw new Error(`Canvas not found: ${canvas_or_id}`);
-      this.canvas = el;
-    } else {
-      this.canvas = canvas_or_id;
-    }
-    this.canvas.width = width;
-    this.canvas.height = height;
-    const gl = this.canvas.getContext("webgl2");
-    if (!gl) throw new Error("WebGL 2 is not supported in this browser");
-    this.gl = gl;
-    this.program = create_program(gl, DEFAULT_VERTEX_SHADER, DEFAULT_FRAGMENT_SHADER);
-    this.projection_loc = gl.getUniformLocation(this.program, "u_projection");
-    this.active_proj_loc = this.projection_loc;
-    this.tex_mgr = new texture_manager(gl);
-    this.batch = new batch_renderer(gl);
-    this.font_rend = new font_renderer(this.tex_mgr);
-    gl.enable(gl.BLEND);
-    this.apply_blend_mode(bm_normal);
-    gl.disable(gl.DEPTH_TEST);
-    gl.disable(gl.CULL_FACE);
-    gl.useProgram(this.program);
-    this.upload_projection(width, height);
-    set_draw_sprite_ext(this.draw_sprite_ext.bind(this));
-    set_frame_hooks(
-      () => this.begin_frame(),
-      () => this.end_frame()
-    );
-  }
-  // =========================================================================
-  // Projection helpers
-  // =========================================================================
-  /**
-   * Uploads an orthographic projection matrix for pixel-space coordinates.
-   * Origin at top-left, Y increases downward.
-   * @param w - Viewport width
-   * @param h - Viewport height
-   */
-  static upload_projection(w, h) {
-    const gl = this.gl;
-    const matrix = new Float32Array([
-      2 / w,
-      0,
-      0,
-      0,
-      0,
-      -2 / h,
-      0,
-      0,
-      0,
-      0,
-      1,
-      0,
-      -1,
-      1,
-      0,
-      1
-    ]);
-    gl.uniformMatrix4fv(this.projection_loc, false, matrix);
-  }
-  // =========================================================================
-  // Frame management
-  // =========================================================================
-  /**
-   * Called at the start of each draw frame.
-   * Clears the color buffer and prepares the render state.
-   * @param r - Clear color red (0–1)
-   * @param g - Clear color green (0–1)
-   * @param b - Clear color blue (0–1)
-   */
-  static begin_frame(r = 0, g = 0, b = 0) {
-    const gl = this.gl;
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.clearColor(r, g, b, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.useProgram(this.program);
-    this.upload_projection(this.canvas.width, this.canvas.height);
-  }
-  /**
-   * Called at the end of each draw frame to flush remaining batched quads.
-   */
-  static end_frame() {
-    this.batch.flush();
-  }
-  // =========================================================================
-  // Draw state
-  // =========================================================================
-  /** Sets the current draw color (BGR integer). */
-  static set_color(col) {
-    this.draw_color = col;
-  }
-  /** Returns the current draw color (BGR integer). */
-  static get_color() {
-    return this.draw_color;
-  }
-  /** Sets the current draw alpha (0–1). */
-  static set_alpha(a) {
-    this.draw_alpha = Math.max(0, Math.min(1, a));
-  }
-  /** Returns the current draw alpha. */
-  static get_alpha() {
-    return this.draw_alpha;
-  }
-  /** Returns the currently active font resource. */
-  static get_current_font() {
-    return this.current_font;
-  }
-  /** Sets the current font for text rendering. */
-  static set_font(fnt) {
-    this.current_font = fnt;
-  }
-  /** Sets the horizontal text alignment (fa_left / fa_center / fa_right). */
-  static set_halign(align) {
-    this.halign = align;
-  }
-  /** Sets the vertical text alignment (fa_top / fa_middle / fa_bottom). */
-  static set_valign(align) {
-    this.valign = align;
-  }
-  /**
-   * Sets the active blend mode.
-   * Flushes the current batch before changing GL blend state.
-   * @param mode - bm_normal, bm_add, bm_max, or bm_subtract
-   */
-  static set_blend_mode(mode) {
-    if (mode === this.blend_mode) return;
-    this.batch.flush();
-    this.blend_mode = mode;
-    this.apply_blend_mode(mode);
-  }
-  static apply_blend_mode(mode) {
-    const gl = this.gl;
-    switch (mode) {
-      case 1:
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-        break;
-      case 2:
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-        gl.blendEquation(gl.MAX);
-        break;
-      case 3:
-        gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_COLOR);
-        gl.blendEquation(gl.FUNC_SUBTRACT);
-        break;
-      default:
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-        gl.blendEquation(gl.FUNC_ADD);
-        break;
-    }
-  }
-  // =========================================================================
-  // Surface management
-  // =========================================================================
-  /**
-   * Creates a new render-to-texture surface.
-   * @param w - Surface width in pixels
-   * @param h - Surface height in pixels
-   * @returns surface object
-   */
-  static surface_create(w, h) {
-    const gl = this.gl;
-    const tex = gl.createTexture();
-    if (!tex) throw new Error("Failed to create surface texture");
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    const fbo = gl.createFramebuffer();
-    if (!fbo) throw new Error("Failed to create framebuffer");
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    return { fbo, texture: tex, width: w, height: h, valid: true };
-  }
-  /**
-   * Sets the render target to a surface.
-   * Subsequent draw calls will render into the surface.
-   * @param surf - Target surface
-   */
-  static surface_set_target(surf) {
-    if (!surf.valid) return;
-    this.batch.flush();
-    const gl = this.gl;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, surf.fbo);
-    gl.viewport(0, 0, surf.width, surf.height);
-    this.upload_projection(surf.width, surf.height);
-    this.active_surface = surf;
-  }
-  /**
-   * Resets the render target back to the screen.
-   */
-  static surface_reset_target() {
-    this.batch.flush();
-    const gl = this.gl;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    this.upload_projection(this.canvas.width, this.canvas.height);
-    this.active_surface = null;
-  }
-  /**
-   * Frees a surface's GPU resources.
-   * @param surf - Surface to free
-   */
-  static surface_free(surf) {
-    if (!surf.valid) return;
-    this.batch.flush();
-    const gl = this.gl;
-    gl.deleteTexture(surf.texture);
-    gl.deleteFramebuffer(surf.fbo);
-    surf.valid = false;
-  }
-  // =========================================================================
-  // Sprite drawing
-  // =========================================================================
-  /**
-   * Draws a sprite at the given position using the instance's current frame.
-   * @param spr - Sprite resource
-   * @param subimg - Frame index (float; will be floored and wrapped)
-   * @param x - X position (adjusted for sprite origin)
-   * @param y - Y position (adjusted for sprite origin)
-   */
-  static draw_sprite(spr, subimg, x, y) {
-    const frame = spr.get_frame(subimg);
-    if (!frame) return;
-    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    this.batch.add_quad(
-      x - spr.xoffset,
-      y - spr.yoffset,
-      frame.width,
-      frame.height,
-      0,
-      0,
-      1,
-      1,
-      r,
-      g,
-      b,
-      this.draw_alpha,
-      frame.texture.texture
-    );
-  }
-  /**
-   * Draws a sprite with extended transforms (scale, rotation, blend color, alpha).
-   * @param spr - Sprite resource
-   * @param subimg - Frame index
-   * @param x - X position
-   * @param y - Y position
-   * @param xscale - Horizontal scale factor
-   * @param yscale - Vertical scale factor
-   * @param rot - Rotation in degrees (counter-clockwise)
-   * @param color - Tint color (BGR integer, 0xFFFFFF = no tint)
-   * @param alpha - Transparency (0–1)
-   */
-  static draw_sprite_ext(spr, subimg, x, y, xscale, yscale, rot, color, alpha) {
-    const frame = spr.get_frame(subimg);
-    if (!frame) return;
-    const [r, g, b] = color_to_rgb_normalized(color);
-    this.batch.add_quad_transformed(
-      x,
-      y,
-      frame.width,
-      frame.height,
-      spr.xoffset,
-      spr.yoffset,
-      xscale,
-      yscale,
-      rot,
-      0,
-      0,
-      1,
-      1,
-      r,
-      g,
-      b,
-      alpha,
-      frame.texture.texture
-    );
-  }
-  /**
-   * Draws a sub-region of a sprite frame.
-   * @param spr - Sprite resource
-   * @param subimg - Frame index
-   * @param left - Source left (pixels from frame left)
-   * @param top - Source top (pixels from frame top)
-   * @param width - Source width in pixels
-   * @param height - Source height in pixels
-   * @param x - Destination X
-   * @param y - Destination Y
-   */
-  static draw_sprite_part(spr, subimg, left, top, width, height, x, y) {
-    const frame = spr.get_frame(subimg);
-    if (!frame) return;
-    const fw = frame.width;
-    const fh = frame.height;
-    const u0 = left / fw;
-    const v0 = top / fh;
-    const u1 = (left + width) / fw;
-    const v1 = (top + height) / fh;
-    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    this.batch.add_quad(x, y, width, height, u0, v0, u1, v1, r, g, b, this.draw_alpha, frame.texture.texture);
-  }
-  /**
-   * Draws a sprite stretched to fit the given dimensions.
-   * @param spr - Sprite resource
-   * @param subimg - Frame index
-   * @param x - Destination X (top-left)
-   * @param y - Destination Y (top-left)
-   * @param w - Target width
-   * @param h - Target height
-   */
-  static draw_sprite_stretched(spr, subimg, x, y, w, h) {
-    const frame = spr.get_frame(subimg);
-    if (!frame) return;
-    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    this.batch.add_quad(x, y, w, h, 0, 0, 1, 1, r, g, b, this.draw_alpha, frame.texture.texture);
-  }
-  // ═══════════════════════════════════════════════════════════════════════
-  // Background drawing
-  // ═══════════════════════════════════════════════════════════════════════
-  /**
-   * Draws a background at the given position.
-   * @param bg - Background resource
-   * @param x - X position
-   * @param y - Y position
-   */
-  static draw_background(bg, x, y) {
-    if (!bg || !bg.texture) return;
-    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    this.batch.add_quad(
-      x,
-      y,
-      bg.width,
-      bg.height,
-      0,
-      0,
-      1,
-      1,
-      r,
-      g,
-      b,
-      this.draw_alpha,
-      bg.texture.texture
-    );
-  }
-  /**
-   * Draws a background with extended transforms (scale, rotation, blend color, alpha).
-   * @param bg - Background resource
-   * @param x - X position
-   * @param y - Y position
-   * @param xscale - Horizontal scale factor
-   * @param yscale - Vertical scale factor
-   * @param rot - Rotation in degrees (counter-clockwise)
-   * @param color - Blend color as BGR integer
-   * @param alpha - Alpha transparency (0–1)
-   */
-  static draw_background_ext(bg, x, y, xscale, yscale, rot, color, alpha) {
-    if (!bg || !bg.texture) return;
-    const [r, g, b] = color_to_rgb_normalized(color);
-    this.batch.add_quad_transformed(
-      x,
-      y,
-      bg.width,
-      bg.height,
-      0,
-      0,
-      xscale,
-      yscale,
-      rot,
-      0,
-      0,
-      1,
-      1,
-      r,
-      g,
-      b,
-      alpha,
-      bg.texture.texture
-    );
-  }
-  /**
-   * Draws a background stretched to fill a specified region.
-   * @param bg - Background resource
-   * @param x - X position
-   * @param y - Y position
-   * @param w - Width
-   * @param h - Height
-   */
-  static draw_background_stretched(bg, x, y, w, h) {
-    if (!bg || !bg.texture) return;
-    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    this.batch.add_quad(x, y, w, h, 0, 0, 1, 1, r, g, b, this.draw_alpha, bg.texture.texture);
-  }
-  /**
-   * Draws a background tiled to fill the current view.
-   * @param bg - Background resource
-   * @param x - X offset
-   * @param y - Y offset
-   * @param tile_x - X tile offset
-   * @param tile_y - Y tile offset
-   */
-  static draw_background_tiled(bg, x, y, tile_x, tile_y) {
-    if (!bg || !bg.texture) return;
-    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    const view_w = this.canvas.width;
-    const view_h = this.canvas.height;
-    const tiles_x = Math.ceil(view_w / bg.width) + 1;
-    const tiles_y = Math.ceil(view_h / bg.height) + 1;
-    const start_x = x - tile_x % bg.width;
-    const start_y = y - tile_y % bg.height;
-    for (let ty = 0; ty < tiles_y; ty++) {
-      for (let tx = 0; tx < tiles_x; tx++) {
-        const draw_x = start_x + tx * bg.width;
-        const draw_y = start_y + ty * bg.height;
-        this.batch.add_quad(
-          draw_x,
-          draw_y,
-          bg.width,
-          bg.height,
+});
+
+// packages/engine/dist/drawing/renderer.js
+function pos_mod(a, m) {
+  return (a % m + m) % m;
+}
+var renderer;
+var init_renderer = __esm({
+  "packages/engine/dist/drawing/renderer.js"() {
+    "use strict";
+    init_engine_globals();
+    init_shader();
+    init_batch_renderer();
+    init_texture_manager();
+    init_font();
+    init_color();
+    init_instance();
+    init_game_loop();
+    init_resource();
+    renderer = class {
+      /**
+       * Initialises the renderer with an existing canvas or creates a new one.
+       * Must be called before any drawing functions.
+       * @param canvas_or_id - Canvas element or CSS selector string
+       * @param width - Canvas width in pixels
+       * @param height - Canvas height in pixels
+       */
+      static init(canvas_or_id, width = 800, height = 600) {
+        if (typeof canvas_or_id === "string") {
+          const el = document.querySelector(canvas_or_id);
+          if (!el)
+            throw new Error(`Canvas not found: ${canvas_or_id}`);
+          this.canvas = el;
+        } else {
+          this.canvas = canvas_or_id;
+        }
+        this.canvas.width = width;
+        this.canvas.height = height;
+        const gl = this.canvas.getContext("webgl2");
+        if (!gl)
+          throw new Error("WebGL 2 is not supported in this browser");
+        this.gl = gl;
+        this.program = create_program(gl, DEFAULT_VERTEX_SHADER, DEFAULT_FRAGMENT_SHADER);
+        this.projection_loc = gl.getUniformLocation(this.program, "u_projection");
+        this.active_proj_loc = this.projection_loc;
+        this.tex_mgr = new texture_manager(gl);
+        this.batch = new batch_renderer(gl);
+        this.font_rend = new font_renderer(this.tex_mgr);
+        gl.enable(gl.BLEND);
+        this.apply_blend_mode(bm_normal);
+        gl.disable(gl.DEPTH_TEST);
+        gl.disable(gl.CULL_FACE);
+        gl.useProgram(this.program);
+        this.upload_projection(width, height);
+        set_draw_sprite_ext(this.draw_sprite_ext.bind(this));
+        set_frame_hooks(() => this.begin_frame(), () => this.end_frame());
+        set_room_render_hook((rm, run_instances) => this.draw_room(rm, run_instances));
+      }
+      // =========================================================================
+      // Projection helpers
+      // =========================================================================
+      /**
+       * Uploads an orthographic projection matrix for pixel-space coordinates.
+       * Origin at top-left, Y increases downward.
+       * @param w - Viewport width
+       * @param h - Viewport height
+       */
+      static upload_projection(w, h) {
+        const gl = this.gl;
+        const matrix = new Float32Array([
+          2 / w,
+          0,
+          0,
+          0,
+          0,
+          -2 / h,
+          0,
+          0,
           0,
           0,
           1,
+          0,
+          -1,
           1,
-          r,
-          g,
-          b,
-          this.draw_alpha,
-          bg.texture.texture
-        );
+          0,
+          1
+        ]);
+        gl.uniformMatrix4fv(this.projection_loc, false, matrix);
       }
-    }
-  }
-  /**
-   * Draws a surface as if it were a sprite.
-   * @param surf - Surface to draw
-   * @param x - Destination X
-   * @param y - Destination Y
-   */
-  static draw_surface(surf, x, y) {
-    if (!surf.valid) return;
-    const [r, g, b] = color_to_rgb_normalized(16777215);
-    this.batch.add_quad(x, y, surf.width, surf.height, 0, 1, 1, 0, r, g, b, this.draw_alpha, surf.texture);
-  }
-  // =========================================================================
-  // Text drawing
-  // =========================================================================
-  /**
-   * Draws a text string at the given position using the current font and alignment.
-   * @param x - X position
-   * @param y - Y position
-   * @param text - String to draw
-   */
-  static draw_text(x, y, text) {
-    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    const color_css = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
-    const cached = this.font_rend.get_texture(String(text), this.current_font, color_css);
-    let dx = x;
-    let dy = y;
-    if (this.halign === 1) dx -= cached.width / 2;
-    else if (this.halign === 2) dx -= cached.width;
-    if (this.valign === 1) dy -= cached.height / 2;
-    else if (this.valign === 2) dy -= cached.height;
-    this.batch.add_quad(
-      dx,
-      dy,
-      cached.width,
-      cached.height,
-      0,
-      0,
-      1,
-      1,
-      1,
-      1,
-      1,
-      this.draw_alpha,
-      cached.entry.texture
-    );
-  }
-  // =========================================================================
-  // Shape drawing
-  // =========================================================================
-  /**
-   * Clears the screen (or current surface) with a solid color.
-   * @param col - BGR color integer
-   */
-  static draw_clear(col) {
-    const [r, g, b] = color_to_rgb_normalized(col);
-    const gl = this.gl;
-    this.batch.flush();
-    gl.clearColor(r, g, b, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-  }
-  /**
-   * Draws a filled or outlined axis-aligned rectangle.
-   * @param x1 - Left
-   * @param y1 - Top
-   * @param x2 - Right
-   * @param y2 - Bottom
-   * @param outline - True for outline only, false for filled
-   */
-  static draw_rectangle(x1, y1, x2, y2, outline) {
-    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    const a = this.draw_alpha;
-    const wp = this.tex_mgr.white_pixel;
-    if (!outline) {
-      this.batch.add_quad(x1, y1, x2 - x1, y2 - y1, 0, 0, 1, 1, r, g, b, a, wp);
-    } else {
-      const t = 1;
-      this.batch.add_quad(x1, y1, x2 - x1, t, 0, 0, 1, 1, r, g, b, a, wp);
-      this.batch.add_quad(x1, y2 - t, x2 - x1, t, 0, 0, 1, 1, r, g, b, a, wp);
-      this.batch.add_quad(x1, y1 + t, t, y2 - y1 - 2, 0, 0, 1, 1, r, g, b, a, wp);
-      this.batch.add_quad(x2 - t, y1 + t, t, y2 - y1 - 2, 0, 0, 1, 1, r, g, b, a, wp);
-    }
-  }
-  /**
-   * Draws a filled or outlined circle using a triangle fan approximation.
-   * @param cx - Center X
-   * @param cy - Center Y
-   * @param r_px - Radius in pixels
-   * @param outline - True for outline only
-   */
-  static draw_circle(cx, cy, r_px, outline) {
-    const SEGMENTS = 32;
-    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    const a = this.draw_alpha;
-    const wp = this.tex_mgr.white_pixel;
-    if (!outline) {
-      for (let i = 0; i < SEGMENTS; i++) {
-        const a0 = i / SEGMENTS * Math.PI * 2;
-        const a1 = (i + 1) / SEGMENTS * Math.PI * 2;
-        const x0 = cx + Math.cos(a0) * r_px;
-        const y0 = cy + Math.sin(a0) * r_px;
-        const x1 = cx + Math.cos(a1) * r_px;
-        const y1 = cy + Math.sin(a1) * r_px;
-        this.draw_triangle_internal(cx, cy, x0, y0, x1, y1, r, g, b, a, wp);
+      /**
+       * Uploads an orthographic projection that maps the room-space rectangle
+       * (vx,vy)–(vx+vw,vy+vh) onto clip space. Origin top-left, Y increases down.
+       * This is what makes views/cameras scroll.
+       * @param vx - View left in room space
+       * @param vy - View top in room space
+       * @param vw - View width in room space
+       * @param vh - View height in room space
+       */
+      static upload_projection_view(vx, vy, vw, vh) {
+        const gl = this.gl;
+        const matrix = new Float32Array([
+          2 / vw,
+          0,
+          0,
+          0,
+          0,
+          -2 / vh,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          -(2 * vx / vw) - 1,
+          2 * vy / vh + 1,
+          0,
+          1
+        ]);
+        gl.uniformMatrix4fv(this.projection_loc, false, matrix);
       }
-    } else {
-      const thickness = 1;
-      for (let i = 0; i < SEGMENTS; i++) {
-        const a0 = i / SEGMENTS * Math.PI * 2;
-        const a1 = (i + 1) / SEGMENTS * Math.PI * 2;
-        const x0 = cx + Math.cos(a0) * r_px;
-        const y0 = cy + Math.sin(a0) * r_px;
-        const x1 = cx + Math.cos(a1) * r_px;
-        const y1 = cy + Math.sin(a1) * r_px;
-        this.draw_line_width_internal(x0, y0, x1, y1, thickness, r, g, b, a, wp);
+      /**
+       * Activates a view camera: flushes pending geometry, sets the GL viewport to
+       * the on-screen port, and projects the room-space view rectangle into it.
+       */
+      static set_view_camera(vx, vy, vw, vh, px, py, pw, ph) {
+        this.batch.flush();
+        this.gl.viewport(px, this.canvas.height - py - ph, pw, ph);
+        this.upload_projection_view(vx, vy, vw, vh);
       }
-    }
-  }
-  /**
-   * Draws a line between two points.
-   * @param x1 - Start X
-   * @param y1 - Start Y
-   * @param x2 - End X
-   * @param y2 - End Y
-   */
-  static draw_line(x1, y1, x2, y2) {
-    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    this.draw_line_width_internal(x1, y1, x2, y2, 1, r, g, b, this.draw_alpha, this.tex_mgr.white_pixel);
-  }
-  /**
-   * Draws a line with a specific pixel width.
-   * @param x1 - Start X
-   * @param y1 - Start Y
-   * @param x2 - End X
-   * @param y2 - End Y
-   * @param w - Line width in pixels
-   */
-  static draw_line_width(x1, y1, x2, y2, w) {
-    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    this.draw_line_width_internal(x1, y1, x2, y2, w, r, g, b, this.draw_alpha, this.tex_mgr.white_pixel);
-  }
-  /**
-   * Draws a single point (1×1 pixel) at the given position.
-   * @param x - X position
-   * @param y - Y position
-   */
-  static draw_point(x, y) {
-    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    this.batch.add_quad(x, y, 1, 1, 0, 0, 1, 1, r, g, b, this.draw_alpha, this.tex_mgr.white_pixel);
-  }
-  /**
-   * Draws a filled or outlined triangle.
-   * @param x1 - Vertex 1 X
-   * @param y1 - Vertex 1 Y
-   * @param x2 - Vertex 2 X
-   * @param y2 - Vertex 2 Y
-   * @param x3 - Vertex 3 X
-   * @param y3 - Vertex 3 Y
-   * @param outline - True for outline only
-   */
-  static draw_triangle(x1, y1, x2, y2, x3, y3, outline) {
-    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    const a = this.draw_alpha;
-    const wp = this.tex_mgr.white_pixel;
-    if (!outline) {
-      this.draw_triangle_internal(x1, y1, x2, y2, x3, y3, r, g, b, a, wp);
-    } else {
-      this.draw_line_width_internal(x1, y1, x2, y2, 1, r, g, b, a, wp);
-      this.draw_line_width_internal(x2, y2, x3, y3, 1, r, g, b, a, wp);
-      this.draw_line_width_internal(x3, y3, x1, y1, 1, r, g, b, a, wp);
-    }
-  }
-  /**
-   * Draws a filled or outlined ellipse.
-   * @param x1 - Bounding box left
-   * @param y1 - Bounding box top
-   * @param x2 - Bounding box right
-   * @param y2 - Bounding box bottom
-   * @param outline - True for outline only
-   */
-  static draw_ellipse(x1, y1, x2, y2, outline) {
-    const cx = (x1 + x2) / 2;
-    const cy = (y1 + y2) / 2;
-    const rx = (x2 - x1) / 2;
-    const ry = (y2 - y1) / 2;
-    const SEGMENTS = 32;
-    const [r, g, b] = color_to_rgb_normalized(this.draw_color);
-    const a = this.draw_alpha;
-    const wp = this.tex_mgr.white_pixel;
-    if (!outline) {
-      for (let i = 0; i < SEGMENTS; i++) {
-        const a0 = i / SEGMENTS * Math.PI * 2;
-        const a1 = (i + 1) / SEGMENTS * Math.PI * 2;
-        const px0 = cx + Math.cos(a0) * rx, py0 = cy + Math.sin(a0) * ry;
-        const px1 = cx + Math.cos(a1) * rx, py1 = cy + Math.sin(a1) * ry;
-        this.draw_triangle_internal(cx, cy, px0, py0, px1, py1, r, g, b, a, wp);
+      /** Restores full-canvas rendering (for GUI / no-view drawing). */
+      static reset_view() {
+        this.batch.flush();
+        this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        this.upload_projection(this.canvas.width, this.canvas.height);
       }
-    } else {
-      for (let i = 0; i < SEGMENTS; i++) {
-        const a0 = i / SEGMENTS * Math.PI * 2;
-        const a1 = (i + 1) / SEGMENTS * Math.PI * 2;
-        const px0 = cx + Math.cos(a0) * rx, py0 = cy + Math.sin(a0) * ry;
-        const px1 = cx + Math.cos(a1) * rx, py1 = cy + Math.sin(a1) * ry;
-        this.draw_line_width_internal(px0, py0, px1, py1, 1, r, g, b, a, wp);
+      // =========================================================================
+      // Frame management
+      // =========================================================================
+      /**
+       * Called at the start of each draw frame.
+       * Clears the color buffer and prepares the render state.
+       * @param r - Clear color red (0–1)
+       * @param g - Clear color green (0–1)
+       * @param b - Clear color blue (0–1)
+       */
+      static begin_frame(r = 0, g = 0, b = 0) {
+        const gl = this.gl;
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        gl.clearColor(r, g, b, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.useProgram(this.program);
+        this.upload_projection(this.canvas.width, this.canvas.height);
       }
-    }
+      /**
+       * Called at the end of each draw frame to flush remaining batched quads.
+       */
+      static end_frame() {
+        this.batch.flush();
+      }
+      // =========================================================================
+      // Draw state
+      // =========================================================================
+      /** Sets the current draw color (BGR integer). */
+      static set_color(col) {
+        this.draw_color = col;
+      }
+      /** Returns the current draw color (BGR integer). */
+      static get_color() {
+        return this.draw_color;
+      }
+      /** Sets the current draw alpha (0–1). */
+      static set_alpha(a) {
+        this.draw_alpha = Math.max(0, Math.min(1, a));
+      }
+      /** Returns the current draw alpha. */
+      static get_alpha() {
+        return this.draw_alpha;
+      }
+      /** Returns the currently active font resource. */
+      static get_current_font() {
+        return this.current_font;
+      }
+      /** Sets the current font for text rendering. */
+      static set_font(fnt) {
+        this.current_font = fnt;
+      }
+      /** Sets the horizontal text alignment (fa_left / fa_center / fa_right). */
+      static set_halign(align) {
+        this.halign = align;
+      }
+      /** Sets the vertical text alignment (fa_top / fa_middle / fa_bottom). */
+      static set_valign(align) {
+        this.valign = align;
+      }
+      /**
+       * Sets the active blend mode.
+       * Flushes the current batch before changing GL blend state.
+       * @param mode - bm_normal, bm_add, bm_max, or bm_subtract
+       */
+      static set_blend_mode(mode) {
+        if (mode === this.blend_mode)
+          return;
+        this.batch.flush();
+        this.blend_mode = mode;
+        this.apply_blend_mode(mode);
+      }
+      static apply_blend_mode(mode) {
+        const gl = this.gl;
+        switch (mode) {
+          case 1:
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+            break;
+          case 2:
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+            gl.blendEquation(gl.MAX);
+            break;
+          case 3:
+            gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_COLOR);
+            gl.blendEquation(gl.FUNC_SUBTRACT);
+            break;
+          default:
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            gl.blendEquation(gl.FUNC_ADD);
+            break;
+        }
+      }
+      // =========================================================================
+      // Surface management
+      // =========================================================================
+      /**
+       * Creates a new render-to-texture surface.
+       * @param w - Surface width in pixels
+       * @param h - Surface height in pixels
+       * @returns surface object
+       */
+      static surface_create(w, h) {
+        const gl = this.gl;
+        const tex = gl.createTexture();
+        if (!tex)
+          throw new Error("Failed to create surface texture");
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        const fbo = gl.createFramebuffer();
+        if (!fbo)
+          throw new Error("Failed to create framebuffer");
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        return { fbo, texture: tex, width: w, height: h, valid: true };
+      }
+      /**
+       * Sets the render target to a surface.
+       * Subsequent draw calls will render into the surface.
+       * @param surf - Target surface
+       */
+      static surface_set_target(surf) {
+        if (!surf.valid)
+          return;
+        this.batch.flush();
+        const gl = this.gl;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, surf.fbo);
+        gl.viewport(0, 0, surf.width, surf.height);
+        this.upload_projection(surf.width, surf.height);
+        this.active_surface = surf;
+      }
+      /**
+       * Resets the render target back to the screen.
+       */
+      static surface_reset_target() {
+        this.batch.flush();
+        const gl = this.gl;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        this.upload_projection(this.canvas.width, this.canvas.height);
+        this.active_surface = null;
+      }
+      /**
+       * Frees a surface's GPU resources.
+       * @param surf - Surface to free
+       */
+      static surface_free(surf) {
+        if (!surf.valid)
+          return;
+        this.batch.flush();
+        const gl = this.gl;
+        gl.deleteTexture(surf.texture);
+        gl.deleteFramebuffer(surf.fbo);
+        surf.valid = false;
+      }
+      // =========================================================================
+      // Sprite drawing
+      // =========================================================================
+      /**
+       * Draws a sprite at the given position using the instance's current frame.
+       * @param spr - Sprite resource
+       * @param subimg - Frame index (float; will be floored and wrapped)
+       * @param x - X position (adjusted for sprite origin)
+       * @param y - Y position (adjusted for sprite origin)
+       */
+      static draw_sprite(spr, subimg, x, y) {
+        const frame = spr.get_frame(subimg);
+        if (!frame)
+          return;
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+        this.batch.add_quad(x - spr.xoffset, y - spr.yoffset, frame.width, frame.height, 0, 0, 1, 1, r, g, b, this.draw_alpha, frame.texture.texture);
+      }
+      /**
+       * Draws a sprite with extended transforms (scale, rotation, blend color, alpha).
+       * @param spr - Sprite resource
+       * @param subimg - Frame index
+       * @param x - X position
+       * @param y - Y position
+       * @param xscale - Horizontal scale factor
+       * @param yscale - Vertical scale factor
+       * @param rot - Rotation in degrees (counter-clockwise)
+       * @param color - Tint color (BGR integer, 0xFFFFFF = no tint)
+       * @param alpha - Transparency (0–1)
+       */
+      static draw_sprite_ext(spr, subimg, x, y, xscale, yscale, rot, color, alpha) {
+        const frame = spr.get_frame(subimg);
+        if (!frame)
+          return;
+        const [r, g, b] = color_to_rgb_normalized(color);
+        this.batch.add_quad_transformed(x, y, frame.width, frame.height, spr.xoffset, spr.yoffset, xscale, yscale, rot, 0, 0, 1, 1, r, g, b, alpha, frame.texture.texture);
+      }
+      /**
+       * Draws a sub-region of a sprite frame.
+       * @param spr - Sprite resource
+       * @param subimg - Frame index
+       * @param left - Source left (pixels from frame left)
+       * @param top - Source top (pixels from frame top)
+       * @param width - Source width in pixels
+       * @param height - Source height in pixels
+       * @param x - Destination X
+       * @param y - Destination Y
+       */
+      static draw_sprite_part(spr, subimg, left, top, width, height, x, y) {
+        const frame = spr.get_frame(subimg);
+        if (!frame)
+          return;
+        const fw = frame.width;
+        const fh = frame.height;
+        const u0 = left / fw;
+        const v0 = top / fh;
+        const u1 = (left + width) / fw;
+        const v1 = (top + height) / fh;
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+        this.batch.add_quad(x, y, width, height, u0, v0, u1, v1, r, g, b, this.draw_alpha, frame.texture.texture);
+      }
+      /**
+       * Draws a sprite stretched to fit the given dimensions.
+       * @param spr - Sprite resource
+       * @param subimg - Frame index
+       * @param x - Destination X (top-left)
+       * @param y - Destination Y (top-left)
+       * @param w - Target width
+       * @param h - Target height
+       */
+      static draw_sprite_stretched(spr, subimg, x, y, w, h) {
+        const frame = spr.get_frame(subimg);
+        if (!frame)
+          return;
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+        this.batch.add_quad(x, y, w, h, 0, 0, 1, 1, r, g, b, this.draw_alpha, frame.texture.texture);
+      }
+      // ═══════════════════════════════════════════════════════════════════════
+      // Background drawing
+      // ═══════════════════════════════════════════════════════════════════════
+      /**
+       * Draws a background at the given position.
+       * @param bg - Background resource
+       * @param x - X position
+       * @param y - Y position
+       */
+      static draw_background(bg, x, y) {
+        if (!bg || !bg.texture)
+          return;
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+        this.batch.add_quad(x, y, bg.width, bg.height, 0, 0, 1, 1, r, g, b, this.draw_alpha, bg.texture.texture);
+      }
+      /**
+       * Draws a background with extended transforms (scale, rotation, blend color, alpha).
+       * @param bg - Background resource
+       * @param x - X position
+       * @param y - Y position
+       * @param xscale - Horizontal scale factor
+       * @param yscale - Vertical scale factor
+       * @param rot - Rotation in degrees (counter-clockwise)
+       * @param color - Blend color as BGR integer
+       * @param alpha - Alpha transparency (0–1)
+       */
+      static draw_background_ext(bg, x, y, xscale, yscale, rot, color, alpha) {
+        if (!bg || !bg.texture)
+          return;
+        const [r, g, b] = color_to_rgb_normalized(color);
+        this.batch.add_quad_transformed(x, y, bg.width, bg.height, 0, 0, xscale, yscale, rot, 0, 0, 1, 1, r, g, b, alpha, bg.texture.texture);
+      }
+      /**
+       * Draws a background stretched to fill a specified region.
+       * @param bg - Background resource
+       * @param x - X position
+       * @param y - Y position
+       * @param w - Width
+       * @param h - Height
+       */
+      static draw_background_stretched(bg, x, y, w, h) {
+        if (!bg || !bg.texture)
+          return;
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+        this.batch.add_quad(x, y, w, h, 0, 0, 1, 1, r, g, b, this.draw_alpha, bg.texture.texture);
+      }
+      /**
+       * Draws a background tiled to fill the current view.
+       * @param bg - Background resource
+       * @param x - X offset
+       * @param y - Y offset
+       * @param tile_x - X tile offset
+       * @param tile_y - Y tile offset
+       */
+      static draw_background_tiled(bg, x, y, tile_x, tile_y) {
+        if (!bg || !bg.texture)
+          return;
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+        const view_w = this.canvas.width;
+        const view_h = this.canvas.height;
+        const tiles_x = Math.ceil(view_w / bg.width) + 1;
+        const tiles_y = Math.ceil(view_h / bg.height) + 1;
+        const start_x = x - tile_x % bg.width;
+        const start_y = y - tile_y % bg.height;
+        for (let ty = 0; ty < tiles_y; ty++) {
+          for (let tx = 0; tx < tiles_x; tx++) {
+            const draw_x = start_x + tx * bg.width;
+            const draw_y = start_y + ty * bg.height;
+            this.batch.add_quad(draw_x, draw_y, bg.width, bg.height, 0, 0, 1, 1, r, g, b, this.draw_alpha, bg.texture.texture);
+          }
+        }
+      }
+      /**
+       * Draws a surface as if it were a sprite.
+       * @param surf - Surface to draw
+       * @param x - Destination X
+       * @param y - Destination Y
+       */
+      static draw_surface(surf, x, y) {
+        if (!surf.valid)
+          return;
+        const [r, g, b] = color_to_rgb_normalized(16777215);
+        this.batch.add_quad(x, y, surf.width, surf.height, 0, 1, 1, 0, r, g, b, this.draw_alpha, surf.texture);
+      }
+      // =========================================================================
+      // Room rendering (views, backgrounds, tiles)
+      // =========================================================================
+      /**
+       * Renders the active room. For each visible view it sets the camera, draws
+       * the non-foreground backgrounds and tiles, runs the instance Draw events
+       * (via the callback), then draws the foreground backgrounds. With no views
+       * enabled the room maps 1:1 to the canvas.
+       * @param rm - The active room
+       * @param run_instances - Runs all instance Draw events under the current camera
+       */
+      static draw_room(rm, run_instances) {
+        if (rm.background_show_color)
+          this.draw_clear(rm.background_solid_color);
+        this._advance_bg_scroll(rm);
+        const views = [];
+        if (rm.view_enabled) {
+          for (let i = 0; i < rm.view_visible.length; i++) {
+            if (rm.view_visible[i] && (rm.view_wview[i] ?? 0) > 0)
+              views.push(i);
+          }
+        }
+        if (views.length > 0) {
+          for (const i of views) {
+            this._follow_view(rm, i);
+            const vx = rm.view_xview[i] ?? 0, vy = rm.view_yview[i] ?? 0;
+            const vw = rm.view_wview[i], vh = rm.view_hview[i];
+            const px = rm.view_xport[i] ?? 0, py = rm.view_yport[i] ?? 0;
+            const pw = rm.view_wport[i] ?? vw, ph = rm.view_hport[i] ?? vh;
+            this.set_view_camera(vx, vy, vw, vh, px, py, pw, ph);
+            this.draw_room_backgrounds(rm, false, vx, vy, vw, vh);
+            this.draw_room_tiles(rm);
+            run_instances();
+            this.draw_room_backgrounds(rm, true, vx, vy, vw, vh);
+          }
+          this.reset_view();
+        } else {
+          const vw = this.canvas.width, vh = this.canvas.height;
+          this.draw_room_backgrounds(rm, false, 0, 0, vw, vh);
+          this.draw_room_tiles(rm);
+          run_instances();
+          this.draw_room_backgrounds(rm, true, 0, 0, vw, vh);
+        }
+      }
+      /** Accumulates each background layer's auto-scroll offset once per frame. */
+      static _advance_bg_scroll(rm) {
+        const n = rm.background_index.length;
+        if (rm._bg_scroll_x.length !== n) {
+          rm._bg_scroll_x = new Array(n).fill(0);
+          rm._bg_scroll_y = new Array(n).fill(0);
+        }
+        for (let i = 0; i < n; i++) {
+          rm._bg_scroll_x[i] = (rm._bg_scroll_x[i] ?? 0) + (rm.background_hspeed[i] ?? 0);
+          rm._bg_scroll_y[i] = (rm._bg_scroll_y[i] ?? 0) + (rm.background_vspeed[i] ?? 0);
+        }
+      }
+      /**
+       * Moves view `i` to keep its followed instance within the view's border box,
+       * clamped to the room bounds. No-op when the view follows nothing.
+       */
+      static _follow_view(rm, i) {
+        const obj = rm.view_object[i] ?? -1;
+        if (obj < 0)
+          return;
+        const inst = rm.instance_get(obj);
+        if (!inst)
+          return;
+        const vw = rm.view_wview[i], vh = rm.view_hview[i];
+        const hb = rm.view_hborder[i] ?? 0, vb = rm.view_vborder[i] ?? 0;
+        let vx = rm.view_xview[i] ?? 0, vy = rm.view_yview[i] ?? 0;
+        if (inst.x - vx < hb)
+          vx = inst.x - hb;
+        else if (vx + vw - inst.x < hb)
+          vx = inst.x + hb - vw;
+        if (inst.y - vy < vb)
+          vy = inst.y - vb;
+        else if (vy + vh - inst.y < vb)
+          vy = inst.y + vb - vh;
+        rm.view_xview[i] = Math.max(0, Math.min(vx, rm.room_width - vw));
+        rm.view_yview[i] = Math.max(0, Math.min(vy, rm.room_height - vh));
+      }
+      /**
+       * Draws the room's background layers within the given view rectangle.
+       * @param rm - The room
+       * @param foreground - Draw only foreground layers (true) or only background layers (false)
+       * @param vx - View left (room space)
+       * @param vy - View top (room space)
+       * @param vw - View width
+       * @param vh - View height
+       */
+      static draw_room_backgrounds(rm, foreground, vx, vy, vw, vh) {
+        for (let i = 0; i < rm.background_index.length; i++) {
+          if (!rm.background_visible[i])
+            continue;
+          if ((rm.background_foreground[i] ?? false) !== foreground)
+            continue;
+          const bg = resource.findByID(rm.background_index[i] ?? -1);
+          if (!bg || !bg.texture)
+            continue;
+          const [cr, cg, cb] = color_to_rgb_normalized(rm.background_color[i] ?? 16777215);
+          if (rm.background_stretch[i]) {
+            this.batch.add_quad(0, 0, rm.room_width, rm.room_height, 0, 0, 1, 1, cr, cg, cb, this.draw_alpha, bg.texture.texture);
+            continue;
+          }
+          const bx = (rm.background_x[i] ?? 0) + (rm._bg_scroll_x[i] ?? 0);
+          const by = (rm.background_y[i] ?? 0) + (rm._bg_scroll_y[i] ?? 0);
+          const htiled = rm.background_htiled[i] ?? false;
+          const vtiled = rm.background_vtiled[i] ?? false;
+          const startx = htiled ? vx - pos_mod(vx - bx, bg.width) : bx;
+          const endx = htiled ? vx + vw : bx + bg.width;
+          const starty = vtiled ? vy - pos_mod(vy - by, bg.height) : by;
+          const endy = vtiled ? vy + vh : by + bg.height;
+          for (let yy = starty; yy < endy; yy += bg.height) {
+            for (let xx = startx; xx < endx; xx += bg.width) {
+              this.batch.add_quad(xx, yy, bg.width, bg.height, 0, 0, 1, 1, cr, cg, cb, this.draw_alpha, bg.texture.texture);
+            }
+          }
+        }
+      }
+      /**
+       * Draws the room's tile layers (back-to-front by depth). Each tile is a
+       * sub-rectangle of a background resource drawn at its room position.
+       * @param rm - The room
+       */
+      static draw_room_tiles(rm) {
+        const tiles = [...rm.get_tiles()].sort((a, b) => b.depth - a.depth);
+        for (const t of tiles) {
+          if (!t.visible)
+            continue;
+          const bg = resource.findByID(t.background);
+          if (!bg || !bg.texture)
+            continue;
+          const u0 = t.left / bg.width, v0 = t.top / bg.height;
+          const u1 = (t.left + t.width) / bg.width, v1 = (t.top + t.height) / bg.height;
+          const [r, g, b] = color_to_rgb_normalized(16777215);
+          this.batch.add_quad(t.x, t.y, t.width * t.xscale, t.height * t.yscale, u0, v0, u1, v1, r, g, b, t.alpha, bg.texture.texture);
+        }
+      }
+      // =========================================================================
+      // Text drawing
+      // =========================================================================
+      /**
+       * Draws a text string at the given position using the current font and alignment.
+       * @param x - X position
+       * @param y - Y position
+       * @param text - String to draw
+       */
+      static draw_text(x, y, text) {
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+        const color_css = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+        const cached = this.font_rend.get_texture(String(text), this.current_font, color_css);
+        let dx = x;
+        let dy = y;
+        if (this.halign === 1)
+          dx -= cached.width / 2;
+        else if (this.halign === 2)
+          dx -= cached.width;
+        if (this.valign === 1)
+          dy -= cached.height / 2;
+        else if (this.valign === 2)
+          dy -= cached.height;
+        this.batch.add_quad(dx, dy, cached.width, cached.height, 0, 0, 1, 1, 1, 1, 1, this.draw_alpha, cached.entry.texture);
+      }
+      // =========================================================================
+      // Shape drawing
+      // =========================================================================
+      /**
+       * Clears the screen (or current surface) with a solid color.
+       * @param col - BGR color integer
+       */
+      static draw_clear(col) {
+        const [r, g, b] = color_to_rgb_normalized(col);
+        const gl = this.gl;
+        this.batch.flush();
+        gl.clearColor(r, g, b, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      /**
+       * Draws a filled or outlined axis-aligned rectangle.
+       * @param x1 - Left
+       * @param y1 - Top
+       * @param x2 - Right
+       * @param y2 - Bottom
+       * @param outline - True for outline only, false for filled
+       */
+      static draw_rectangle(x1, y1, x2, y2, outline) {
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+        const a = this.draw_alpha;
+        const wp = this.tex_mgr.white_pixel;
+        if (!outline) {
+          this.batch.add_quad(x1, y1, x2 - x1, y2 - y1, 0, 0, 1, 1, r, g, b, a, wp);
+        } else {
+          const t = 1;
+          this.batch.add_quad(x1, y1, x2 - x1, t, 0, 0, 1, 1, r, g, b, a, wp);
+          this.batch.add_quad(x1, y2 - t, x2 - x1, t, 0, 0, 1, 1, r, g, b, a, wp);
+          this.batch.add_quad(x1, y1 + t, t, y2 - y1 - 2, 0, 0, 1, 1, r, g, b, a, wp);
+          this.batch.add_quad(x2 - t, y1 + t, t, y2 - y1 - 2, 0, 0, 1, 1, r, g, b, a, wp);
+        }
+      }
+      /**
+       * Draws a filled or outlined circle using a triangle fan approximation.
+       * @param cx - Center X
+       * @param cy - Center Y
+       * @param r_px - Radius in pixels
+       * @param outline - True for outline only
+       */
+      static draw_circle(cx, cy, r_px, outline) {
+        const SEGMENTS = 32;
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+        const a = this.draw_alpha;
+        const wp = this.tex_mgr.white_pixel;
+        if (!outline) {
+          for (let i = 0; i < SEGMENTS; i++) {
+            const a0 = i / SEGMENTS * Math.PI * 2;
+            const a1 = (i + 1) / SEGMENTS * Math.PI * 2;
+            const x0 = cx + Math.cos(a0) * r_px;
+            const y0 = cy + Math.sin(a0) * r_px;
+            const x1 = cx + Math.cos(a1) * r_px;
+            const y1 = cy + Math.sin(a1) * r_px;
+            this.draw_triangle_internal(cx, cy, x0, y0, x1, y1, r, g, b, a, wp);
+          }
+        } else {
+          const thickness = 1;
+          for (let i = 0; i < SEGMENTS; i++) {
+            const a0 = i / SEGMENTS * Math.PI * 2;
+            const a1 = (i + 1) / SEGMENTS * Math.PI * 2;
+            const x0 = cx + Math.cos(a0) * r_px;
+            const y0 = cy + Math.sin(a0) * r_px;
+            const x1 = cx + Math.cos(a1) * r_px;
+            const y1 = cy + Math.sin(a1) * r_px;
+            this.draw_line_width_internal(x0, y0, x1, y1, thickness, r, g, b, a, wp);
+          }
+        }
+      }
+      /**
+       * Draws a line between two points.
+       * @param x1 - Start X
+       * @param y1 - Start Y
+       * @param x2 - End X
+       * @param y2 - End Y
+       */
+      static draw_line(x1, y1, x2, y2) {
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+        this.draw_line_width_internal(x1, y1, x2, y2, 1, r, g, b, this.draw_alpha, this.tex_mgr.white_pixel);
+      }
+      /**
+       * Draws a line with a specific pixel width.
+       * @param x1 - Start X
+       * @param y1 - Start Y
+       * @param x2 - End X
+       * @param y2 - End Y
+       * @param w - Line width in pixels
+       */
+      static draw_line_width(x1, y1, x2, y2, w) {
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+        this.draw_line_width_internal(x1, y1, x2, y2, w, r, g, b, this.draw_alpha, this.tex_mgr.white_pixel);
+      }
+      /**
+       * Draws a single point (1×1 pixel) at the given position.
+       * @param x - X position
+       * @param y - Y position
+       */
+      static draw_point(x, y) {
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+        this.batch.add_quad(x, y, 1, 1, 0, 0, 1, 1, r, g, b, this.draw_alpha, this.tex_mgr.white_pixel);
+      }
+      /**
+       * Draws a filled or outlined triangle.
+       * @param x1 - Vertex 1 X
+       * @param y1 - Vertex 1 Y
+       * @param x2 - Vertex 2 X
+       * @param y2 - Vertex 2 Y
+       * @param x3 - Vertex 3 X
+       * @param y3 - Vertex 3 Y
+       * @param outline - True for outline only
+       */
+      static draw_triangle(x1, y1, x2, y2, x3, y3, outline) {
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+        const a = this.draw_alpha;
+        const wp = this.tex_mgr.white_pixel;
+        if (!outline) {
+          this.draw_triangle_internal(x1, y1, x2, y2, x3, y3, r, g, b, a, wp);
+        } else {
+          this.draw_line_width_internal(x1, y1, x2, y2, 1, r, g, b, a, wp);
+          this.draw_line_width_internal(x2, y2, x3, y3, 1, r, g, b, a, wp);
+          this.draw_line_width_internal(x3, y3, x1, y1, 1, r, g, b, a, wp);
+        }
+      }
+      /**
+       * Draws a filled or outlined ellipse.
+       * @param x1 - Bounding box left
+       * @param y1 - Bounding box top
+       * @param x2 - Bounding box right
+       * @param y2 - Bounding box bottom
+       * @param outline - True for outline only
+       */
+      static draw_ellipse(x1, y1, x2, y2, outline) {
+        const cx = (x1 + x2) / 2;
+        const cy = (y1 + y2) / 2;
+        const rx = (x2 - x1) / 2;
+        const ry = (y2 - y1) / 2;
+        const SEGMENTS = 32;
+        const [r, g, b] = color_to_rgb_normalized(this.draw_color);
+        const a = this.draw_alpha;
+        const wp = this.tex_mgr.white_pixel;
+        if (!outline) {
+          for (let i = 0; i < SEGMENTS; i++) {
+            const a0 = i / SEGMENTS * Math.PI * 2;
+            const a1 = (i + 1) / SEGMENTS * Math.PI * 2;
+            const px0 = cx + Math.cos(a0) * rx, py0 = cy + Math.sin(a0) * ry;
+            const px1 = cx + Math.cos(a1) * rx, py1 = cy + Math.sin(a1) * ry;
+            this.draw_triangle_internal(cx, cy, px0, py0, px1, py1, r, g, b, a, wp);
+          }
+        } else {
+          for (let i = 0; i < SEGMENTS; i++) {
+            const a0 = i / SEGMENTS * Math.PI * 2;
+            const a1 = (i + 1) / SEGMENTS * Math.PI * 2;
+            const px0 = cx + Math.cos(a0) * rx, py0 = cy + Math.sin(a0) * ry;
+            const px1 = cx + Math.cos(a1) * rx, py1 = cy + Math.sin(a1) * ry;
+            this.draw_line_width_internal(px0, py0, px1, py1, 1, r, g, b, a, wp);
+          }
+        }
+      }
+      // =========================================================================
+      // Internal shape helpers
+      // =========================================================================
+      /**
+       * Draws a triangle as two batch quads (degenerate quad approach).
+       * The third quad vertex is the same as vertex 3 making a true triangle.
+       */
+      static draw_triangle_internal(x0, y0, x1, y1, x2, y2, r, g, b, a, texture) {
+        const minX = Math.min(x0, x1, x2);
+        const maxX = Math.max(x0, x1, x2);
+        const minY = Math.min(y0, y1, y2);
+        const maxY = Math.max(y0, y1, y2);
+        const w = maxX - minX;
+        const h = maxY - minY;
+        if (w < 0.5 || h < 0.5)
+          return;
+        this.batch.add_quad(minX, minY, w, h, 0, 0, 1, 1, r, g, b, a, texture);
+      }
+      /**
+       * Draws a line as a thin rectangular quad aligned to the line direction.
+       */
+      static draw_line_width_internal(x1, y1, x2, y2, width, r, g, b, a, texture) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len < 1e-3)
+          return;
+        const nx = -dy / len * (width / 2);
+        const ny = dx / len * (width / 2);
+        const ax = x1 + nx, ay = y1 + ny;
+        const bx = x1 - nx, by = y1 - ny;
+        const cx = x2 - nx, cy = y2 - ny;
+        const dx2 = x2 + nx, dy2 = y2 + ny;
+        const minX = Math.min(ax, bx, cx, dx2);
+        const maxX = Math.max(ax, bx, cx, dx2);
+        const minY = Math.min(ay, by, cy, dy2);
+        const maxY = Math.max(ay, by, cy, dy2);
+        this.batch.add_quad(minX, minY, maxX - minX, maxY - minY, 0, 0, 1, 1, r, g, b, a, texture);
+      }
+      // =========================================================================
+      // Canvas accessors
+      // =========================================================================
+      /** Returns the underlying HTML canvas element. */
+      static get_canvas() {
+        return this.canvas;
+      }
+      /** Returns the WebGL 2 context. */
+      static get_gl() {
+        return this.gl;
+      }
+      /** Returns the batch renderer (used by advanced rendering). */
+      static get_batch() {
+        return this.batch;
+      }
+      /** Flushes the current batch without a program change. Used by shader_system. */
+      static flush_batch() {
+        this.batch.flush();
+      }
+      /**
+       * Switches back to the default engine shader program and re-uploads projection.
+       * Called by shader_reset().
+       */
+      static restore_default_program() {
+        this.gl.useProgram(this.program);
+        this.active_proj_loc = this.projection_loc;
+        this.upload_projection(this.canvas.width, this.canvas.height);
+      }
+      /**
+       * Uploads the orthographic projection matrix to an arbitrary program's
+       * u_projection uniform. Used when activating a user shader.
+       * @param prog - The WebGLProgram to upload to
+       */
+      static upload_projection_to_program(prog) {
+        const gl = this.gl;
+        const loc = gl.getUniformLocation(prog, "u_projection");
+        this.active_proj_loc = loc;
+        if (!loc)
+          return;
+        const w = this.active_surface ? this.active_surface.width : this.canvas.width;
+        const h = this.active_surface ? this.active_surface.height : this.canvas.height;
+        const matrix = new Float32Array([
+          2 / w,
+          0,
+          0,
+          0,
+          0,
+          -2 / h,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          -1,
+          1,
+          0,
+          1
+        ]);
+        gl.uniformMatrix4fv(loc, false, matrix);
+      }
+      /**
+       * Uploads a custom projection matrix to the currently active program's
+       * u_projection uniform. Used by view_apply() to set room-offset projections.
+       * Avoids gl.getParameter() GPU readback by using the cached active location.
+       * @param matrix - 16-element column-major Float32Array
+       */
+      static set_view_projection(matrix) {
+        this.gl.uniformMatrix4fv(this.active_proj_loc, false, matrix);
+      }
+      /** Returns the font renderer. */
+      static get_font_renderer() {
+        return this.font_rend;
+      }
+      /**
+       * Frees all GPU resources owned by the renderer.
+       */
+      static destroy() {
+        this.batch.flush();
+        this.batch.destroy();
+        this.tex_mgr.destroy();
+        this.font_rend.clear_cache();
+        this.gl.deleteProgram(this.program);
+      }
+    };
+    renderer.projection_loc = null;
+    renderer.active_proj_loc = null;
+    renderer.draw_color = 16777215;
+    renderer.draw_alpha = 1;
+    renderer.blend_mode = bm_normal;
+    renderer.current_font = new font_resource("Arial", 16);
+    renderer.halign = 0;
+    renderer.valign = 0;
+    renderer.active_surface = null;
   }
-  // =========================================================================
-  // Internal shape helpers
-  // =========================================================================
-  /**
-   * Draws a triangle as two batch quads (degenerate quad approach).
-   * The third quad vertex is the same as vertex 3 making a true triangle.
-   */
-  static draw_triangle_internal(x0, y0, x1, y1, x2, y2, r, g, b, a, texture) {
-    const minX = Math.min(x0, x1, x2);
-    const maxX = Math.max(x0, x1, x2);
-    const minY = Math.min(y0, y1, y2);
-    const maxY = Math.max(y0, y1, y2);
-    const w = maxX - minX;
-    const h = maxY - minY;
-    if (w < 0.5 || h < 0.5) return;
-    this.batch.add_quad(minX, minY, w, h, 0, 0, 1, 1, r, g, b, a, texture);
+});
+
+// packages/engine/dist/drawing/sprite.js
+function sprite_register_name(name, id) {
+  _sprite_names.set(name, id);
+}
+function sprite_get_index(name) {
+  return _sprite_names.get(name) ?? -1;
+}
+var sprite, _sprite_names;
+var init_sprite = __esm({
+  "packages/engine/dist/drawing/sprite.js"() {
+    "use strict";
+    init_engine_globals();
+    init_resource();
+    init_renderer();
+    sprite = class extends resource {
+      constructor() {
+        super();
+        this.frames = [];
+        this.xoffset = 0;
+        this.yoffset = 0;
+        this.width = 0;
+        this.height = 0;
+        this.mask_left = -1;
+        this.mask_top = -1;
+        this.mask_right = -1;
+        this.mask_bottom = -1;
+      }
+      /**
+       * Adds a frame to this sprite.
+       * @param frame - The frame to add
+       */
+      add_frame(frame) {
+        this.frames.push(frame);
+        if (this.frames.length === 1) {
+          this.width = frame.width;
+          this.height = frame.height;
+        }
+      }
+      /**
+       * Returns the number of frames in this sprite.
+       */
+      get_number() {
+        return this.frames.length;
+      }
+      /**
+       * Returns the frame at the given index, wrapping around if out of range.
+       * @param index - Frame index
+       * @returns sprite_frame or undefined if the sprite has no frames
+       */
+      get_frame(index) {
+        if (this.frames.length === 0)
+          return void 0;
+        const i = Math.floor(index) % this.frames.length;
+        return this.frames[i < 0 ? i + this.frames.length : i];
+      }
+    };
+    _sprite_names = /* @__PURE__ */ new Map();
   }
-  /**
-   * Draws a line as a thin rectangular quad aligned to the line direction.
-   */
-  static draw_line_width_internal(x1, y1, x2, y2, width, r, g, b, a, texture) {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    if (len < 1e-3) return;
-    const nx = -dy / len * (width / 2);
-    const ny = dx / len * (width / 2);
-    const ax = x1 + nx, ay = y1 + ny;
-    const bx = x1 - nx, by = y1 - ny;
-    const cx = x2 - nx, cy = y2 - ny;
-    const dx2 = x2 + nx, dy2 = y2 + ny;
-    const minX = Math.min(ax, bx, cx, dx2);
-    const maxX = Math.max(ax, bx, cx, dx2);
-    const minY = Math.min(ay, by, cy, dy2);
-    const maxY = Math.max(ay, by, cy, dy2);
-    this.batch.add_quad(minX, minY, maxX - minX, maxY - minY, 0, 0, 1, 1, r, g, b, a, texture);
+});
+
+// packages/engine/dist/core/gm_object.js
+var gm_object;
+var init_gm_object = __esm({
+  "packages/engine/dist/core/gm_object.js"() {
+    "use strict";
+    init_engine_globals();
+    init_instance();
+    init_sprite();
+    gm_object = class extends instance {
+      /**
+       * Applies this object's static metadata defaults to the new instance.
+       * @param room - The room this instance belongs to
+       */
+      constructor(room2) {
+        super(room2);
+        const cls = this.constructor;
+        this.solid = cls.solid;
+        this.visible = cls.visible;
+        this.persistent = cls.persistent;
+        this.depth = cls.depth;
+        if (cls.sprite)
+          this.sprite_index = sprite_get_index(cls.sprite);
+        else if (cls.default_sprite)
+          this.sprite_index = cls.default_sprite.id;
+        if (cls.physics) {
+          this.phy_request(cls.physics_shape, cls.physics_density, cls.physics_restitution, cls.physics_friction, cls.physics_sensor);
+        }
+      }
+      /**
+       * Returns the object name. Falls back to the constructor name if not set.
+       */
+      static get_name() {
+        return this.object_name || this.name;
+      }
+      /**
+       * Checks whether this object type is an ancestor (direct or indirect) of another.
+       * @param child - The object type to test
+       * @returns True if this class is somewhere in child's prototype chain
+       */
+      static is_ancestor_of(child) {
+        let current = child.parent;
+        while (current !== null) {
+          if (current === this)
+            return true;
+          current = current.parent;
+        }
+        return false;
+      }
+      /**
+       * Called once when the instance is created. Override in subclasses.
+       */
+      on_create() {
+        const cls = this.constructor;
+        if (this.sprite_index === -1 && cls.default_sprite !== null) {
+          this.sprite_index = cls.default_sprite.id;
+        }
+      }
+    };
+    gm_object.default_sprite = null;
+    gm_object.parent = null;
+    gm_object.object_name = "";
+    gm_object.solid = false;
+    gm_object.visible = true;
+    gm_object.persistent = false;
+    gm_object.depth = 0;
+    gm_object.sprite = null;
+    gm_object.physics = false;
+    gm_object.physics_shape = "box";
+    gm_object.physics_density = 0.5;
+    gm_object.physics_restitution = 0.1;
+    gm_object.physics_friction = 0.2;
+    gm_object.physics_sensor = false;
   }
-  // =========================================================================
-  // Canvas accessors
-  // =========================================================================
-  /** Returns the underlying HTML canvas element. */
-  static get_canvas() {
-    return this.canvas;
+});
+
+// packages/engine/dist/core/timeline.js
+var init_timeline = __esm({
+  "packages/engine/dist/core/timeline.js"() {
+    "use strict";
+    init_engine_globals();
   }
-  /** Returns the WebGL 2 context. */
-  static get_gl() {
-    return this.gl;
+});
+
+// packages/engine/dist/drawing/background.js
+var background;
+var init_background = __esm({
+  "packages/engine/dist/drawing/background.js"() {
+    "use strict";
+    init_engine_globals();
+    init_resource();
+    background = class extends resource {
+      constructor() {
+        super();
+        this.texture = null;
+        this.width = 0;
+        this.height = 0;
+        this.tile_h = false;
+        this.tile_v = false;
+        this.smooth = false;
+      }
+      /**
+       * Sets the texture for this background.
+       * @param texture - The texture entry to use
+       */
+      set_texture(texture) {
+        this.texture = texture;
+        this.width = texture.width;
+        this.height = texture.height;
+      }
+    };
   }
-  /** Returns the batch renderer (used by advanced rendering). */
-  static get_batch() {
-    return this.batch;
+});
+
+// packages/engine/dist/drawing/shader_system.js
+var init_shader_system = __esm({
+  "packages/engine/dist/drawing/shader_system.js"() {
+    "use strict";
+    init_engine_globals();
+    init_shader();
+    init_renderer();
   }
-  /** Flushes the current batch without a program change. Used by shader_system. */
-  static flush_batch() {
-    this.batch.flush();
-  }
-  /**
-   * Switches back to the default engine shader program and re-uploads projection.
-   * Called by shader_reset().
-   */
-  static restore_default_program() {
-    this.gl.useProgram(this.program);
-    this.active_proj_loc = this.projection_loc;
-    this.upload_projection(this.canvas.width, this.canvas.height);
-  }
-  /**
-   * Uploads the orthographic projection matrix to an arbitrary program's
-   * u_projection uniform. Used when activating a user shader.
-   * @param prog - The WebGLProgram to upload to
-   */
-  static upload_projection_to_program(prog) {
-    const gl = this.gl;
-    const loc = gl.getUniformLocation(prog, "u_projection");
-    this.active_proj_loc = loc;
-    if (!loc) return;
-    const w = this.active_surface ? this.active_surface.width : this.canvas.width;
-    const h = this.active_surface ? this.active_surface.height : this.canvas.height;
-    const matrix = new Float32Array([
-      2 / w,
-      0,
-      0,
-      0,
-      0,
-      -2 / h,
-      0,
-      0,
-      0,
-      0,
-      1,
-      0,
-      -1,
-      1,
-      0,
-      1
-    ]);
-    gl.uniformMatrix4fv(loc, false, matrix);
-  }
-  /**
-   * Uploads a custom projection matrix to the currently active program's
-   * u_projection uniform. Used by view_apply() to set room-offset projections.
-   * Avoids gl.getParameter() GPU readback by using the cached active location.
-   * @param matrix - 16-element column-major Float32Array
-   */
-  static set_view_projection(matrix) {
-    this.gl.uniformMatrix4fv(this.active_proj_loc, false, matrix);
-  }
-  /** Returns the font renderer. */
-  static get_font_renderer() {
-    return this.font_rend;
-  }
-  /**
-   * Frees all GPU resources owned by the renderer.
-   */
-  static destroy() {
-    this.batch.flush();
-    this.batch.destroy();
-    this.tex_mgr.destroy();
-    this.font_rend.clear_cache();
-    this.gl.deleteProgram(this.program);
-  }
-};
+});
+
+// packages/engine/dist/drawing/view.js
 function make_default_view(port_w = 800, port_h = 600) {
   return {
     enabled: false,
@@ -8674,8 +10064,18 @@ function make_default_view(port_w = 800, port_h = 600) {
     angle: 0
   };
 }
-var MAX_VIEWS = 8;
-var _views = Array.from({ length: MAX_VIEWS }, () => make_default_view());
+var MAX_VIEWS, _views;
+var init_view = __esm({
+  "packages/engine/dist/drawing/view.js"() {
+    "use strict";
+    init_engine_globals();
+    init_renderer();
+    MAX_VIEWS = 8;
+    _views = Array.from({ length: MAX_VIEWS }, () => make_default_view());
+  }
+});
+
+// packages/engine/dist/drawing/draw_functions.js
 function draw_set_color(col) {
   renderer.set_color(col);
 }
@@ -8688,109 +10088,330 @@ function draw_circle(x, y, r, outline) {
 function draw_text(x, y, text) {
   renderer.draw_text(x, y, String(text));
 }
-var audio_system = class {
-  static {
-    this._ctx = null;
+var init_draw_functions = __esm({
+  "packages/engine/dist/drawing/draw_functions.js"() {
+    "use strict";
+    init_engine_globals();
+    init_renderer();
+    init_font();
+    init_renderer();
+    init_sprite();
+    init_font();
   }
-  static {
-    this._master = null;
+});
+
+// packages/engine/dist/input/io.js
+var init_io = __esm({
+  "packages/engine/dist/input/io.js"() {
+    "use strict";
+    init_engine_globals();
+    init_keyboard();
+    init_mouse();
   }
-  // Master gain node (0–1)
-  /**
-   * Initialises the Web Audio context and master gain node.
-   * Safe to call multiple times — only initialises once.
-   */
-  static init() {
-    if (this._ctx) return;
-    this._ctx = new AudioContext();
-    this._master = this._ctx.createGain();
-    this._master.connect(this._ctx.destination);
-    this._master.gain.value = 1;
+});
+
+// packages/engine/dist/utils/encoding.js
+var init_encoding = __esm({
+  "packages/engine/dist/utils/encoding.js"() {
+    "use strict";
+    init_engine_globals();
   }
-  /**
-   * Resumes the AudioContext after a user gesture.
-   * Browsers suspend audio until user interaction occurs.
-   */
-  static resume() {
-    if (!this._ctx) return Promise.resolve();
-    return this._ctx.resume();
+});
+
+// packages/engine/dist/data/ds_list.js
+var init_ds_list = __esm({
+  "packages/engine/dist/data/ds_list.js"() {
+    "use strict";
+    init_engine_globals();
   }
-  /**
-   * Returns the shared AudioContext.
-   * Throws if init() has not been called.
-   */
-  static get ctx() {
-    if (!this._ctx) throw new Error("audio_system: call init() first");
-    return this._ctx;
+});
+
+// packages/engine/dist/data/ds_map.js
+var init_ds_map = __esm({
+  "packages/engine/dist/data/ds_map.js"() {
+    "use strict";
+    init_engine_globals();
   }
-  /**
-   * Returns the master GainNode.
-   * Throws if init() has not been called.
-   */
-  static get master() {
-    if (!this._master) throw new Error("audio_system: call init() first");
-    return this._master;
+});
+
+// packages/engine/dist/data/ds_grid.js
+var init_ds_grid = __esm({
+  "packages/engine/dist/data/ds_grid.js"() {
+    "use strict";
+    init_engine_globals();
   }
-  /** Returns true if the audio system has been initialised. */
-  static get is_ready() {
-    return this._ctx !== null;
+});
+
+// packages/engine/dist/data/ds_stack.js
+var init_ds_stack = __esm({
+  "packages/engine/dist/data/ds_stack.js"() {
+    "use strict";
+    init_engine_globals();
   }
-  /**
-   * Sets the master gain (volume) for all audio.
-   * @param gain - Volume level (0 = silent, 1 = full)
-   */
-  static set_master_gain(gain) {
-    if (!this._master) return;
-    this._master.gain.value = Math.max(0, gain);
+});
+
+// packages/engine/dist/data/ds_queue.js
+var init_ds_queue = __esm({
+  "packages/engine/dist/data/ds_queue.js"() {
+    "use strict";
+    init_engine_globals();
   }
-  /** Returns the current master gain level. */
-  static get_master_gain() {
-    return this._master?.gain.value ?? 1;
+});
+
+// packages/engine/dist/data/ds_priority.js
+var init_ds_priority = __esm({
+  "packages/engine/dist/data/ds_priority.js"() {
+    "use strict";
+    init_engine_globals();
   }
-  /**
-   * Returns the current AudioContext time in seconds.
-   * Used for precise scheduling.
-   */
-  static get current_time() {
-    return this._ctx?.currentTime ?? 0;
+});
+
+// packages/engine/dist/storage/ini.js
+var init_ini = __esm({
+  "packages/engine/dist/storage/ini.js"() {
+    "use strict";
+    init_engine_globals();
   }
-};
-var _stop_group_cb = null;
+});
+
+// packages/engine/dist/storage/file_system.js
+var init_file_system = __esm({
+  "packages/engine/dist/storage/file_system.js"() {
+    "use strict";
+    init_engine_globals();
+  }
+});
+
+// packages/engine/dist/storage/json_storage.js
+var init_json_storage = __esm({
+  "packages/engine/dist/storage/json_storage.js"() {
+    "use strict";
+    init_engine_globals();
+  }
+});
+
+// packages/engine/dist/audio/audio_system.js
+var audio_system;
+var init_audio_system = __esm({
+  "packages/engine/dist/audio/audio_system.js"() {
+    "use strict";
+    init_engine_globals();
+    audio_system = class {
+      /**
+       * Initialises the Web Audio context and master gain node.
+       * Safe to call multiple times — only initialises once.
+       */
+      static init() {
+        if (this._ctx)
+          return;
+        this._ctx = new AudioContext();
+        this._master = this._ctx.createGain();
+        this._master.connect(this._ctx.destination);
+        this._master.gain.value = 1;
+      }
+      /**
+       * Resumes the AudioContext after a user gesture.
+       * Browsers suspend audio until user interaction occurs.
+       */
+      static resume() {
+        if (!this._ctx)
+          return Promise.resolve();
+        return this._ctx.resume();
+      }
+      /**
+       * Returns the shared AudioContext.
+       * Throws if init() has not been called.
+       */
+      static get ctx() {
+        if (!this._ctx)
+          throw new Error("audio_system: call init() first");
+        return this._ctx;
+      }
+      /**
+       * Returns the master GainNode.
+       * Throws if init() has not been called.
+       */
+      static get master() {
+        if (!this._master)
+          throw new Error("audio_system: call init() first");
+        return this._master;
+      }
+      /** Returns true if the audio system has been initialised. */
+      static get is_ready() {
+        return this._ctx !== null;
+      }
+      /**
+       * Sets the master gain (volume) for all audio.
+       * @param gain - Volume level (0 = silent, 1 = full)
+       */
+      static set_master_gain(gain) {
+        if (!this._master)
+          return;
+        this._master.gain.value = Math.max(0, gain);
+      }
+      /** Returns the current master gain level. */
+      static get_master_gain() {
+        return this._master?.gain.value ?? 1;
+      }
+      /**
+       * Returns the current AudioContext time in seconds.
+       * Used for precise scheduling.
+       */
+      static get current_time() {
+        return this._ctx?.currentTime ?? 0;
+      }
+    };
+    audio_system._ctx = null;
+    audio_system._master = null;
+  }
+});
+
+// packages/engine/dist/audio/audio_group.js
 function set_stop_group_callback(cb) {
   _stop_group_cb = cb;
 }
-set_stop_group_callback((group_name) => {
-  for (const [id, name] of _instance_groups) {
-    if (name === group_name) _instances.get(id)?.stop();
+var _stop_group_cb;
+var init_audio_group = __esm({
+  "packages/engine/dist/audio/audio_group.js"() {
+    "use strict";
+    init_engine_globals();
+    init_audio_system();
+    init_resource();
+    _stop_group_cb = null;
   }
 });
-var _instances = /* @__PURE__ */ new Map();
-var _instance_groups = /* @__PURE__ */ new Map();
-var buffer_u8 = 0;
-var buffer_s8 = 1;
-var buffer_u16 = 2;
-var buffer_s16 = 3;
-var buffer_u32 = 4;
-var buffer_s32 = 5;
-var buffer_f32 = 6;
-var buffer_f64 = 7;
-var buffer_bool = 8;
-var buffer_string = 9;
-var buffer_u64 = 10;
-var TYPE_SIZES = {
-  [buffer_u8]: 1,
-  [buffer_s8]: 1,
-  [buffer_u16]: 2,
-  [buffer_s16]: 2,
-  [buffer_u32]: 4,
-  [buffer_s32]: 4,
-  [buffer_f32]: 4,
-  [buffer_f64]: 8,
-  [buffer_bool]: 1,
-  [buffer_string]: 0,
-  // variable length
-  [buffer_u64]: 8
-};
+
+// packages/engine/dist/audio/sound.js
+var _instances, _instance_groups;
+var init_sound = __esm({
+  "packages/engine/dist/audio/sound.js"() {
+    "use strict";
+    init_engine_globals();
+    init_audio_system();
+    init_resource();
+    init_audio_group();
+    set_stop_group_callback((group_name) => {
+      for (const [id, name] of _instance_groups) {
+        if (name === group_name)
+          _instances.get(id)?.stop();
+      }
+    });
+    _instances = /* @__PURE__ */ new Map();
+    _instance_groups = /* @__PURE__ */ new Map();
+  }
+});
+
+// packages/engine/dist/audio/audio_3d.js
+var init_audio_3d = __esm({
+  "packages/engine/dist/audio/audio_3d.js"() {
+    "use strict";
+    init_engine_globals();
+    init_audio_system();
+    init_sound();
+    init_audio_group();
+  }
+});
+
+// packages/engine/dist/physics/physics_joint.js
+var import_matter_js3;
+var init_physics_joint = __esm({
+  "packages/engine/dist/physics/physics_joint.js"() {
+    "use strict";
+    init_engine_globals();
+    import_matter_js3 = __toESM(require_matter(), 1);
+    init_physics_world();
+    init_physics_body();
+  }
+});
+
+// packages/engine/dist/networking/buffer.js
+var buffer_u8, buffer_s8, buffer_u16, buffer_s16, buffer_u32, buffer_s32, buffer_f32, buffer_f64, buffer_bool, buffer_string, buffer_u64, TYPE_SIZES;
+var init_buffer = __esm({
+  "packages/engine/dist/networking/buffer.js"() {
+    "use strict";
+    init_engine_globals();
+    buffer_u8 = 0;
+    buffer_s8 = 1;
+    buffer_u16 = 2;
+    buffer_s16 = 3;
+    buffer_u32 = 4;
+    buffer_s32 = 5;
+    buffer_f32 = 6;
+    buffer_f64 = 7;
+    buffer_bool = 8;
+    buffer_string = 9;
+    buffer_u64 = 10;
+    TYPE_SIZES = {
+      [buffer_u8]: 1,
+      [buffer_s8]: 1,
+      [buffer_u16]: 2,
+      [buffer_s16]: 2,
+      [buffer_u32]: 4,
+      [buffer_s32]: 4,
+      [buffer_f32]: 4,
+      [buffer_f64]: 8,
+      [buffer_bool]: 1,
+      [buffer_string]: 0,
+      // variable length
+      [buffer_u64]: 8
+    };
+  }
+});
+
+// packages/engine/dist/networking/websocket_client.js
+var init_websocket_client = __esm({
+  "packages/engine/dist/networking/websocket_client.js"() {
+    "use strict";
+    init_engine_globals();
+    init_buffer();
+  }
+});
+
+// packages/engine/dist/networking/webrtc_client.js
+var init_webrtc_client = __esm({
+  "packages/engine/dist/networking/webrtc_client.js"() {
+    "use strict";
+    init_engine_globals();
+    init_buffer();
+  }
+});
+
+// packages/engine/dist/networking/http_client.js
+var init_http_client = __esm({
+  "packages/engine/dist/networking/http_client.js"() {
+    "use strict";
+    init_engine_globals();
+  }
+});
+
+// packages/engine/dist/particles/particle_type.js
+var init_particle_type = __esm({
+  "packages/engine/dist/particles/particle_type.js"() {
+    "use strict";
+    init_engine_globals();
+  }
+});
+
+// packages/engine/dist/particles/particle_system.js
+var init_particle_system = __esm({
+  "packages/engine/dist/particles/particle_system.js"() {
+    "use strict";
+    init_engine_globals();
+    init_particle_type();
+    init_renderer();
+  }
+});
+
+// packages/engine/dist/particles/particle_emitter.js
+var init_particle_emitter = __esm({
+  "packages/engine/dist/particles/particle_emitter.js"() {
+    "use strict";
+    init_engine_globals();
+    init_particle_system();
+  }
+});
+
+// packages/engine/dist/3d/transform_3d.js
 function mat4_identity() {
   return new Float32Array([
     1,
@@ -8811,103 +10432,290 @@ function mat4_identity() {
     1
   ]);
 }
-var _stack = [mat4_identity()];
-var _current = _stack[0];
-var d3d_lighttype_directional = 0;
-var MAX_LIGHTS = 8;
+var _stack, _current;
+var init_transform_3d = __esm({
+  "packages/engine/dist/3d/transform_3d.js"() {
+    "use strict";
+    init_engine_globals();
+    _stack = [mat4_identity()];
+    _current = _stack[0];
+  }
+});
+
+// packages/engine/dist/3d/lighting_3d.js
 function _default_light() {
   return { enabled: false, type: d3d_lighttype_directional, x: 0, y: 0, z: -1, r: 1, g: 1, b: 1, range: 100 };
 }
-var _lights = Array.from({ length: MAX_LIGHTS }, _default_light);
-var DEG2RAD = Math.PI / 180;
-var RAD2DEG = 180 / Math.PI;
+var d3d_lighttype_directional, MAX_LIGHTS, _lights;
+var init_lighting_3d = __esm({
+  "packages/engine/dist/3d/lighting_3d.js"() {
+    "use strict";
+    init_engine_globals();
+    d3d_lighttype_directional = 0;
+    MAX_LIGHTS = 8;
+    _lights = Array.from({ length: MAX_LIGHTS }, _default_light);
+  }
+});
+
+// packages/engine/dist/3d/model.js
+var init_model = __esm({
+  "packages/engine/dist/3d/model.js"() {
+    "use strict";
+    init_engine_globals();
+    init_renderer();
+    init_transform_3d();
+  }
+});
+
+// packages/engine/dist/3d/model_loader.js
+var init_model_loader = __esm({
+  "packages/engine/dist/3d/model_loader.js"() {
+    "use strict";
+    init_engine_globals();
+    init_model();
+  }
+});
+
+// packages/engine/dist/math/vectors.js
+var init_vectors = __esm({
+  "packages/engine/dist/math/vectors.js"() {
+    "use strict";
+    init_engine_globals();
+  }
+});
+
+// packages/engine/dist/math/math_utils.js
+var DEG2RAD, RAD2DEG;
+var init_math_utils = __esm({
+  "packages/engine/dist/math/math_utils.js"() {
+    "use strict";
+    init_engine_globals();
+    DEG2RAD = Math.PI / 180;
+    RAD2DEG = 180 / Math.PI;
+  }
+});
+
+// packages/engine/dist/core/type_checks.js
+var init_type_checks = __esm({
+  "packages/engine/dist/core/type_checks.js"() {
+    "use strict";
+    init_engine_globals();
+  }
+});
+
+// packages/engine/dist/data/array_utils.js
+var init_array_utils = __esm({
+  "packages/engine/dist/data/array_utils.js"() {
+    "use strict";
+    init_engine_globals();
+  }
+});
+
+// packages/engine/dist/core/window.js
+var init_window = __esm({
+  "packages/engine/dist/core/window.js"() {
+    "use strict";
+    init_engine_globals();
+    init_renderer();
+  }
+});
+
+// packages/engine/dist/core/variables.js
+var init_variables = __esm({
+  "packages/engine/dist/core/variables.js"() {
+    "use strict";
+    init_engine_globals();
+  }
+});
+
+// packages/engine/dist/math/string_utils.js
+var init_string_utils = __esm({
+  "packages/engine/dist/math/string_utils.js"() {
+    "use strict";
+    init_engine_globals();
+  }
+});
+
+// packages/engine/dist/math/regex_utils.js
+var init_regex_utils = __esm({
+  "packages/engine/dist/math/regex_utils.js"() {
+    "use strict";
+    init_engine_globals();
+  }
+});
+
+// packages/engine/dist/index.js
+var init_dist = __esm({
+  "packages/engine/dist/index.js"() {
+    "use strict";
+    init_engine_globals();
+    init_game_loop();
+    init_system();
+    init_datetime();
+    init_instance();
+    init_motion_planning();
+    init_room();
+    init_tiles();
+    init_resource();
+    init_game_event();
+    init_gm_object();
+    init_path();
+    init_timeline();
+    init_collision();
+    init_instance();
+    init_renderer();
+    init_sprite();
+    init_background();
+    init_font();
+    init_texture_manager();
+    init_shader_system();
+    init_view();
+    init_draw_functions();
+    init_color();
+    init_keyboard();
+    init_io();
+    init_encoding();
+    init_mouse();
+    init_gamepad();
+    init_touch();
+    init_ds_list();
+    init_ds_map();
+    init_ds_grid();
+    init_ds_stack();
+    init_ds_queue();
+    init_ds_priority();
+    init_ini();
+    init_file_system();
+    init_json_storage();
+    init_audio_system();
+    init_audio_group();
+    init_sound();
+    init_audio_3d();
+    init_physics_world();
+    init_physics_body();
+    init_physics_joint();
+    init_buffer();
+    init_websocket_client();
+    init_webrtc_client();
+    init_http_client();
+    init_particle_type();
+    init_particle_system();
+    init_particle_emitter();
+    init_transform_3d();
+    init_lighting_3d();
+    init_model();
+    init_model_loader();
+    init_vectors();
+    init_math_utils();
+    init_type_checks();
+    init_array_utils();
+    init_window();
+    init_game_state();
+    init_variables();
+    init_random();
+    init_string_utils();
+    init_regex_utils();
+  }
+});
+
+// ../../Silkweaver/_engine_globals.ts
+var init_engine_globals = __esm({
+  "../../Silkweaver/_engine_globals.ts"() {
+    init_dist();
+  }
+});
 
 // ../../Silkweaver/_entry.ts
+init_engine_globals();
+init_dist();
+
+// ../../Silkweaver/objects/obj_platform.ts
+init_engine_globals();
+init_dist();
 var obj_platform = class extends gm_object {
-  static object_name = "obj_platform";
+  static solid = true;
+  static depth = 10;
+  pw = 96;
+  ph = 24;
   on_create() {
-    this.pw = 96;
-    this.ph = 24;
     this.bbox_left = this.x;
     this.bbox_top = this.y;
-    this.bbox_right = this.x + 96;
-    this.bbox_bottom = this.y + 24;
+    this.bbox_right = this.x + this.pw;
+    this.bbox_bottom = this.y + this.ph;
   }
   on_step_begin() {
-    const pw = this.pw;
-    const ph = this.ph;
     this.bbox_left = this.x;
     this.bbox_top = this.y;
-    this.bbox_right = this.x + pw;
-    this.bbox_bottom = this.y + ph;
-  }
-  on_step() {
+    this.bbox_right = this.x + this.pw;
+    this.bbox_bottom = this.y + this.ph;
   }
   on_draw() {
-    const pw = this.pw;
-    const ph = this.ph;
     draw_set_color(make_color_rgb(60, 140, 60));
-    draw_rectangle(this.x, this.y, this.x + pw, this.y + ph, false);
+    draw_rectangle(this.x, this.y, this.x + this.pw, this.y + this.ph, false);
     draw_set_color(make_color_rgb(100, 200, 100));
-    draw_rectangle(this.x, this.y, this.x + pw, this.y + ph, true);
+    draw_rectangle(this.x, this.y, this.x + this.pw, this.y + this.ph, true);
   }
 };
+
+// ../../Silkweaver/objects/obj_coin.ts
+init_engine_globals();
+init_dist();
 var obj_coin = class extends gm_object {
-  static object_name = "obj_coin";
+  static depth = 5;
+  cr = 8;
+  // radius
   on_create() {
-    ;
-    this.cr = 8;
-    this.bbox_left = this.x - 8;
-    this.bbox_top = this.y - 8;
-    this.bbox_right = this.x + 8;
-    this.bbox_bottom = this.y + 8;
+    this.bbox_left = this.x - this.cr;
+    this.bbox_top = this.y - this.cr;
+    this.bbox_right = this.x + this.cr;
+    this.bbox_bottom = this.y + this.cr;
   }
   on_step() {
-    this.bbox_left = this.x - 8;
-    this.bbox_top = this.y - 8;
-    this.bbox_right = this.x + 8;
-    this.bbox_bottom = this.y + 8;
+    this.bbox_left = this.x - this.cr;
+    this.bbox_top = this.y - this.cr;
+    this.bbox_right = this.x + this.cr;
+    this.bbox_bottom = this.y + this.cr;
   }
   on_draw() {
     draw_set_color(make_color_rgb(255, 215, 0));
-    draw_circle(this.x, this.y, 8, false);
+    draw_circle(this.x, this.y, this.cr, false);
     draw_set_color(make_color_rgb(255, 165, 0));
-    draw_circle(this.x, this.y, 8, true);
+    draw_circle(this.x, this.y, this.cr, true);
   }
+  static sprite = "spr_test";
 };
+
+// ../../Silkweaver/objects/obj_enemy.ts
+init_engine_globals();
+init_dist();
 var obj_enemy = class extends gm_object {
-  static object_name = "obj_enemy";
+  static depth = 5;
+  ew = 32;
+  eh = 32;
+  patrol_left = 0;
+  patrol_right = 0;
   on_create() {
-    ;
-    this.ew = 32;
-    this.eh = 32;
     this.patrol_left = this.x - 80;
     this.patrol_right = this.x + 80;
     this.hspeed = 1.5;
   }
   on_step() {
-    const ew = this.ew;
-    const eh = this.eh;
-    const pl = this.patrol_left;
-    const pr = this.patrol_right;
-    if (this.x <= pl) {
-      this.x = pl;
+    if (this.x <= this.patrol_left) {
+      this.x = this.patrol_left;
       this.hspeed = 1.5;
     }
-    if (this.x + ew >= pr) {
-      this.x = pr - ew;
+    if (this.x + this.ew >= this.patrol_right) {
+      this.x = this.patrol_right - this.ew;
       this.hspeed = -1.5;
     }
     this.bbox_left = this.x;
     this.bbox_top = this.y;
-    this.bbox_right = this.x + ew;
-    this.bbox_bottom = this.y + eh;
+    this.bbox_right = this.x + this.ew;
+    this.bbox_bottom = this.y + this.eh;
   }
   on_draw() {
-    const ew = this.ew;
-    const eh = this.eh;
     draw_set_color(make_color_rgb(200, 50, 50));
-    draw_rectangle(this.x, this.y, this.x + ew, this.y + eh, false);
+    draw_rectangle(this.x, this.y, this.x + this.ew, this.y + this.eh, false);
     draw_set_color(make_color_rgb(255, 255, 255));
     const eye_y = this.y + 8;
     if (this.hspeed > 0) {
@@ -8921,15 +10729,17 @@ var obj_enemy = class extends gm_object {
     }
   }
 };
+
+// ../../Silkweaver/objects/obj_player.ts
+init_engine_globals();
+init_dist();
 var obj_player = class extends gm_object {
-  static object_name = "obj_player";
+  pw = 28;
+  ph = 40;
+  on_ground = false;
+  score = 0;
+  dead = false;
   on_create() {
-    ;
-    this.pw = 28;
-    this.ph = 40;
-    this.on_ground = false;
-    this.score = 0;
-    this.dead = false;
     this.gravity = 0;
   }
   on_step() {
@@ -8961,7 +10771,6 @@ var obj_player = class extends gm_object {
         }
       }
     }
-    ;
     this.on_ground = false;
     {
       const xl = this.x + 2, yt = this.y, xr = this.x + pw - 2, yb = this.y + ph;
@@ -9014,7 +10823,6 @@ var obj_player = class extends gm_object {
       const ol = other.x - cr, ot = other.y - cr;
       const or_ = other.x + cr, ob = other.y + cr;
       if (this.bbox_left < or_ && this.bbox_right > ol && this.bbox_top < ob && this.bbox_bottom > ot) {
-        ;
         this.score = this.score + 1;
         other.instance_destroy();
       }
@@ -9031,7 +10839,6 @@ var obj_player = class extends gm_object {
           other.instance_destroy();
           this.vspeed = -7;
         } else {
-          ;
           this.score = 0;
           this.x = this.xstart;
           this.y = this.ystart;
@@ -9059,81 +10866,142 @@ var obj_player = class extends gm_object {
     draw_text(8, 8, "Coins: " + String(score));
   }
 };
+
+// ../../Silkweaver/_entry.ts
+var _sprite_map = {};
+async function _load_sprite(name, meta_url, img_base) {
+  try {
+    const meta = await fetch(meta_url).then((r) => r.json());
+    const spr = new sprite();
+    spr.width = meta.width || 32;
+    spr.height = meta.height || 32;
+    spr.xoffset = meta.origin_x || 0;
+    spr.yoffset = meta.origin_y || 0;
+    if (typeof meta.mask_w === "number" && meta.mask_w > 0 && typeof meta.mask_h === "number" && meta.mask_h > 0) {
+      spr.mask_left = meta.mask_x || 0;
+      spr.mask_top = meta.mask_y || 0;
+      spr.mask_right = (meta.mask_x || 0) + meta.mask_w;
+      spr.mask_bottom = (meta.mask_y || 0) + meta.mask_h;
+    }
+    const frames = meta.frames || [];
+    if (frames.length === 0) {
+      console.warn(`[Sprite] ${name} has no frames defined in meta.json`);
+      return;
+    }
+    for (const frame_meta of frames) {
+      const frame_name = frame_meta.name || frame_meta;
+      const frame_url = img_base + "/" + frame_name;
+      try {
+        const tex_entry = await renderer.tex_mgr.load(frame_url, false);
+        spr.add_frame({
+          texture: tex_entry,
+          width: tex_entry.width,
+          height: tex_entry.height
+        });
+      } catch (err) {
+        console.warn(`[Sprite] Failed to load frame ${frame_name} for ${name}:`, err);
+      }
+    }
+    if (spr.frames.length > 0) {
+      _sprite_map[name] = spr.id;
+      sprite_register_name(name, spr.id);
+    } else {
+      console.warn(`[Sprite] ${name} has no valid frames`);
+    }
+  } catch (err) {
+    console.warn(`[Sprite] Failed to load ${name}:`, err);
+  }
+}
+var _background_map = {};
+async function _load_background(name, meta_url, img_base) {
+  try {
+    const meta = await fetch(meta_url).then((r) => r.json());
+    if (!meta.file_name) {
+      console.warn(`[Background] ${name} has no file_name in meta.json`);
+      return;
+    }
+    const bg = new background();
+    bg.tile_h = meta.tile_h ?? false;
+    bg.tile_v = meta.tile_v ?? false;
+    bg.smooth = meta.smooth ?? false;
+    const img_url = img_base + "/" + meta.file_name;
+    try {
+      const tex_entry = await renderer.tex_mgr.load(img_url, bg.smooth);
+      bg.set_texture(tex_entry);
+      _background_map[name] = bg.id;
+    } catch (err) {
+      console.warn(`[Background] Failed to load image for ${name}:`, err);
+    }
+  } catch (err) {
+    console.warn(`[Background] Failed to load ${name}:`, err);
+  }
+}
 async function init(canvas) {
   renderer.init(canvas, 640, 480);
   game_loop.init_input(canvas);
+  await _load_sprite("spr_test", "file://D:/Repositories/Silkweaver/sprites/spr_test/meta.json", "file://D:/Repositories/Silkweaver/sprites/spr_test");
+  await _load_background("bg_test", "file://D:/Repositories/Silkweaver/backgrounds/bg_test/meta.json", "file://D:/Repositories/Silkweaver/backgrounds/bg_test");
   const _room_room_level1 = new room();
   _room_room_level1.room_width = 640;
   _room_room_level1.room_height = 480;
   _room_room_level1.room_speed = 60;
   _room_room_level1.room_persistent = false;
+  _room_room_level1.background_show_color = true;
+  _room_room_level1.background_solid_color = 0;
   const _inst_obj_platform_0 = new obj_platform(_room_room_level1);
   _room_room_level1.room_instance_add(0, 448, _inst_obj_platform_0);
-  _inst_obj_platform_0.solid = true;
   _inst_obj_platform_0.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_platform_0.on_create.bind(_inst_obj_platform_0));
   const _inst_obj_platform_1 = new obj_platform(_room_room_level1);
   _room_room_level1.room_instance_add(96, 448, _inst_obj_platform_1);
-  _inst_obj_platform_1.solid = true;
   _inst_obj_platform_1.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_platform_1.on_create.bind(_inst_obj_platform_1));
   const _inst_obj_platform_2 = new obj_platform(_room_room_level1);
   _room_room_level1.room_instance_add(192, 448, _inst_obj_platform_2);
-  _inst_obj_platform_2.solid = true;
   _inst_obj_platform_2.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_platform_2.on_create.bind(_inst_obj_platform_2));
   const _inst_obj_platform_3 = new obj_platform(_room_room_level1);
   _room_room_level1.room_instance_add(288, 448, _inst_obj_platform_3);
-  _inst_obj_platform_3.solid = true;
   _inst_obj_platform_3.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_platform_3.on_create.bind(_inst_obj_platform_3));
   const _inst_obj_platform_4 = new obj_platform(_room_room_level1);
   _room_room_level1.room_instance_add(384, 448, _inst_obj_platform_4);
-  _inst_obj_platform_4.solid = true;
   _inst_obj_platform_4.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_platform_4.on_create.bind(_inst_obj_platform_4));
   const _inst_obj_platform_5 = new obj_platform(_room_room_level1);
   _room_room_level1.room_instance_add(480, 448, _inst_obj_platform_5);
-  _inst_obj_platform_5.solid = true;
   _inst_obj_platform_5.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_platform_5.on_create.bind(_inst_obj_platform_5));
   const _inst_obj_platform_6 = new obj_platform(_room_room_level1);
   _room_room_level1.room_instance_add(544, 448, _inst_obj_platform_6);
-  _inst_obj_platform_6.solid = true;
   _inst_obj_platform_6.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_platform_6.on_create.bind(_inst_obj_platform_6));
   const _inst_obj_platform_7 = new obj_platform(_room_room_level1);
   _room_room_level1.room_instance_add(100, 360, _inst_obj_platform_7);
-  _inst_obj_platform_7.solid = true;
   _inst_obj_platform_7.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_platform_7.on_create.bind(_inst_obj_platform_7));
   const _inst_obj_platform_8 = new obj_platform(_room_room_level1);
   _room_room_level1.room_instance_add(196, 360, _inst_obj_platform_8);
-  _inst_obj_platform_8.solid = true;
   _inst_obj_platform_8.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_platform_8.on_create.bind(_inst_obj_platform_8));
   const _inst_obj_platform_9 = new obj_platform(_room_room_level1);
   _room_room_level1.room_instance_add(300, 280, _inst_obj_platform_9);
-  _inst_obj_platform_9.solid = true;
   _inst_obj_platform_9.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_platform_9.on_create.bind(_inst_obj_platform_9));
   const _inst_obj_platform_10 = new obj_platform(_room_room_level1);
   _room_room_level1.room_instance_add(470, 320, _inst_obj_platform_10);
-  _inst_obj_platform_10.solid = true;
   _inst_obj_platform_10.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_platform_10.on_create.bind(_inst_obj_platform_10));
   const _inst_obj_platform_11 = new obj_platform(_room_room_level1);
-  _room_room_level1.room_instance_add(185, 220, _inst_obj_platform_11);
-  _inst_obj_platform_11.solid = true;
+  _room_room_level1.room_instance_add(160, 208, _inst_obj_platform_11);
   _inst_obj_platform_11.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_platform_11.on_create.bind(_inst_obj_platform_11));
   const _inst_obj_platform_12 = new obj_platform(_room_room_level1);
   _room_room_level1.room_instance_add(390, 190, _inst_obj_platform_12);
-  _inst_obj_platform_12.solid = true;
   _inst_obj_platform_12.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_platform_12.on_create.bind(_inst_obj_platform_12));
   const _inst_obj_coin_13 = new obj_coin(_room_room_level1);
-  _room_room_level1.room_instance_add(148, 330, _inst_obj_coin_13);
+  _room_room_level1.room_instance_add(144, 320, _inst_obj_coin_13);
   _inst_obj_coin_13.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_coin_13.on_create.bind(_inst_obj_coin_13));
   const _inst_obj_coin_14 = new obj_coin(_room_room_level1);
@@ -9145,7 +11013,7 @@ async function init(canvas) {
   _inst_obj_coin_15.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_coin_15.on_create.bind(_inst_obj_coin_15));
   const _inst_obj_coin_16 = new obj_coin(_room_room_level1);
-  _room_room_level1.room_instance_add(233, 190, _inst_obj_coin_16);
+  _room_room_level1.room_instance_add(240, 192, _inst_obj_coin_16);
   _inst_obj_coin_16.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_coin_16.on_create.bind(_inst_obj_coin_16));
   const _inst_obj_coin_17 = new obj_coin(_room_room_level1);
@@ -9164,6 +11032,325 @@ async function init(canvas) {
   _room_room_level1.room_instance_add(50, 396, _inst_obj_player_20);
   _inst_obj_player_20.register_events();
   game_loop.register(EVENT_TYPE.create, _inst_obj_player_20.on_create.bind(_inst_obj_player_20));
+  _room_room_level1.view_enabled = true;
+  _room_room_level1.view_visible[0] = true;
+  _room_room_level1.view_xview[0] = 0;
+  _room_room_level1.view_yview[0] = 0;
+  _room_room_level1.view_wview[0] = 640;
+  _room_room_level1.view_hview[0] = 480;
+  _room_room_level1.view_xport[0] = 0;
+  _room_room_level1.view_yport[0] = 0;
+  _room_room_level1.view_wport[0] = 640;
+  _room_room_level1.view_hport[0] = 480;
+  _room_room_level1.view_hborder[0] = 32;
+  _room_room_level1.view_vborder[0] = 32;
+  _room_room_level1.view_object[0] = _inst_obj_player_20.id;
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 528, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 512, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 496, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 480, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 464, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 448, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 432, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 416, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 400, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 384, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 368, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 352, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 336, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 320, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 304, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 288, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 272, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 256, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 240, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 224, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 208, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 192, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 208, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 224, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 240, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 240, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 256, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 272, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 288, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 304, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 320, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 336, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 352, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 368, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 384, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 400, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 416, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 432, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 448, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 464, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 480, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 480, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 496, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 512, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 512, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 528, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 528, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 544, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 544, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 512, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 496, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 480, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 464, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 448, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 432, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 416, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 400, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 384, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 368, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 352, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 336, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 320, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 448, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 464, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 480, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 496, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 544, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 560, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 576, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 352, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 336, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 320, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 304, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 288, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 368, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 384, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 400, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 416, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 432, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 272, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 256, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 176, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 160, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 144, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 128, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 112, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 96, 80, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 112, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 128, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 144, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 160, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 176, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 192, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 448, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 432, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 464, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 304, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 288, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 272, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 256, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 240, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 224, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 192, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 176, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 160, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 144, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 128, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 112, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 96, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 80, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 64, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 48, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 32, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 16, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 0, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 0, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 16, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 32, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 48, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 64, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 80, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 96, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 112, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 32, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 16, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 0, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 128, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 144, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 160, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 176, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 192, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 208, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 224, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 240, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 256, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 272, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 288, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 304, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 320, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 336, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 352, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 368, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 384, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 400, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 416, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 432, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 448, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 464, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 480, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 496, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 512, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 528, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 544, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 560, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 576, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 592, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 608, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 624, 0, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 624, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 608, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 592, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 576, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 560, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 544, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 528, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 80, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 64, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 96, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 112, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 128, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 144, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 160, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 176, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 192, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 208, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 224, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 592, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 592, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 576, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 416, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 496, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 512, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 400, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 384, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 368, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 352, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 336, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 320, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 304, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 288, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 208, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 224, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 240, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 256, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 272, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 208, 32, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 48, 16, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 16, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 0, 48, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 16, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 32, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 48, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 64, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 80, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 0, 0, 16, 16, 96, 64, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 528, 240, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 512, 240, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 496, 240, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 480, 240, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 464, 240, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 448, 224, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 432, 224, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 416, 224, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 400, 208, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 384, 192, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 384, 176, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 368, 176, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 368, 160, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 352, 144, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 336, 128, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 320, 128, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 320, 112, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 304, 112, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 288, 112, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 272, 112, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 256, 112, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 256, 128, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 240, 128, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 224, 128, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 208, 128, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 192, 128, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 176, 144, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 160, 144, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 144, 144, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 112, 160, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 96, 160, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 80, 176, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 64, 176, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 48, 176, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 32, 192, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 16, 192, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 0, 208, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 0, 240, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 16, 256, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 32, 256, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 48, 256, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 64, 272, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 96, 272, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 112, 272, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 128, 272, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 160, 288, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 176, 288, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 192, 288, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 224, 288, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 256, 288, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 272, 288, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 304, 288, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 336, 288, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 352, 272, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 384, 272, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 400, 272, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 416, 256, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 432, 256, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 448, 240, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 464, 224, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 480, 224, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 480, 208, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 496, 208, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 496, 192, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 480, 192, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 480, 176, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 464, 160, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 448, 160, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 432, 144, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 416, 144, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 400, 144, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 384, 144, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 368, 144, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 320, 144, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 304, 144, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 288, 144, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 272, 160, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 256, 160, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 240, 160, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 240, 176, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 224, 176, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 208, 192, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 208, 208, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 192, 224, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 192, 240, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 192, 256, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 208, 256, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 208, 272, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 208, 288, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 224, 304, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 240, 304, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 256, 320, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 272, 336, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 288, 336, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 304, 336, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 320, 352, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 336, 352, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 352, 352, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 368, 352, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 384, 352, 1e6);
+  if (_background_map["bg_test"] !== void 0) _room_room_level1.tile_add(_background_map["bg_test"], 128, 96, 16, 16, 400, 352, 1e6);
   const start = _room_room_level1;
   if (!start) {
     console.error("[Game] No rooms defined.");
@@ -9172,11 +11359,7 @@ async function init(canvas) {
   game_loop.start(start);
 }
 export {
-  init as default,
-  obj_coin,
-  obj_enemy,
-  obj_platform,
-  obj_player
+  init as default
 };
 /*! Bundled license information:
 

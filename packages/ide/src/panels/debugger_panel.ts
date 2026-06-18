@@ -7,6 +7,7 @@
  */
 
 import { FloatingWindow }       from '../window_manager.js'
+import { ICON }                 from '../icons.js'
 import { bp_on_hit, bp_resume } from './breakpoint_manager.js'
 
 // =========================================================================
@@ -29,7 +30,7 @@ let _listener_registered = false
 export function debugger_open(workspace: HTMLElement): void {
     if (_win) { _win.bring_to_front(); return }
     _win = new FloatingWindow(
-        'sw-debugger', 'Debugger', 'icons/script.svg',
+        'sw-debugger', 'Debugger', ICON.script,
         { x: 700, y: 60, w: 340, h: 420 }
     )
     _win.on_close(() => { _win = null; _vars_el = null; _status_el = null })

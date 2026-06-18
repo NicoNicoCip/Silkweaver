@@ -287,6 +287,62 @@ export function buffer_copy(src_id: number, src_offset: number, dst_id: number, 
 }
 
 /**
+ * Returns the size in bytes of a buffer data type (0 for variable-length string).
+ * @param type - One of the buffer_* type constants
+ */
+export function buffer_sizeof(type: number): number {
+    return TYPE_SIZES[type] ?? 0
+}
+
+/**
+ * Resizes a buffer's backing store, preserving existing bytes.
+ * @param buffer_id - Buffer ID
+ * @param new_size - New capacity in bytes
+ */
+export function buffer_resize(buffer_id: number, new_size: number): void {
+    const buf = _buffers.get(buffer_id)
+    if (!buf) return
+    const n = Math.max(0, Math.floor(new_size))
+    const new_data = new Uint8Array(n)
+    new_data.set(buf.data.subarray(0, Math.min(buf.data.length, n)))
+    buf.data = new_data
+    buf.view = new DataView(new_data.buffer)
+    if (buf.size > n) buf.size = n
+    if (buf.pos > n) buf.pos = n
+}
+
+/**
+ * Writes a value of the given type at an absolute offset without moving the
+ * seek cursor.
+ * @param buffer_id - Buffer ID
+ * @param offset - Absolute byte offset
+ * @param type - Buffer data type
+ * @param value - Value to write
+ */
+export function buffer_poke(buffer_id: number, offset: number, type: number, value: number | boolean | string | bigint): void {
+    const pos = buffer_tell(buffer_id)
+    buffer_seek(buffer_id, buffer_seek_start, offset)
+    buffer_write(buffer_id, type, value)
+    buffer_seek(buffer_id, buffer_seek_start, pos)
+}
+
+/**
+ * Reads a value of the given type at an absolute offset without moving the
+ * seek cursor.
+ * @param buffer_id - Buffer ID
+ * @param offset - Absolute byte offset
+ * @param type - Buffer data type
+ * @returns The value read
+ */
+export function buffer_peek(buffer_id: number, offset: number, type: number): number | boolean | string | bigint {
+    const pos = buffer_tell(buffer_id)
+    buffer_seek(buffer_id, buffer_seek_start, offset)
+    const value = buffer_read(buffer_id, type)
+    buffer_seek(buffer_id, buffer_seek_start, pos)
+    return value
+}
+
+/**
  * Returns a Uint8Array view of the buffer's raw bytes (read-only snapshot).
  * @param buffer_id - Buffer ID
  */

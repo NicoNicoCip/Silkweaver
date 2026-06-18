@@ -38,6 +38,12 @@ import_electron.contextBridge.exposeInMainWorld("swfs", {
    * Check if a path exists.
    */
   exists: (abs_path) => import_electron.ipcRenderer.invoke("sw:exists", abs_path),
+  /** Rename/move a file or folder. */
+  rename: (src, dst) => import_electron.ipcRenderer.invoke("sw:rename", src, dst),
+  /** Recursively copy a file or folder. */
+  copy: (src, dst) => import_electron.ipcRenderer.invoke("sw:copy", src, dst),
+  /** Recursively delete a file or folder. */
+  delete_path: (target) => import_electron.ipcRenderer.invoke("sw:delete", target),
   /** Path join helper (pure JS, no node:path needed in sandbox) */
   join: (...parts) => {
     const sep = parts[0]?.includes("\\") ? "\\" : "/";

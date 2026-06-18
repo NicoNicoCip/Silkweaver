@@ -194,11 +194,9 @@ function _remove_member(src: string, pred: (m: ts.ClassElement) => boolean): str
 // Scaffolding
 // =========================================================================
 
-/** Generates a minimal class-file source for a new object. */
+/** Generates a minimal class-file source for a new object. Imports are auto-managed (none needed). */
 export function scaffold_object(class_name: string): string {
-    return `import { gm_object } from '@silkweaver/engine'
-
-export class ${class_name} extends gm_object {
+    return `export class ${class_name} extends gm_object {
     on_create(): void {
 
     }

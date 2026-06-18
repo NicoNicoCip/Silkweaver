@@ -56,12 +56,15 @@ function _save_layout(id: string, state: window_state): void {
  * A draggable, resizable floating window.
  */
 export class FloatingWindow {
+    /** Registry of every currently-open (mounted) window, for MDI management. */
+    private static _open: Set<FloatingWindow> = new Set()
+
     readonly id:          string
     readonly el:          HTMLElement        // outer .sw-window div
     readonly body:        HTMLElement        // .sw-window-body content area
 
     private _title_el:    HTMLElement
-    private _icon_el:     HTMLImageElement
+    private _icon_el:     HTMLElement
     private _min_btn:     HTMLElement
     private _max_btn:     HTMLElement
     private _close_btn:   HTMLElement
@@ -97,9 +100,7 @@ export class FloatingWindow {
         const titlebar = document.createElement('div')
         titlebar.className = 'sw-window-titlebar'
 
-        this._icon_el = document.createElement('img')
-        this._icon_el.src = icon_src ?? ''
-        this._icon_el.style.display = icon_src ? '' : 'none'
+        this._icon_el = _make_window_icon(icon_src)
 
         this._title_el = document.createElement('span')
         this._title_el.className = 'sw-window-title'
@@ -141,6 +142,12 @@ export class FloatingWindow {
             this._drag_begin(e)
         })
 
+        // Double-click the title bar to maximize / restore (classic MDI gesture).
+        titlebar.addEventListener('dblclick', (e) => {
+            if ((e.target as HTMLElement).closest('.sw-window-btn')) return
+            this.toggle_maximize()
+        })
+
         // Bring to front on click
         this.el.addEventListener('mousedown', () => this.bring_to_front())
 
@@ -165,6 +172,7 @@ export class FloatingWindow {
     /** Append window to a parent element and make it visible. */
     mount(parent: HTMLElement): this {
         parent.appendChild(this.el)
+        FloatingWindow._open.add(this)
         return this
     }
 
@@ -173,15 +181,92 @@ export class FloatingWindow {
         this._title_el.textContent = title
     }
 
-    /** Set the title bar icon. */
+    /** Set the title bar icon (accepts an inline SVG string or an image URL). */
     set_icon(src: string): void {
-        this._icon_el.src = src
-        this._icon_el.style.display = ''
+        const next = _make_window_icon(src)
+        this._icon_el.replaceWith(next)
+        this._icon_el = next
     }
 
     /** Bring this window to the top of the z stack. */
     bring_to_front(): void {
         this.el.style.zIndex = String(_next_z())
+    }
+
+    /** Returns the window's current title text. */
+    get_title(): string {
+        return this._title_el.textContent ?? ''
+    }
+
+    /** Restore (if minimized) and bring this window to the front. */
+    focus(): void {
+        if (this.el.classList.contains('minimized')) this.toggle_minimize()
+        this.bring_to_front()
+    }
+
+    /** Clears the maximized flag (cascade/tile set an explicit rect instead). */
+    private _unmaximize(): void {
+        this._maximized = false
+        this._max_btn.textContent = '□'   // □
+    }
+
+    // ── MDI management (static, across all open windows) ────────────────────
+
+    /** Every currently-open window. */
+    static list(): FloatingWindow[] {
+        return [...FloatingWindow._open]
+    }
+
+    /** Cascade all open windows from the top-left of the workspace. */
+    static cascade(): void {
+        const ws = document.getElementById('sw-workspace')
+        if (!ws) return
+        let i = 0
+        for (const w of FloatingWindow._open) {
+            w._unmaximize()
+            w.el.classList.remove('minimized')
+            const off = (i % 12) * 26
+            w.el.style.left   = (8 + off) + 'px'
+            w.el.style.top    = (8 + off) + 'px'
+            w.el.style.width  = Math.min(680, Math.max(320, ws.offsetWidth  - 80)) + 'px'
+            w.el.style.height = Math.min(460, Math.max(200, ws.offsetHeight - 80)) + 'px'
+            w.bring_to_front()
+            i++
+        }
+    }
+
+    /** Tile all open windows in a grid filling the workspace. */
+    static tile(): void {
+        const ws = document.getElementById('sw-workspace')
+        if (!ws) return
+        const wins = [...FloatingWindow._open]
+        if (wins.length === 0) return
+        const cols = Math.ceil(Math.sqrt(wins.length))
+        const rows = Math.ceil(wins.length / cols)
+        const cw = Math.floor(ws.offsetWidth  / cols)
+        const ch = Math.floor(ws.offsetHeight / rows)
+        wins.forEach((w, idx) => {
+            w._unmaximize()
+            w.el.classList.remove('minimized')
+            const c = idx % cols, r = Math.floor(idx / cols)
+            w.el.style.left   = (c * cw) + 'px'
+            w.el.style.top    = (r * ch) + 'px'
+            w.el.style.width  = cw + 'px'
+            w.el.style.height = ch + 'px'
+            w.bring_to_front()
+        })
+    }
+
+    /** Minimize every open window. */
+    static minimize_all(): void {
+        for (const w of FloatingWindow._open) {
+            if (!w.el.classList.contains('minimized')) w.toggle_minimize()
+        }
+    }
+
+    /** Close every open window. */
+    static close_all(): void {
+        for (const w of [...FloatingWindow._open]) w.close()
     }
 
     /** Toggle minimized state (collapse to title bar). */
@@ -232,6 +317,7 @@ export class FloatingWindow {
     close(): void {
         this._on_close_cb?.()
         this.el.remove()
+        FloatingWindow._open.delete(this)
     }
 
     /** Register a callback invoked when the window is closed. */
@@ -333,4 +419,26 @@ function _make_btn(label: string, cls: string, cb: () => void): HTMLElement {
     btn.textContent = label
     btn.addEventListener('click', (e) => { e.stopPropagation(); cb() })
     return btn
+}
+
+/**
+ * Builds the titlebar icon element. An inline SVG string (e.g. an `ICON.*` value) renders as a
+ * sized span so it matches the resource-tree/toolbar icons exactly; anything else is treated as an
+ * image URL (legacy `icons/*.svg`).
+ */
+function _make_window_icon(src: string | null): HTMLElement {
+    if (src && src.trimStart().startsWith('<svg')) {
+        const span = document.createElement('span')
+        span.className = 'sw-window-icon'
+        span.style.cssText = 'display:inline-flex; align-items:center; width:14px; height:14px; flex-shrink:0;'
+        span.innerHTML = src
+        const svg = span.querySelector('svg')
+        if (svg) { svg.style.width = '100%'; svg.style.height = '100%' }
+        return span
+    }
+    const img = document.createElement('img')
+    img.className = 'sw-window-icon'
+    img.src = src ?? ''
+    img.style.display = src ? '' : 'none'
+    return img
 }

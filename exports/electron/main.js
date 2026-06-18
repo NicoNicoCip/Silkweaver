@@ -128,6 +128,20 @@ electron_1.ipcMain.handle('sw:exists', async (_e, abs_path) => {
         return false;
     }
 });
+/** Rename/move a file or folder (atomic). */
+electron_1.ipcMain.handle('sw:rename', async (_e, src, dst) => {
+    await fs.promises.mkdir(path.dirname(dst), { recursive: true });
+    await fs.promises.rename(src, dst);
+});
+/** Recursively copy a file or folder. */
+electron_1.ipcMain.handle('sw:copy', async (_e, src, dst) => {
+    await fs.promises.mkdir(path.dirname(dst), { recursive: true });
+    await fs.promises.cp(src, dst, { recursive: true });
+});
+/** Recursively delete a file or folder (no error if it doesn't exist). */
+electron_1.ipcMain.handle('sw:delete', async (_e, target) => {
+    await fs.promises.rm(target, { recursive: true, force: true });
+});
 // =========================================================================
 // IPC — Game Build / Export
 // =========================================================================

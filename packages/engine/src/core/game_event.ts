@@ -13,7 +13,9 @@ export enum EVENT_TYPE {
     mouse = "MOUSE",            // Runs on mouse input
     other = "OTHER",            // Miscellaneous events (room start/end, etc.)
     async = "ASYNC",            // Async callback events (HTTP, networking)
+    draw_begin = "DRAW_BEGIN",  // Runs before the main draw, in world space
     draw = "DRAW",              // Main draw event
+    draw_end = "DRAW_END",      // Runs after the main draw, in world space
     draw_gui = "DRAW_GUI"       // GUI draw event (fixed to screen)
 }
 

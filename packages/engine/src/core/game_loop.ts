@@ -6,11 +6,17 @@ import { mouse_manager } from "../input/mouse.js"
 import { gamepad_manager } from "../input/gamepad.js"
 import { touch_manager } from "../input/touch.js"
 import { physics_world_get_engine, physics_world_step } from "../physics/physics_world.js"
+import { _consume_no_more_lives, _consume_no_more_health, _reset_game_state } from "./game_state.js"
 
 /** Injected by renderer.init() — called at the start of every draw frame. */
 let _begin_frame: (() => void) | null = null
 /** Injected by renderer.init() — called at the end of every draw frame. */
 let _end_frame:   (() => void) | null = null
+/**
+ * Injected by renderer.init() — renders the room's views/backgrounds/tiles,
+ * running the supplied instance-draw callback once per visible view.
+ */
+let _draw_room: ((rm: room, run_instances: () => void) => void) | null = null
 
 /**
  * Registers frame begin/end callbacks from the renderer.
@@ -19,6 +25,14 @@ let _end_frame:   (() => void) | null = null
 export function set_frame_hooks(begin: () => void, end: () => void): void {
     _begin_frame = begin
     _end_frame   = end
+}
+
+/**
+ * Registers the room render callback from the renderer (views/backgrounds/tiles).
+ * Must be called from renderer.init() before the loop starts.
+ */
+export function set_room_render_hook(fn: (rm: room, run_instances: () => void) => void): void {
+    _draw_room = fn
 }
 
 /**
@@ -140,6 +154,11 @@ export abstract class game_loop {
         this.update_events.get(EVENT_TYPE.step)?.forEach(e => e.run())
         this._step_physics()
         this.update_events.get(EVENT_TYPE.step_end)?.forEach(e => e.run())
+
+        // GMS built-in life/health events: fire once when either drops to ≤ 0.
+        if (_consume_no_more_lives())  this._dispatch_lifecycle('on_no_more_lives')
+        if (_consume_no_more_health()) this._dispatch_lifecycle('on_no_more_health')
+
         this.update_events.get(EVENT_TYPE.collision)?.forEach(e => e.run())
         this.update_events.get(EVENT_TYPE.keyboard)?.forEach(e => e.run())
         this.update_events.get(EVENT_TYPE.mouse)?.forEach(e => e.run())
@@ -175,7 +194,25 @@ export abstract class game_loop {
      */
     private static draw(): void {
         _begin_frame?.()
-        this.draw_events.get(EVENT_TYPE.draw)?.forEach(e => e.run())
+        // World-space draws run in depth order (higher depth first = further back),
+        // in three passes (Draw Begin → Draw → Draw End), matching GMS.
+        const run_instances = () => {
+            const rm = this.room
+            if (!rm) return
+            const insts = rm.instance_get_all()
+                .filter(i => i.active && i.visible)
+                .sort((a, b) => b.depth - a.depth)
+            for (const i of insts) i.run_draw_begin()
+            for (const i of insts) i.run_draw()
+            for (const i of insts) i.run_draw_end()
+        }
+        if (_draw_room && this.room) {
+            // Renderer draws views/backgrounds/tiles and interleaves instance draws per view.
+            _draw_room(this.room, run_instances)
+        } else {
+            run_instances()
+        }
+        // GUI always draws in screen space (the room render hook resets the camera first).
         this.draw_events.get(EVENT_TYPE.draw_gui)?.forEach(e => e.run())
         _end_frame?.()
     }
@@ -186,7 +223,8 @@ export abstract class game_loop {
      * @param func - The function to call when the event fires
      */
     public static register(event: EVENT_TYPE, func: Function) {
-        const targetMap = (event === EVENT_TYPE.draw || event === EVENT_TYPE.draw_gui)
+        const targetMap = (event === EVENT_TYPE.draw_begin || event === EVENT_TYPE.draw ||
+                            event === EVENT_TYPE.draw_end   || event === EVENT_TYPE.draw_gui)
             ? this.draw_events
             : this.update_events
 
@@ -201,7 +239,8 @@ export abstract class game_loop {
      * @param func - The function to remove
      */
     public static unregister(event: EVENT_TYPE, func: Function) {
-        const targetMap = (event === EVENT_TYPE.draw || event === EVENT_TYPE.draw_gui)
+        const targetMap = (event === EVENT_TYPE.draw_begin || event === EVENT_TYPE.draw ||
+                            event === EVENT_TYPE.draw_end   || event === EVENT_TYPE.draw_gui)
             ? this.draw_events
             : this.update_events
 
@@ -248,6 +287,7 @@ export abstract class game_loop {
      * Restarts the game by returning to the first room.
      */
     public static restart(): void {
+        _reset_game_state()
         const first = resource.findByID(this.room_first)
         if (first instanceof room) this.change_room(first)
     }
@@ -257,7 +297,8 @@ export abstract class game_loop {
      * @param method - Name of the lifecycle method to invoke
      */
     private static _dispatch_lifecycle(
-        method: 'on_room_start' | 'on_room_end' | 'on_game_start' | 'on_game_end',
+        method: 'on_room_start' | 'on_room_end' | 'on_game_start' | 'on_game_end'
+              | 'on_no_more_lives' | 'on_no_more_health',
     ): void {
         if (!this.room) return
         for (const inst of this.room.instance_get_all()) {

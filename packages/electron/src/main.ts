@@ -98,6 +98,23 @@ ipcMain.handle('sw:exists', async (_e, abs_path: string) => {
     try { await fs.promises.access(abs_path); return true } catch { return false }
 })
 
+/** Rename/move a file or folder (atomic). */
+ipcMain.handle('sw:rename', async (_e, src: string, dst: string) => {
+    await fs.promises.mkdir(path.dirname(dst), { recursive: true })
+    await fs.promises.rename(src, dst)
+})
+
+/** Recursively copy a file or folder. */
+ipcMain.handle('sw:copy', async (_e, src: string, dst: string) => {
+    await fs.promises.mkdir(path.dirname(dst), { recursive: true })
+    await fs.promises.cp(src, dst, { recursive: true })
+})
+
+/** Recursively delete a file or folder (no error if it doesn't exist). */
+ipcMain.handle('sw:delete', async (_e, target: string) => {
+    await fs.promises.rm(target, { recursive: true, force: true })
+})
+
 // =========================================================================
 // IPC — Game Build / Export
 // =========================================================================

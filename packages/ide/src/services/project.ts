@@ -29,6 +29,9 @@ const _el = () => (window as any).swfs as {
     write_file:       (abs_path: string, content: string) => Promise<void>
     write_binary:     (abs_path: string, buffer: ArrayBuffer) => Promise<void>
     exists:           (abs_path: string) => Promise<boolean>
+    rename:           (src: string, dst: string) => Promise<void>
+    copy:             (src: string, dst: string) => Promise<void>
+    delete_path:      (target: string) => Promise<void>
     join:             (...parts: string[]) => string
 } | undefined
 
@@ -210,6 +213,35 @@ export async function project_file_exists(rel_path: string): Promise<boolean> {
     } catch {
         return false
     }
+}
+
+/** Moves/renames a file or folder within the project (desktop app only). */
+export async function project_rename(rel_old: string, rel_new: string): Promise<void> {
+    const fs = _el()
+    if (!fs || !_folder_path) throw new Error('Rename requires the desktop app with a saved project folder.')
+    await fs.rename(fs.join(_folder_path, ...rel_old.split('/')), fs.join(_folder_path, ...rel_new.split('/')))
+}
+
+/** Recursively copies a file or folder within the project (desktop app only). */
+export async function project_copy(rel_src: string, rel_dst: string): Promise<void> {
+    const fs = _el()
+    if (!fs || !_folder_path) throw new Error('Duplicate requires the desktop app with a saved project folder.')
+    await fs.copy(fs.join(_folder_path, ...rel_src.split('/')), fs.join(_folder_path, ...rel_dst.split('/')))
+}
+
+/** Recursively deletes a file or folder within the project (desktop app, or browser directory handle). */
+export async function project_delete(rel_path: string): Promise<void> {
+    const fs = _el()
+    if (fs && _folder_path) {
+        await fs.delete_path(fs.join(_folder_path, ...rel_path.split('/')))
+        return
+    }
+    const dir = _dir_handle
+    if (!dir) throw new Error('Delete requires an open project.')
+    const parts = rel_path.split('/')
+    let current: FileSystemDirectoryHandle = dir
+    for (let i = 0; i < parts.length - 1; i++) current = await current.getDirectoryHandle(parts[i]!, { create: false })
+    await current.removeEntry(parts[parts.length - 1]!, { recursive: true })
 }
 
 export async function project_read_file(rel_path: string): Promise<string> {

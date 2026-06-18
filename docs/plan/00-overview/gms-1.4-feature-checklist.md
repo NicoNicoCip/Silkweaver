@@ -81,8 +81,8 @@ Visual/GUI items (editors **P**, IDE tools **R**, room views/background renderin
 
 ## A. Resource types
 
-- [ ] **Sprites** — ✅ frames, origin; collision-mask editor 🟡
-- [ ] **Sounds** — ✅ Web Audio; GMS "sound properties" (kind/effects) 🟡
+- [ ] **Sprites** — ✅ frames, origin, collision-mask editor + **mask wired to runtime collision**
+- [ ] **Sounds** — ✅ Web Audio + **runtime resource pipeline** (codegen `_load_sound` loads/decodes project sounds, name registry → `audio_play_sound('snd_x')`, assets copied on export); GMS "sound properties" (kind/effects) 🟡
 - [ ] **Backgrounds** — 🟡 resource + draw exists; **tileset** use ❌
 - [ ] **Paths** — 🟡 data + editor exist; runtime path-following ❌
 - [ ] **Scripts** — ✅ `scripts/<name>.ts`
@@ -90,8 +90,9 @@ Visual/GUI items (editors **P**, IDE tools **R**, room views/background renderin
 - [ ] **Fonts** — ✅ font editor exists
 - [ ] **Timelines** — ✅ `timeline_*` + editor
 - [ ] **Objects** — ✅ **class-per-object** (`objects/<name>.ts`) 💡
-- [ ] **Rooms** — 🟡 size/speed/instances/creation-code/physics ✅; views & background **layers** ❌
-- [ ] **Tilesets / tiles** — ❌ big level-building feature (engine + room editor + `tile_*`)
+- [ ] **Rooms** — 🟡 size/speed/instances/creation-code/physics ✅; views & background **layers** now ✅ (rendered at runtime); tiles ❌
+- [ ] **Tilesets / tiles** — ✅ end-to-end: `tile_*` engine API + on-screen render + `room.json` `tiles[]` + **room-editor tile painter** (tileset picker, cell selector, paint/erase, depth) + codegen `tile_add`. 🟡 polish: tile-layer depth interleave with instances, autotiling
+
 - [ ] **Included Files** — ❌ ship arbitrary files with the game; `file_*` access
 - [ ] **Macros / Constants** — ❌ global compile-time constants (GMS "Macros")
 - [ ] **Configurations (target configs)** — ❌ per-target settings sets; maybe modernize as build profiles
@@ -103,7 +104,7 @@ Visual/GUI items (editors **P**, IDE tools **R**, room views/background renderin
 
 - [ ] **Create / Destroy** — ✅
 - [ ] **Step** (begin / normal / end) — ✅
-- [ ] **Draw / Draw GUI** (+ pre/post draw, resize) — 🟡 draw + draw_gui ✅; pre/post/resize ❌
+- [ ] **Draw / Draw GUI** (+ pre/post draw, resize) — ✅ draw + draw_gui + **Draw Begin / Draw End** (world-space, per-view, registered + ordered); 🟡 GUI-begin/end, resize ❌
 - [ ] **Alarm[0..11]** — ✅
 - [ ] **Keyboard / Key Press / Key Release** — ✅
 - [ ] **Mouse** (button press/release, enter/leave, wheel, global) — 🟡
@@ -113,7 +114,7 @@ Visual/GUI items (editors **P**, IDE tools **R**, room views/background renderin
 - [ ] **Animation End** — ✅
 - [ ] **Path End** — ❌ (needs path-following)
 - [ ] **Outside Room / Intersect Boundary** — ❌
-- [ ] **No More Lives / No More Health** — ❌ (tied to GMS global `lives`/`health`)
+- [ ] ✅ **No More Lives / No More Health** — engine globals `score`/`lives`/`health` (`get_/set_*`) + events fire once on transition to ≤ 0; reset on game restart; events exposed in the object editor (verified)
 - [ ] **User Events (0..15)** — 🟡 (`event_user`?)
 - [ ] **Async events** (HTTP, dialog, networking, IAP, social, cloud, audio, system) — 🟡 networking async ✅; others ❌/⛔
 - [ ] **Gesture events** (tap, drag, flick, pinch, rotate) — ❌
@@ -134,8 +135,8 @@ Visual/GUI items (editors **P**, IDE tools **R**, room views/background renderin
 - [ ] ✅ `room_goto` / `_next` / `_previous` / `_restart`
 - [ ] ✅ readable `room_width` / `room_height` / `room_speed`
 - [ ] ❌ `room_add` / `room_duplicate` / `room_instance_add` (runtime room building)
-- [ ] 🟡 room creation code ✅ (just wired); per-instance creation code ❌
-- [ ] ❌ `room_set_*` runtime view/background/tile config applied on screen
+- [ ] ✅ room creation code + **per-instance creation code** (`this` = instance, runs after Create) + per-instance scale/rotation (editor properties → `room.json` → codegen → runtime; E2E verified)
+- [ ] ✅ runtime view + **background-layer** rendering on screen (tiled/htiled/vtiled, per-layer auto-scroll, **stretch**, foreground ordering) + **room solid background colour** (`bg_color`/`bg_show_color`, hex→BGR in codegen, editor color picker) + tiles — full room visuals
 
 ### Movement & collision
 - [ ] ✅ `hspeed`/`vspeed`/`speed`/`direction`/`gravity`/`friction` motion vars
@@ -174,12 +175,13 @@ Visual/GUI items (editors **P**, IDE tools **R**, room views/background renderin
 - [ ] 🟡 `gpu_*` state (alpha test, culling, colour write, tex filter/repeat)
 
 ### Tiles
-- [ ] 🟡 `tile_add` / `tile_*` exist on `room`; ❌ tile **layers** + room-editor tile painting + on-screen tile rendering
+- [ ] ✅ `tile_add` / `tile_*` on `room`; on-screen tile rendering (renderer `draw_room_tiles`, depth-sorted); `room.json` `tiles[]` + room-editor tile painter + codegen `tile_add` — full pipeline
 
 ### Views / cameras / display
-- [ ] 🟡 view system exists (`view_*`, `camera_set_*`, `view_apply`) but ❌ **not auto-applied by the loop** (no scrolling/follow on screen)
-- [ ] ❌ `view_object` follow-instance wired into the loop
-- [ ] 🟡 `window_*` / `display_*` / `display_get_width` / fullscreen / `window_set_caption`
+- [ ] ✅ **depth-sorted instance draw** — world draws run in depth order (higher depth behind), 3-pass Draw Begin → Draw → Draw End, stable for equal depth (verified)
+- [ ] ✅ views **auto-applied by the draw loop** — per-viewport camera (room-rect → port projection), multi-view, scrolling; codegen emits `view_*` from `room.json` *(WebGL — needs visual confirm)*
+- [ ] ✅ `view_object` follow-instance wired into the loop (border-box follow, clamped to room; codegen resolves `follow` name → first instance)
+- [ ] ✅ `window_set_caption`/`_get_caption`, `window_get_width`/`_height`, `window_set_size`, `window_set_fullscreen`/`_get_fullscreen`, `display_get_width`/`_height`/`_gui_width`/`_gui_height` (portable, env-guarded; verified off-DOM)
 - [ ] ✅ `draw_getpixel` / surfaces for screen capture? (🟡 verify)
 
 ---
@@ -216,31 +218,35 @@ Visual/GUI items (editors **P**, IDE tools **R**, room views/background renderin
 ## I. GML — Files, INI, buffers, encoding
 - [ ] ✅ `ini_*` (open/read/write/close)
 - [ ] ✅ `file_text_*` / `file_bin_*` / `file_find_*` / `file_exists`/`_delete`/`_copy`/`_rename` / `directory_*`
-- [ ] ✅ buffers (`buffer_create`/`_read`/`_write`/`_load`/`_save`/...)
+- [ ] ✅ buffers (`buffer_create`/`_read`/`_write`/`_seek`/`_fill`/`_copy`/`_sizeof`/`_resize`/`_poke`/`_peek`/`_base64_*`); 🟡 `buffer_load`/`_save` (file I/O)
 - [ ] ✅ `json_encode` / `json_decode`
-- [ ] 🟡 `base64_encode`/`_decode`, `zip_unzip`, `sha1`/`md5`, clipboard (`clipboard_*`)
+- [ ] ✅ `base64_encode`/`_decode`, `sha1`/`md5`, clipboard (`clipboard_*`); 🟡 `zip_unzip`
 - [ ] 💡 sandboxed FS (web): `file_*` map to virtual/OPFS storage — verify scope
 
 ---
 
 ## J. GML — Maths, random, strings, date/time
-- [ ] ✅ real maths (`abs`/`round`/`floor`/`ceil`/`sign`/`sqrt`/`power`/`exp`/`ln`/trig/`lerp`/`clamp`)
-- [ ] ✅ geometry (`point_distance`/`point_direction`/`lengthdir_x`/`_y`/`dot_product`/`angle_difference`)
+- [ ] ✅ real maths (`abs`/`round`/`floor`/`ceil`/`sign`/`sqrt`/`power`/`exp`/`ln`/`logn`/trig + degree inverse `darcsin`/`darccos`/`darctan`/`darctan2`/`lerp`/`clamp`)
+- [ ] ✅ geometry (`point_distance`/`point_direction`/`lengthdir_x`/`_y`/`dot_product`/`dot_product_3d`/`angle_difference`)
+- [ ] ✅ geometric predicates (`point_in_rectangle`/`_circle`/`_triangle`; `rectangle_in_rectangle`/`_circle`/`_triangle` → 0/1/2)
 - [ ] ✅ random (`random`/`irandom`/`random_range`/`choose`/`random_set_seed`/`randomize`)
-- [ ] ✅ strings (`string`/`string_length`/`_char_at`/`_copy`/`_pos`/`_replace`/`_upper`/`_lower`/`real`/`chr`/`ord`)
-- [ ] 🟡 `string_format`, `string_hash_to_newline`, locale helpers
-- [ ] 🟡 date/time (`date_*`, `current_time`, `current_year`…) — partial
-- [ ] ❌ `get_timer` (microsecond timer)
+- [ ] ✅ strings (`string`/`string_length`/`_char_at`/`_copy`/`_pos`/`_replace`/`_upper`/`_lower`/`real`/`chr`/`ord`/`string_ord_at`)
+- [ ] ✅ type checks (`is_real`/`is_string`/`is_array`/`is_undefined`/`is_bool`/`is_numeric`/`is_int32`/`is_int64`/`is_nan`/`is_infinity`/`is_method`)
+- [ ] ✅ array helpers (`array_create`/`_length`/`_get`/`_set`/`_resize`/`_copy`/`_equals`/`_push`/`_pop`/`_shift`/`_insert`/`_delete`/`_sort`/`_reverse`/`_concat`/`_contains`/`_get_index`)
+- [ ] ✅ variable reflection (`variable_instance_get`/`_set`/`_exists`/`_get_names`; `variable_global_*` + shared `global_store`)
+- [ ] ✅ `string_format`; 🟡 `string_hash_to_newline`, locale helpers
+- [ ] ✅ date/time (`date_*`, `current_time`, `current_year`…)
+- [ ] ✅ `get_timer` (microsecond timer)
 
 ---
 
 ## K. GML — Game, system, debug
 - [ ] ✅ `game_end` / `game_restart`
-- [ ] ❌ `game_save` / `game_load` (whole-game state serialization)
-- [ ] ❌ `fps` / `fps_real` / `delta_time`
-- [ ] ❌ `show_message` / `show_question` / `get_string` / `get_integer` (blocking dialogs)
-- [ ] 🟡 `show_debug_message` (currently `console.log`), `show_debug_overlay`
-- [ ] ❌ `sleep`, `set_application_title` / window caption, `highscore_*` (legacy)
+- [ ] ❌ `game_save` / `game_load` (whole-game state serialization) — **deferred**: needs an object-name→class registry + full instance/alarm reconstruction; doing it half-built breaks load fidelity
+- [ ] ✅ `fps` / `fps_real` / `delta_time`
+- [ ] ✅ `show_message` / `show_question` / `get_string` / `get_integer` (host-provided dialogs)
+- [ ] ✅ `show_debug_message`; 🟡 `show_debug_overlay`
+- [ ] ✅ `set_application_title` / window caption; 🟡 `sleep`, `highscore_*` (legacy)
 - [ ] 🟡 `os_type` / `os_browser` / `parameter_*` / `environment_get_variable`
 - [ ] ❌ transitions (`transition_kind` room transitions)
 
@@ -265,8 +271,8 @@ Visual/GUI items (editors **P**, IDE tools **R**, room views/background renderin
 ## N. GML — Physics (matter.js)
 - [ ] ✅ `physics_world_*`, `physics_fixture_*`, `physics_body_*`
 - [ ] ✅ object physics metadata (`static physics`/density/restitution/friction/sensor) + `phy_*` (new)
-- [ ] ❌ joints (`physics_joint_*`: revolute, distance, prismatic, pulley, gear, wheel, rope, weld)
-- [ ] 🟡 `physics_apply_force`/`_impulse`/`_local_*`, `physics_test_overlap`, ray cast, collision categories/groups
+- [ ] ✅ joints (`physics_joint_distance`/`_revolute`/`_weld`/`_spring`/`_rope`_create) — 🟡 prismatic/pulley/gear/wheel
+- [ ] ✅ `physics_test_overlap`, `physics_raycast`; 🟡 `physics_apply_force`/`_impulse`/`_local_*`, collision categories/groups
 
 ---
 
@@ -283,10 +289,10 @@ Visual/GUI items (editors **P**, IDE tools **R**, room views/background renderin
 
 - [ ] **Resource tree** — ✅
 - [ ] **Script editor** (Monaco) — ✅ generated engine types
-- [ ] **Sprite editor** — ✅ frames; ❌ animation preview / origin handles / collision-mask editor
-- [ ] **Image / pixel editor** — ✅ tools 🟡 (verify brush/fill/shapes/selection)
-- [ ] **Object editor** — 💡 now **class-file-as-code**; the GUI-over-class (event tabs, checkboxes) is built but **unwired**
-- [ ] **Room editor** — 🟡 instances ✅; tiles ❌; views/backgrounds edit ✅ but not applied at runtime
+- [ ] **Sprite editor** — ✅ frames + animation preview + origin + collision mask; mask now drives runtime collision (meta→codegen→`get_bbox`, verified incl. scaling); index-based frame files; single size dialog. 🟡 selection/move tool, sprite-sheet slicing (skipped by request)
+- [ ] **Image / pixel editor** — ✅ MS-Paint-style: pencil/eraser/fill/eyedropper/line/rect(±fill)/ellipse(±fill), primary+secondary colour + palette, brush size, zoom, undo/redo, effects (flip/rotate/invert/grayscale/clear); shape algorithms unit-verified. 🟡 selection/move
+- [ ] ✅ **Object editor** — GMS-style GUI form (sprite/parent/solid/visible/persistent/depth, variables, event list) **backed by the class file** via `object_format` parse/patch ops (surgical, preserves code); "Open as Code" → Monaco; opens by default from the resource tree. 🟡 physics fields (code-only), sprite/parent dropdowns (free-text)
+- [ ] **Room editor** — instances ✅; views/backgrounds edit ✅ + applied at runtime ✅; **tiles ✅** (GMS-style painter: tileset picker, cell selector, paint/erase, depth)
 - [ ] **Sound editor** — 🟡 basic; GMS sound properties (kind, effects, gain)
 - [ ] **Background editor** — 🟡 image; tileset settings ❌
 - [ ] **Path editor** — ✅

@@ -71,7 +71,21 @@ npm run electron       # builds the IDE + tooling, then launches the desktop app
 | `npm run build:electron` | Builds the desktop host (runs `build:tooling` first). |
 | `npm run electron` | Builds everything the IDE needs and launches it. |
 | `npm run gen:types` | Regenerates the editor's autocomplete types from the engine (auto-run by `build:ide`). |
+| `npm run gen:docs` | Regenerates the HTML **API reference** from the engine source → [`docs/api/index.html`](docs/api/index.html). |
 | `npx tsc -b` | Type-checks the engine + IDE (strict mode). |
+
+## Documentation
+
+The docs are a single, searchable, self-contained HTML file at [`docs/api/index.html`](docs/api/index.html)
+— open it in any browser (no server needed) or a help viewer. Run `npm run gen:docs` to (re)build it.
+
+- **API reference** — every function, constant, enum, and class method, **generated from the engine's
+  source + JSDoc**, so it can never drift from the code. Categorized (collapsible sidebar) and
+  hash-addressable (e.g. `index.html#draw_sprite`). Add a `@example` JSDoc tag to any function and it
+  shows up as an example on that page.
+- **Guides** — hand-written narrative/tutorial pages. Drop a Markdown file in [`docs/guides/`](docs/guides/)
+  and it becomes a guide in the "Guides" section (the first `# Heading` is its title).
+- **Themes** — dark by default, with a light (Windows-desktop) toggle in the toolbar.
 
 ## Status
 

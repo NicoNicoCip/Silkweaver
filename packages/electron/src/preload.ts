@@ -54,6 +54,18 @@ contextBridge.exposeInMainWorld('swfs', {
     exists: (abs_path: string): Promise<boolean> =>
         ipcRenderer.invoke('sw:exists', abs_path),
 
+    /** Rename/move a file or folder. */
+    rename: (src: string, dst: string): Promise<void> =>
+        ipcRenderer.invoke('sw:rename', src, dst),
+
+    /** Recursively copy a file or folder. */
+    copy: (src: string, dst: string): Promise<void> =>
+        ipcRenderer.invoke('sw:copy', src, dst),
+
+    /** Recursively delete a file or folder. */
+    delete_path: (target: string): Promise<void> =>
+        ipcRenderer.invoke('sw:delete', target),
+
     /** Path join helper (pure JS, no node:path needed in sandbox) */
     join: (...parts: string[]): string => {
         const sep = parts[0]?.includes('\\') ? '\\' : '/'

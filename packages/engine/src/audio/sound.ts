@@ -211,8 +211,28 @@ export function play_sound(
  * @param priority - Ignored (GMS API parity only)
  * @returns sound_instance handle
  */
-export function audio_play_sound(asset: sound_asset, loop: boolean = false, priority: number = 0): sound_instance {
-    return play_sound(asset, loop)
+export function audio_play_sound(asset: sound_asset | string, loop: boolean = false, priority: number = 0): sound_instance {
+    void priority
+    const a = typeof asset === 'string' ? _sound_names.get(asset) : asset
+    if (!a) throw new Error(`audio_play_sound: sound '${String(asset)}' not found`)
+    return play_sound(a, loop)
+}
+
+// =========================================================================
+// Sound name registry — resolve a loaded sound asset by its project name
+// =========================================================================
+
+/** Maps a sound's project name to its loaded asset (populated by the game bootstrap). */
+const _sound_names: Map<string, sound_asset> = new Map()
+
+/** Registers a sound asset under a name so it can be played by name (e.g. `audio_play_sound('snd_jump')`). */
+export function sound_register_name(name: string, asset: sound_asset): void {
+    _sound_names.set(name, asset)
+}
+
+/** Returns a registered sound asset by its project name, or undefined if unknown. */
+export function sound_get_name(name: string): sound_asset | undefined {
+    return _sound_names.get(name)
 }
 
 /**

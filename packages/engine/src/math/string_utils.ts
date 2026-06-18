@@ -193,6 +193,14 @@ export function ord(str: string): number {
     return str.codePointAt(0) ?? 0
 }
 
+/**
+ * Returns the Unicode code point of the character at a 1-based index.
+ * GMS equivalent: string_ord_at(str, index)
+ */
+export function string_ord_at(str: string, index: number): number {
+    return str.codePointAt(index - 1) ?? 0
+}
+
 /** Alias for chr(), matching GMS's ansi_char. */
 export function ansi_char(code: number): string {
     return String.fromCharCode(code)

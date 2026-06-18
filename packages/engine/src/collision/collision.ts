@@ -56,16 +56,21 @@ export function get_bbox(inst: instance, x?: number, y?: number): { left: number
 
     const sx = inst.image_xscale
     const sy = inst.image_yscale
-    const w = sprite.width * sx
-    const h = sprite.height * sy
     const ox = sprite.xoffset * sx
     const oy = sprite.yoffset * sy
 
+    // Use the sprite's collision-mask rectangle when set (mask_left >= 0); otherwise the full frame.
+    const has_mask = sprite.mask_left >= 0
+    const ml = has_mask ? sprite.mask_left   : 0
+    const mt = has_mask ? sprite.mask_top    : 0
+    const mr = has_mask ? sprite.mask_right  : sprite.width
+    const mb = has_mask ? sprite.mask_bottom : sprite.height
+
     return {
-        left:   px - ox,
-        top:    py - oy,
-        right:  px - ox + w,
-        bottom: py - oy + h,
+        left:   px - ox + ml * sx,
+        top:    py - oy + mt * sy,
+        right:  px - ox + mr * sx,
+        bottom: py - oy + mb * sy,
     }
 }
 

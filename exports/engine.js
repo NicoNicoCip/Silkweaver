@@ -11,7 +11,9 @@ var EVENT_TYPE = /* @__PURE__ */ ((EVENT_TYPE2) => {
   EVENT_TYPE2["mouse"] = "MOUSE";
   EVENT_TYPE2["other"] = "OTHER";
   EVENT_TYPE2["async"] = "ASYNC";
+  EVENT_TYPE2["draw_begin"] = "DRAW_BEGIN";
   EVENT_TYPE2["draw"] = "DRAW";
+  EVENT_TYPE2["draw_end"] = "DRAW_END";
   EVENT_TYPE2["draw_gui"] = "DRAW_GUI";
   return EVENT_TYPE2;
 })(EVENT_TYPE || {});
@@ -112,6 +114,17 @@ var room = class _room2 extends resource {
     // Vertical scroll speed for each background
     this.background_color = [];
     // Blend color for each background
+    this.background_stretch = [];
+    // Whether each background stretches to fill the room
+    this.background_show_color = true;
+    // Whether to clear the room to a solid colour
+    this.background_solid_color = 0;
+    // Room solid background (clear) colour, BGR
+    // Runtime auto-scroll offsets per background layer (not part of saved room data).
+    this._bg_scroll_x = [];
+    // Accumulated horizontal scroll per layer
+    this._bg_scroll_y = [];
+    // Accumulated vertical scroll per layer
     // =========================================================================
     // View Properties
     // =========================================================================
@@ -359,6 +372,13 @@ var room = class _room2 extends resource {
    * @param depth - Drawing depth
    * @returns The unique ID of the created tile
    */
+  /**
+   * Returns the room's tile list (used by the renderer to draw tile layers).
+   * @returns The array of tiles in this room
+   */
+  get_tiles() {
+    return this.tiles;
+  }
   tile_add(background2, left, top, width, height, x, y, depth) {
     const id = _room2.next_tile_id++;
     this.tiles.push({
@@ -1679,12 +1699,64 @@ function _get_world() {
   return _world;
 }
 
+// packages/engine/src/core/game_state.ts
+var _score = 0;
+var _lives = 3;
+var _health = 100;
+var _lives_armed = true;
+var _health_armed = true;
+function get_score() {
+  return _score;
+}
+function set_score(value) {
+  _score = value;
+}
+function get_lives() {
+  return _lives;
+}
+function set_lives(value) {
+  _lives = value;
+}
+function get_health() {
+  return _health;
+}
+function set_health(value) {
+  _health = value;
+}
+function _consume_no_more_lives() {
+  if (_lives <= 0 && _lives_armed) {
+    _lives_armed = false;
+    return true;
+  }
+  if (_lives > 0) _lives_armed = true;
+  return false;
+}
+function _consume_no_more_health() {
+  if (_health <= 0 && _health_armed) {
+    _health_armed = false;
+    return true;
+  }
+  if (_health > 0) _health_armed = true;
+  return false;
+}
+function _reset_game_state() {
+  _score = 0;
+  _lives = 3;
+  _health = 100;
+  _lives_armed = true;
+  _health_armed = true;
+}
+
 // packages/engine/src/core/game_loop.ts
 var _begin_frame = null;
 var _end_frame = null;
+var _draw_room = null;
 function set_frame_hooks(begin, end) {
   _begin_frame = begin;
   _end_frame = end;
+}
+function set_room_render_hook(fn) {
+  _draw_room = fn;
 }
 var game_loop = class {
   static {
@@ -1835,6 +1907,8 @@ var game_loop = class {
     this.update_events.get("STEP" /* step */)?.forEach((e) => e.run());
     this._step_physics();
     this.update_events.get("STEP_END" /* step_end */)?.forEach((e) => e.run());
+    if (_consume_no_more_lives()) this._dispatch_lifecycle("on_no_more_lives");
+    if (_consume_no_more_health()) this._dispatch_lifecycle("on_no_more_health");
     this.update_events.get("COLLISION" /* collision */)?.forEach((e) => e.run());
     this.update_events.get("KEYBOARD" /* keyboard */)?.forEach((e) => e.run());
     this.update_events.get("MOUSE" /* mouse */)?.forEach((e) => e.run());
@@ -1865,7 +1939,19 @@ var game_loop = class {
    */
   static draw() {
     _begin_frame?.();
-    this.draw_events.get("DRAW" /* draw */)?.forEach((e) => e.run());
+    const run_instances = () => {
+      const rm = this.room;
+      if (!rm) return;
+      const insts = rm.instance_get_all().filter((i) => i.active && i.visible).sort((a, b) => b.depth - a.depth);
+      for (const i of insts) i.run_draw_begin();
+      for (const i of insts) i.run_draw();
+      for (const i of insts) i.run_draw_end();
+    };
+    if (_draw_room && this.room) {
+      _draw_room(this.room, run_instances);
+    } else {
+      run_instances();
+    }
     this.draw_events.get("DRAW_GUI" /* draw_gui */)?.forEach((e) => e.run());
     _end_frame?.();
   }
@@ -1875,7 +1961,7 @@ var game_loop = class {
    * @param func - The function to call when the event fires
    */
   static register(event, func) {
-    const targetMap = event === "DRAW" /* draw */ || event === "DRAW_GUI" /* draw_gui */ ? this.draw_events : this.update_events;
+    const targetMap = event === "DRAW_BEGIN" /* draw_begin */ || event === "DRAW" /* draw */ || event === "DRAW_END" /* draw_end */ || event === "DRAW_GUI" /* draw_gui */ ? this.draw_events : this.update_events;
     const existing = targetMap.get(event) ?? [];
     existing.push(new game_event(func, event));
     targetMap.set(event, existing);
@@ -1886,7 +1972,7 @@ var game_loop = class {
    * @param func - The function to remove
    */
   static unregister(event, func) {
-    const targetMap = event === "DRAW" /* draw */ || event === "DRAW_GUI" /* draw_gui */ ? this.draw_events : this.update_events;
+    const targetMap = event === "DRAW_BEGIN" /* draw_begin */ || event === "DRAW" /* draw */ || event === "DRAW_END" /* draw_end */ || event === "DRAW_GUI" /* draw_gui */ ? this.draw_events : this.update_events;
     const existing = targetMap.get(event) ?? [];
     const filtered = existing.filter((e) => e.event !== func);
     targetMap.set(event, filtered);
@@ -1917,6 +2003,7 @@ var game_loop = class {
    * Restarts the game by returning to the first room.
    */
   static restart() {
+    _reset_game_state();
     const first = resource.findByID(this.room_first);
     if (first instanceof room) this.change_room(first);
   }
@@ -2127,15 +2214,18 @@ function get_bbox(inst, x, y) {
   }
   const sx = inst.image_xscale;
   const sy = inst.image_yscale;
-  const w = sprite2.width * sx;
-  const h = sprite2.height * sy;
   const ox = sprite2.xoffset * sx;
   const oy = sprite2.yoffset * sy;
+  const has_mask = sprite2.mask_left >= 0;
+  const ml = has_mask ? sprite2.mask_left : 0;
+  const mt = has_mask ? sprite2.mask_top : 0;
+  const mr = has_mask ? sprite2.mask_right : sprite2.width;
+  const mb = has_mask ? sprite2.mask_bottom : sprite2.height;
   return {
-    left: px - ox,
-    top: py - oy,
-    right: px - ox + w,
-    bottom: py - oy + h
+    left: px - ox + ml * sx,
+    top: py - oy + mt * sy,
+    right: px - ox + mr * sx,
+    bottom: py - oy + mb * sy
   };
 }
 function update_bbox(inst) {
@@ -2502,6 +2592,57 @@ function _mp_potential_settings() {
   return _potential;
 }
 
+// packages/engine/src/math/random.ts
+var _seed = 0;
+function _mulberry32() {
+  _seed |= 0;
+  _seed = _seed + 1831565813 | 0;
+  let t = Math.imul(_seed ^ _seed >>> 15, 1 | _seed);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+  return ((t ^ t >>> 14) >>> 0) / 4294967296;
+}
+function random_set_seed(seed) {
+  _seed = seed >>> 0;
+}
+function random_get_seed() {
+  return _seed >>> 0;
+}
+function randomize() {
+  _seed = (Date.now() ^ Math.random() * 4294967295) >>> 0;
+}
+function random(n) {
+  return _mulberry32() * n;
+}
+function irandom(n) {
+  return Math.floor(_mulberry32() * (n + 1));
+}
+function random_range(lo, hi) {
+  return lo + _mulberry32() * (hi - lo);
+}
+function irandom_range(lo, hi) {
+  return Math.floor(lo + _mulberry32() * (hi - lo + 1));
+}
+function choose(...values) {
+  if (values.length === 0) return void 0;
+  return values[Math.floor(_mulberry32() * values.length)];
+}
+function array_shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(_mulberry32() * (i + 1));
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+  return arr;
+}
+function array_random(arr) {
+  if (arr.length === 0) return void 0;
+  return arr[Math.floor(_mulberry32() * arr.length)];
+}
+function random_native() {
+  return Math.random();
+}
+
 // packages/engine/src/physics/physics_body.ts
 import Matter2 from "matter-js";
 var FIXTURE_SHAPE_RECT = 0;
@@ -2805,14 +2946,14 @@ var instance = class _instance extends resource {
     // path_action_* (stop/restart/continue/reverse)
     this._path_off_x = 0;
     this._path_off_y = 0;
-    // Bound event handlers — stored so unregister() can match the exact same function reference
+    // Bound event handlers — stored so unregister() can match the exact same function reference.
+    // World-space draws (begin/draw/end) are NOT events: the loop calls run_draw_* directly in
+    // depth order. Only step events and the screen-space draw_gui remain event-registered.
     this._bound_step_begin = () => {
     };
     this._bound_step = () => {
     };
     this._bound_step_end = () => {
-    };
-    this._bound_draw = () => {
     };
     this._bound_draw_gui = () => {
     };
@@ -2820,7 +2961,6 @@ var instance = class _instance extends resource {
     this._bound_step_begin = this.on_step_begin.bind(this);
     this._bound_step = this.internal_step.bind(this);
     this._bound_step_end = this.on_step_end.bind(this);
-    this._bound_draw = this.internal_draw.bind(this);
     this._bound_draw_gui = this.on_draw_gui.bind(this);
   }
   // =========================================================================
@@ -2891,7 +3031,6 @@ var instance = class _instance extends resource {
     game_loop.register("STEP_BEGIN" /* step_begin */, this._bound_step_begin);
     game_loop.register("STEP" /* step */, this._bound_step);
     game_loop.register("STEP_END" /* step_end */, this._bound_step_end);
-    game_loop.register("DRAW" /* draw */, this._bound_draw);
     game_loop.register("DRAW_GUI" /* draw_gui */, this._bound_draw_gui);
   }
   /**
@@ -2901,7 +3040,6 @@ var instance = class _instance extends resource {
     game_loop.unregister("STEP_BEGIN" /* step_begin */, this._bound_step_begin);
     game_loop.unregister("STEP" /* step */, this._bound_step);
     game_loop.unregister("STEP_END" /* step_end */, this._bound_step_end);
-    game_loop.unregister("DRAW" /* draw */, this._bound_draw);
     game_loop.unregister("DRAW_GUI" /* draw_gui */, this._bound_draw_gui);
   }
   /**
@@ -3021,9 +3159,23 @@ var instance = class _instance extends resource {
    * Internal draw: skips hidden instances, then calls on_draw().
    * If on_draw() has not been overridden, draws the current sprite automatically.
    */
-  internal_draw() {
+  /**
+   * Runs the main Draw event (skips hidden/inactive instances).
+   * Called by the game loop in depth order — not registered as an event.
+   */
+  run_draw() {
     if (!this.visible || !this.active) return;
     this.on_draw();
+  }
+  /** Runs the Draw Begin event (skips hidden/inactive instances). */
+  run_draw_begin() {
+    if (!this.visible || !this.active) return;
+    this.on_draw_begin();
+  }
+  /** Runs the Draw End event (skips hidden/inactive instances). */
+  run_draw_end() {
+    if (!this.visible || !this.active) return;
+    this.on_draw_end();
   }
   // =========================================================================
   // Instance queries (static)
@@ -3190,6 +3342,52 @@ var instance = class _instance extends resource {
     if (!rm) return;
     for (const inst of rm.instance_get_all()) {
       if (inst instanceof obj) inst.active = true;
+    }
+  }
+  /**
+   * True if the instance's bounding box overlaps the given region.
+   * @param inst - Instance to test
+   * @param l - Region left
+   * @param t - Region top
+   * @param r - Region right
+   * @param b - Region bottom
+   */
+  static _bbox_in_region(inst, l, t, r, b) {
+    update_bbox(inst);
+    return inst.bbox_right >= l && inst.bbox_left <= r && inst.bbox_bottom >= t && inst.bbox_top <= b;
+  }
+  /**
+   * Deactivates instances within (or outside) a rectangular region.
+   * @param left - Region left
+   * @param top - Region top
+   * @param width - Region width
+   * @param height - Region height
+   * @param inside - Deactivate instances overlapping the region (true) or those not overlapping it (false)
+   * @param not_me - If true, this instance is excluded
+   */
+  instance_deactivate_region(left, top, width, height, inside = true, not_me = false) {
+    const rm = game_loop.room;
+    if (!rm) return;
+    const r = left + width, b = top + height;
+    for (const inst of rm.instance_get_all()) {
+      if (not_me && inst === this) continue;
+      if (_instance._bbox_in_region(inst, left, top, r, b) === inside) inst.active = false;
+    }
+  }
+  /**
+   * Activates instances within (or outside) a rectangular region.
+   * @param left - Region left
+   * @param top - Region top
+   * @param width - Region width
+   * @param height - Region height
+   * @param inside - Activate instances overlapping the region (true) or those not overlapping it (false)
+   */
+  static instance_activate_region(left, top, width, height, inside = true) {
+    const rm = game_loop.room;
+    if (!rm) return;
+    const r = left + width, b = top + height;
+    for (const inst of rm.instance_get_all()) {
+      if (_instance._bbox_in_region(inst, left, top, r, b) === inside) inst.active = true;
     }
   }
   // =========================================================================
@@ -3477,6 +3675,130 @@ var instance = class _instance extends resource {
     const dir = Math.atan2(-(y - this.y), x - this.x) * (180 / Math.PI);
     this.motion_set(dir < 0 ? dir + 360 : dir, spd);
   }
+  /**
+   * Returns the distance from this instance's bounding box to a point.
+   * Returns 0 if the point lies inside the bounding box.
+   * @param x - Point X
+   * @param y - Point Y
+   */
+  distance_to_point(x, y) {
+    update_bbox(this);
+    const dx = Math.max(this.bbox_left - x, 0, x - this.bbox_right);
+    const dy = Math.max(this.bbox_top - y, 0, y - this.bbox_bottom);
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  /**
+   * Snaps the instance position to a grid.
+   * @param hsnap - Horizontal grid size (ignored if ≤ 0)
+   * @param vsnap - Vertical grid size (ignored if ≤ 0)
+   */
+  move_snap(hsnap, vsnap) {
+    if (hsnap > 0) this.x = Math.round(this.x / hsnap) * hsnap;
+    if (vsnap > 0) this.y = Math.round(this.y / vsnap) * vsnap;
+  }
+  /**
+   * True if the instance position is aligned to the given grid.
+   * @param hsnap - Horizontal grid size
+   * @param vsnap - Vertical grid size
+   */
+  place_snapped(hsnap, vsnap) {
+    const hok = hsnap <= 0 || this.x % hsnap === 0;
+    const vok = vsnap <= 0 || this.y % vsnap === 0;
+    return hok && vok;
+  }
+  /**
+   * Moves the instance to a random, grid-snapped, collision-free position in
+   * the room (tries a number of times before giving up).
+   * @param hsnap - Horizontal grid size (use 1 for any pixel)
+   * @param vsnap - Vertical grid size
+   */
+  move_random(hsnap, vsnap) {
+    const rm = game_loop.room;
+    if (!rm) return;
+    const hs = hsnap > 0 ? hsnap : 1;
+    const vs = vsnap > 0 ? vsnap : 1;
+    const hcells = Math.max(1, Math.floor(rm.room_width / hs));
+    const vcells = Math.max(1, Math.floor(rm.room_height / vs));
+    for (let tries = 0; tries < 1e3; tries++) {
+      const nx = irandom_range(0, hcells - 1) * hs;
+      const ny = irandom_range(0, vcells - 1) * vs;
+      if (this.place_free(nx, ny)) {
+        this.x = nx;
+        this.y = ny;
+        return;
+      }
+    }
+  }
+  /**
+   * Like move_contact_solid but treats all instances as obstacles.
+   * @param hspd - Horizontal movement
+   * @param vspd - Vertical movement
+   * @returns True if the movement was blocked
+   */
+  move_contact_all(hspd, vspd) {
+    const tx = this.x + hspd, ty = this.y + vspd;
+    if (this.place_empty(tx, ty)) {
+      this.x = tx;
+      this.y = ty;
+      return false;
+    }
+    return true;
+  }
+  /**
+   * Steps the instance in the given direction until it is no longer colliding
+   * with a solid (up to its bounding-box size in steps).
+   * @param hspd - Horizontal step
+   * @param vspd - Vertical step
+   */
+  move_outside_solid(hspd, vspd) {
+    this._move_outside(hspd, vspd, false);
+  }
+  /** As move_outside_solid but treats all instances as obstacles. */
+  move_outside_all(hspd, vspd) {
+    this._move_outside(hspd, vspd, true);
+  }
+  /** Steps in (hspd,vspd) until the position is free (or a step cap is hit). */
+  _move_outside(hspd, vspd, all) {
+    const free = (x, y) => all ? this.place_empty(x, y) : this.place_free(x, y);
+    const step = Math.hypot(hspd, vspd);
+    if (step < 1e-9) return;
+    const max_steps = 1e3;
+    for (let i = 0; i < max_steps; i++) {
+      if (free(this.x, this.y)) return;
+      this.x += hspd;
+      this.y += vspd;
+    }
+  }
+  /**
+   * Bounces the instance off solid instances by reflecting its hspeed/vspeed.
+   * @param advanced - Reserved for slanted-wall handling (currently axis-aligned reflection)
+   */
+  move_bounce_solid(advanced = false) {
+    this._move_bounce(advanced, false);
+  }
+  /** As move_bounce_solid but bounces off all instances. */
+  move_bounce_all(advanced = false) {
+    this._move_bounce(advanced, true);
+  }
+  /** Axis-aligned bounce: flips the blocked velocity component(s). */
+  _move_bounce(_advanced, all) {
+    const free = (x, y) => all ? this.place_empty(x, y) : this.place_free(x, y);
+    const nx = this.x + this.hspeed, ny = this.y + this.vspeed;
+    if (free(nx, ny)) return;
+    const blocked_h = !free(this.x + this.hspeed, this.y);
+    const blocked_v = !free(this.x, this.y + this.vspeed);
+    if (blocked_h) this.hspeed = -this.hspeed;
+    if (blocked_v) this.vspeed = -this.vspeed;
+    if (!blocked_h && !blocked_v) {
+      this.hspeed = -this.hspeed;
+      this.vspeed = -this.vspeed;
+    }
+    this.speed = Math.hypot(this.hspeed, this.vspeed);
+    if (this.hspeed !== 0 || this.vspeed !== 0) {
+      this.direction = Math.atan2(-this.vspeed, this.hspeed) * (180 / Math.PI);
+      if (this.direction < 0) this.direction += 360;
+    }
+  }
   // =========================================================================
   // Motion planning steppers (GMS mp_*_step)
   // =========================================================================
@@ -3732,6 +4054,12 @@ var instance = class _instance extends resource {
   on_draw() {
     this.draw_self();
   }
+  /** Called before the main Draw event (world space). Override to draw underlays. */
+  on_draw_begin() {
+  }
+  /** Called after the main Draw event (world space). Override to draw overlays. */
+  on_draw_end() {
+  }
   /** Called every frame to draw GUI elements (fixed to the screen, not the room). */
   on_draw_gui() {
   }
@@ -3792,6 +4120,12 @@ var instance = class _instance extends resource {
   /** A user-defined event (0–15), triggered by `event_user(index)`. */
   on_user(index) {
     void index;
+  }
+  /** Called once when `lives` transitions to ≤ 0. */
+  on_no_more_lives() {
+  }
+  /** Called once when `health` transitions to ≤ 0. */
+  on_no_more_health() {
   }
   /** Triggers this instance's user event `index` (0–15) → `on_user(index)`. */
   event_user(index) {
@@ -4537,8 +4871,41 @@ function color_to_rgb_normalized(col) {
     color_get_blue(col) / 255
   ];
 }
+function color_get_hue(col) {
+  const r = color_get_red(col) / 255, g = color_get_green(col) / 255, b = color_get_blue(col) / 255;
+  const max2 = Math.max(r, g, b), min2 = Math.min(r, g, b), d = max2 - min2;
+  let h = 0;
+  if (d !== 0) {
+    if (max2 === r) h = (g - b) / d % 6;
+    else if (max2 === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  return Math.round(h / 360 * 255);
+}
+function color_get_saturation(col) {
+  const r = color_get_red(col), g = color_get_green(col), b = color_get_blue(col);
+  const max2 = Math.max(r, g, b);
+  return max2 === 0 ? 0 : Math.round((max2 - Math.min(r, g, b)) / max2 * 255);
+}
+function color_get_value(col) {
+  return Math.max(color_get_red(col), color_get_green(col), color_get_blue(col));
+}
+var make_colour_rgb = make_color_rgb;
+var make_colour_hsv = make_color_hsv;
+var colour_get_red = color_get_red;
+var colour_get_green = color_get_green;
+var colour_get_blue = color_get_blue;
+var colour_get_hue = color_get_hue;
+var colour_get_saturation = color_get_saturation;
+var colour_get_value = color_get_value;
+var merge_colour = merge_color;
 
 // packages/engine/src/drawing/renderer.ts
+function pos_mod(a, m) {
+  return (a % m + m) % m;
+}
 var renderer = class {
   static {
     this.projection_loc = null;
@@ -4611,6 +4978,7 @@ var renderer = class {
       () => this.begin_frame(),
       () => this.end_frame()
     );
+    set_room_render_hook((rm, run_instances) => this.draw_room(rm, run_instances));
   }
   // =========================================================================
   // Projection helpers
@@ -4642,6 +5010,52 @@ var renderer = class {
       1
     ]);
     gl.uniformMatrix4fv(this.projection_loc, false, matrix);
+  }
+  /**
+   * Uploads an orthographic projection that maps the room-space rectangle
+   * (vx,vy)–(vx+vw,vy+vh) onto clip space. Origin top-left, Y increases down.
+   * This is what makes views/cameras scroll.
+   * @param vx - View left in room space
+   * @param vy - View top in room space
+   * @param vw - View width in room space
+   * @param vh - View height in room space
+   */
+  static upload_projection_view(vx, vy, vw, vh) {
+    const gl = this.gl;
+    const matrix = new Float32Array([
+      2 / vw,
+      0,
+      0,
+      0,
+      0,
+      -2 / vh,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      -(2 * vx / vw) - 1,
+      2 * vy / vh + 1,
+      0,
+      1
+    ]);
+    gl.uniformMatrix4fv(this.projection_loc, false, matrix);
+  }
+  /**
+   * Activates a view camera: flushes pending geometry, sets the GL viewport to
+   * the on-screen port, and projects the room-space view rectangle into it.
+   */
+  static set_view_camera(vx, vy, vw, vh, px, py, pw, ph) {
+    this.batch.flush();
+    this.gl.viewport(px, this.canvas.height - py - ph, pw, ph);
+    this.upload_projection_view(vx, vy, vw, vh);
+  }
+  /** Restores full-canvas rendering (for GUI / no-view drawing). */
+  static reset_view() {
+    this.batch.flush();
+    this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    this.upload_projection(this.canvas.width, this.canvas.height);
   }
   // =========================================================================
   // Frame management
@@ -5029,6 +5443,131 @@ var renderer = class {
     this.batch.add_quad(x, y, surf.width, surf.height, 0, 1, 1, 0, r, g, b, this.draw_alpha, surf.texture);
   }
   // =========================================================================
+  // Room rendering (views, backgrounds, tiles)
+  // =========================================================================
+  /**
+   * Renders the active room. For each visible view it sets the camera, draws
+   * the non-foreground backgrounds and tiles, runs the instance Draw events
+   * (via the callback), then draws the foreground backgrounds. With no views
+   * enabled the room maps 1:1 to the canvas.
+   * @param rm - The active room
+   * @param run_instances - Runs all instance Draw events under the current camera
+   */
+  static draw_room(rm, run_instances) {
+    if (rm.background_show_color) this.draw_clear(rm.background_solid_color);
+    this._advance_bg_scroll(rm);
+    const views = [];
+    if (rm.view_enabled) {
+      for (let i = 0; i < rm.view_visible.length; i++) {
+        if (rm.view_visible[i] && (rm.view_wview[i] ?? 0) > 0) views.push(i);
+      }
+    }
+    if (views.length > 0) {
+      for (const i of views) {
+        this._follow_view(rm, i);
+        const vx = rm.view_xview[i] ?? 0, vy = rm.view_yview[i] ?? 0;
+        const vw = rm.view_wview[i], vh = rm.view_hview[i];
+        const px = rm.view_xport[i] ?? 0, py = rm.view_yport[i] ?? 0;
+        const pw = rm.view_wport[i] ?? vw, ph = rm.view_hport[i] ?? vh;
+        this.set_view_camera(vx, vy, vw, vh, px, py, pw, ph);
+        this.draw_room_backgrounds(rm, false, vx, vy, vw, vh);
+        this.draw_room_tiles(rm);
+        run_instances();
+        this.draw_room_backgrounds(rm, true, vx, vy, vw, vh);
+      }
+      this.reset_view();
+    } else {
+      const vw = this.canvas.width, vh = this.canvas.height;
+      this.draw_room_backgrounds(rm, false, 0, 0, vw, vh);
+      this.draw_room_tiles(rm);
+      run_instances();
+      this.draw_room_backgrounds(rm, true, 0, 0, vw, vh);
+    }
+  }
+  /** Accumulates each background layer's auto-scroll offset once per frame. */
+  static _advance_bg_scroll(rm) {
+    const n = rm.background_index.length;
+    if (rm._bg_scroll_x.length !== n) {
+      rm._bg_scroll_x = new Array(n).fill(0);
+      rm._bg_scroll_y = new Array(n).fill(0);
+    }
+    for (let i = 0; i < n; i++) {
+      rm._bg_scroll_x[i] = (rm._bg_scroll_x[i] ?? 0) + (rm.background_hspeed[i] ?? 0);
+      rm._bg_scroll_y[i] = (rm._bg_scroll_y[i] ?? 0) + (rm.background_vspeed[i] ?? 0);
+    }
+  }
+  /**
+   * Moves view `i` to keep its followed instance within the view's border box,
+   * clamped to the room bounds. No-op when the view follows nothing.
+   */
+  static _follow_view(rm, i) {
+    const obj = rm.view_object[i] ?? -1;
+    if (obj < 0) return;
+    const inst = rm.instance_get(obj);
+    if (!inst) return;
+    const vw = rm.view_wview[i], vh = rm.view_hview[i];
+    const hb = rm.view_hborder[i] ?? 0, vb = rm.view_vborder[i] ?? 0;
+    let vx = rm.view_xview[i] ?? 0, vy = rm.view_yview[i] ?? 0;
+    if (inst.x - vx < hb) vx = inst.x - hb;
+    else if (vx + vw - inst.x < hb) vx = inst.x + hb - vw;
+    if (inst.y - vy < vb) vy = inst.y - vb;
+    else if (vy + vh - inst.y < vb) vy = inst.y + vb - vh;
+    rm.view_xview[i] = Math.max(0, Math.min(vx, rm.room_width - vw));
+    rm.view_yview[i] = Math.max(0, Math.min(vy, rm.room_height - vh));
+  }
+  /**
+   * Draws the room's background layers within the given view rectangle.
+   * @param rm - The room
+   * @param foreground - Draw only foreground layers (true) or only background layers (false)
+   * @param vx - View left (room space)
+   * @param vy - View top (room space)
+   * @param vw - View width
+   * @param vh - View height
+   */
+  static draw_room_backgrounds(rm, foreground, vx, vy, vw, vh) {
+    for (let i = 0; i < rm.background_index.length; i++) {
+      if (!rm.background_visible[i]) continue;
+      if ((rm.background_foreground[i] ?? false) !== foreground) continue;
+      const bg = resource.findByID(rm.background_index[i] ?? -1);
+      if (!bg || !bg.texture) continue;
+      const [cr, cg, cb] = color_to_rgb_normalized(rm.background_color[i] ?? 16777215);
+      if (rm.background_stretch[i]) {
+        this.batch.add_quad(0, 0, rm.room_width, rm.room_height, 0, 0, 1, 1, cr, cg, cb, this.draw_alpha, bg.texture.texture);
+        continue;
+      }
+      const bx = (rm.background_x[i] ?? 0) + (rm._bg_scroll_x[i] ?? 0);
+      const by = (rm.background_y[i] ?? 0) + (rm._bg_scroll_y[i] ?? 0);
+      const htiled = rm.background_htiled[i] ?? false;
+      const vtiled = rm.background_vtiled[i] ?? false;
+      const startx = htiled ? vx - pos_mod(vx - bx, bg.width) : bx;
+      const endx = htiled ? vx + vw : bx + bg.width;
+      const starty = vtiled ? vy - pos_mod(vy - by, bg.height) : by;
+      const endy = vtiled ? vy + vh : by + bg.height;
+      for (let yy = starty; yy < endy; yy += bg.height) {
+        for (let xx = startx; xx < endx; xx += bg.width) {
+          this.batch.add_quad(xx, yy, bg.width, bg.height, 0, 0, 1, 1, cr, cg, cb, this.draw_alpha, bg.texture.texture);
+        }
+      }
+    }
+  }
+  /**
+   * Draws the room's tile layers (back-to-front by depth). Each tile is a
+   * sub-rectangle of a background resource drawn at its room position.
+   * @param rm - The room
+   */
+  static draw_room_tiles(rm) {
+    const tiles = [...rm.get_tiles()].sort((a, b) => b.depth - a.depth);
+    for (const t of tiles) {
+      if (!t.visible) continue;
+      const bg = resource.findByID(t.background);
+      if (!bg || !bg.texture) continue;
+      const u0 = t.left / bg.width, v0 = t.top / bg.height;
+      const u1 = (t.left + t.width) / bg.width, v1 = (t.top + t.height) / bg.height;
+      const [r, g, b] = color_to_rgb_normalized(16777215);
+      this.batch.add_quad(t.x, t.y, t.width * t.xscale, t.height * t.yscale, u0, v0, u1, v1, r, g, b, t.alpha, bg.texture.texture);
+    }
+  }
+  // =========================================================================
   // Text drawing
   // =========================================================================
   /**
@@ -5347,7 +5886,7 @@ var renderer = class {
 
 // packages/engine/src/drawing/sprite.ts
 var sprite = class extends resource {
-  // Height of the first frame
+  // Mask bottom edge
   constructor() {
     super();
     this.frames = [];
@@ -5359,6 +5898,16 @@ var sprite = class extends resource {
     this.width = 0;
     // Width of the first frame
     this.height = 0;
+    // Height of the first frame
+    // Collision mask rectangle in sprite-local pixels. Defaults of -1 mean
+    // "use the full sprite bounds"; the sprite editor / build can set a tighter box.
+    this.mask_left = -1;
+    // Mask left edge (px from sprite left)
+    this.mask_top = -1;
+    // Mask top edge
+    this.mask_right = -1;
+    // Mask right edge
+    this.mask_bottom = -1;
   }
   /**
    * Adds a frame to this sprite.
@@ -5852,6 +6401,8 @@ function draw_set_color(col) {
 function draw_get_color() {
   return renderer.get_color();
 }
+var draw_set_colour = draw_set_color;
+var draw_get_colour = draw_get_color;
 function draw_set_alpha(alpha) {
   renderer.set_alpha(alpha);
 }
@@ -7256,7 +7807,17 @@ function play_sound(asset, loop = asset.loop, gain = 1, pitch = 1) {
   return inst;
 }
 function audio_play_sound(asset, loop = false, priority = 0) {
-  return play_sound(asset, loop);
+  void priority;
+  const a = typeof asset === "string" ? _sound_names.get(asset) : asset;
+  if (!a) throw new Error(`audio_play_sound: sound '${String(asset)}' not found`);
+  return play_sound(a, loop);
+}
+var _sound_names = /* @__PURE__ */ new Map();
+function sound_register_name(name, asset) {
+  _sound_names.set(name, asset);
+}
+function sound_get_name(name) {
+  return _sound_names.get(name);
 }
 function audio_stop_sound(inst) {
   inst.stop();
@@ -7710,6 +8271,33 @@ function buffer_copy(src_id, src_offset, dst_id, dst_offset, size) {
   dst.data.set(chunk, dst_offset);
   dst.pos = old_pos;
   if (dst_offset + chunk.length > dst.size) dst.size = dst_offset + chunk.length;
+}
+function buffer_sizeof(type) {
+  return TYPE_SIZES[type] ?? 0;
+}
+function buffer_resize(buffer_id, new_size) {
+  const buf = _buffers.get(buffer_id);
+  if (!buf) return;
+  const n = Math.max(0, Math.floor(new_size));
+  const new_data = new Uint8Array(n);
+  new_data.set(buf.data.subarray(0, Math.min(buf.data.length, n)));
+  buf.data = new_data;
+  buf.view = new DataView(new_data.buffer);
+  if (buf.size > n) buf.size = n;
+  if (buf.pos > n) buf.pos = n;
+}
+function buffer_poke(buffer_id, offset, type, value) {
+  const pos = buffer_tell(buffer_id);
+  buffer_seek(buffer_id, buffer_seek_start, offset);
+  buffer_write(buffer_id, type, value);
+  buffer_seek(buffer_id, buffer_seek_start, pos);
+}
+function buffer_peek(buffer_id, offset, type) {
+  const pos = buffer_tell(buffer_id);
+  buffer_seek(buffer_id, buffer_seek_start, offset);
+  const value = buffer_read(buffer_id, type);
+  buffer_seek(buffer_id, buffer_seek_start, pos);
+  return value;
 }
 function buffer_get_bytes(buffer_id) {
   const buf = _buffers.get(buffer_id);
@@ -8983,8 +9571,8 @@ function model_load_obj(obj_src) {
     return model_id;
   }
   for (const face_vert of data.faces) {
-    const [pi = 0, ui = 0, ni = 0] = face_vert;
-    const pos = (pi > 0 ? data.positions[pi - 1] : void 0) ?? [0, 0, 0];
+    const [pi2 = 0, ui = 0, ni = 0] = face_vert;
+    const pos = (pi2 > 0 ? data.positions[pi2 - 1] : void 0) ?? [0, 0, 0];
     const nrm = (ni > 0 ? data.normals[ni - 1] : void 0) ?? [0, 0, 1];
     const uv = (ui > 0 ? data.uvs[ui - 1] : void 0) ?? [0, 0];
     m.build_verts.push(
@@ -9056,15 +9644,27 @@ function dtan(deg) {
   return Math.tan(deg * DEG2RAD);
 }
 function arcsin(x) {
-  return Math.asin(x) * RAD2DEG;
+  return Math.asin(x);
 }
 function arccos(x) {
-  return Math.acos(x) * RAD2DEG;
+  return Math.acos(x);
 }
 function arctan(x) {
-  return Math.atan(x) * RAD2DEG;
+  return Math.atan(x);
 }
 function arctan2(y, x) {
+  return Math.atan2(y, x);
+}
+function darcsin(x) {
+  return Math.asin(x) * RAD2DEG;
+}
+function darccos(x) {
+  return Math.acos(x) * RAD2DEG;
+}
+function darctan(x) {
+  return Math.atan(x) * RAD2DEG;
+}
+function darctan2(y, x) {
   return Math.atan2(y, x) * RAD2DEG;
 }
 function lengthdir_x(len, dir) {
@@ -9131,8 +9731,17 @@ function log10(x) {
 function ln(x) {
   return Math.log(x);
 }
+function logn(n, x) {
+  return Math.log(x) / Math.log(n);
+}
 function exp(x) {
   return Math.exp(x);
+}
+function dot_product(x1, y1, x2, y2) {
+  return x1 * x2 + y1 * y2;
+}
+function dot_product_3d(x1, y1, z1, x2, y2, z2) {
+  return x1 * x2 + y1 * y2 + z1 * z2;
 }
 function min(...values) {
   return Math.min(...values);
@@ -9169,52 +9778,250 @@ function dot3(x1, y1, z1, x2, y2, z2) {
 function cross2(x1, y1, x2, y2) {
   return x1 * y2 - y1 * x2;
 }
+var pi = Math.PI;
+function point_in_rectangle(px, py, x1, y1, x2, y2) {
+  return px >= Math.min(x1, x2) && px <= Math.max(x1, x2) && py >= Math.min(y1, y2) && py <= Math.max(y1, y2);
+}
+function point_in_circle(px, py, cx, cy, rad) {
+  const dx = px - cx, dy = py - cy;
+  return dx * dx + dy * dy <= rad * rad;
+}
+function point_in_triangle(px, py, x1, y1, x2, y2, x3, y3) {
+  const d1 = (px - x2) * (y1 - y2) - (x1 - x2) * (py - y2);
+  const d2 = (px - x3) * (y2 - y3) - (x2 - x3) * (py - y3);
+  const d3 = (px - x1) * (y3 - y1) - (x3 - x1) * (py - y1);
+  const has_neg = d1 < 0 || d2 < 0 || d3 < 0;
+  const has_pos = d1 > 0 || d2 > 0 || d3 > 0;
+  return !(has_neg && has_pos);
+}
+function _orient(ax, ay, bx, by, cx, cy) {
+  return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+}
+function _seg_intersect(ax, ay, bx, by, cx, cy, dx, dy) {
+  const d1 = _orient(cx, cy, dx, dy, ax, ay);
+  const d2 = _orient(cx, cy, dx, dy, bx, by);
+  const d3 = _orient(ax, ay, bx, by, cx, cy);
+  const d4 = _orient(ax, ay, bx, by, dx, dy);
+  return (d1 > 0 && d2 < 0 || d1 < 0 && d2 > 0) && (d3 > 0 && d4 < 0 || d3 < 0 && d4 > 0);
+}
+function rectangle_in_rectangle(sx1, sy1, sx2, sy2, x1, y1, x2, y2) {
+  const sl = Math.min(sx1, sx2), sr = Math.max(sx1, sx2), st = Math.min(sy1, sy2), sb = Math.max(sy1, sy2);
+  const l = Math.min(x1, x2), r = Math.max(x1, x2), t = Math.min(y1, y2), b = Math.max(y1, y2);
+  if (sl >= l && sr <= r && st >= t && sb <= b) return 2;
+  if (sl <= r && sr >= l && st <= b && sb >= t) return 1;
+  return 0;
+}
+function rectangle_in_circle(sx1, sy1, sx2, sy2, cx, cy, rad) {
+  const l = Math.min(sx1, sx2), r = Math.max(sx1, sx2), t = Math.min(sy1, sy2), b = Math.max(sy1, sy2);
+  const r2 = rad * rad;
+  const inside = (px, py) => {
+    const dx2 = px - cx, dy2 = py - cy;
+    return dx2 * dx2 + dy2 * dy2 <= r2;
+  };
+  const n = (inside(l, t) ? 1 : 0) + (inside(r, t) ? 1 : 0) + (inside(r, b) ? 1 : 0) + (inside(l, b) ? 1 : 0);
+  if (n === 4) return 2;
+  if (n > 0) return 1;
+  const nx = Math.max(l, Math.min(cx, r)), ny = Math.max(t, Math.min(cy, b));
+  const dx = nx - cx, dy = ny - cy;
+  return dx * dx + dy * dy <= r2 ? 1 : 0;
+}
+function rectangle_in_triangle(sx1, sy1, sx2, sy2, x1, y1, x2, y2, x3, y3) {
+  const l = Math.min(sx1, sx2), r = Math.max(sx1, sx2), t = Math.min(sy1, sy2), b = Math.max(sy1, sy2);
+  const corners = [[l, t], [r, t], [r, b], [l, b]];
+  let inside = 0;
+  for (const [px, py] of corners) if (point_in_triangle(px, py, x1, y1, x2, y2, x3, y3)) inside++;
+  if (inside === 4) return 2;
+  if (inside > 0) return 1;
+  for (const [px, py] of [[x1, y1], [x2, y2], [x3, y3]])
+    if (point_in_rectangle(px, py, l, t, r, b)) return 1;
+  const rect_edges = [[l, t, r, t], [r, t, r, b], [r, b, l, b], [l, b, l, t]];
+  const tri_edges = [[x1, y1, x2, y2], [x2, y2, x3, y3], [x3, y3, x1, y1]];
+  for (const e of rect_edges) for (const g of tri_edges)
+    if (_seg_intersect(e[0], e[1], e[2], e[3], g[0], g[1], g[2], g[3])) return 1;
+  return 0;
+}
 
-// packages/engine/src/math/random.ts
-var _seed = 0;
-function _mulberry32() {
-  _seed |= 0;
-  _seed = _seed + 1831565813 | 0;
-  let t = Math.imul(_seed ^ _seed >>> 15, 1 | _seed);
-  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-  return ((t ^ t >>> 14) >>> 0) / 4294967296;
+// packages/engine/src/core/type_checks.ts
+function is_real(value) {
+  return typeof value === "number";
 }
-function random_set_seed(seed) {
-  _seed = seed >>> 0;
+function is_string(value) {
+  return typeof value === "string";
 }
-function random_get_seed() {
-  return _seed >>> 0;
+function is_array(value) {
+  return Array.isArray(value);
 }
-function randomize() {
-  _seed = (Date.now() ^ Math.random() * 4294967295) >>> 0;
+function is_undefined(value) {
+  return value === void 0;
 }
-function random(n) {
-  return _mulberry32() * n;
+function is_bool(value) {
+  return typeof value === "boolean";
 }
-function irandom(n) {
-  return Math.floor(_mulberry32() * (n + 1));
+function is_numeric(value) {
+  return typeof value === "number" || typeof value === "boolean";
 }
-function random_range(lo, hi) {
-  return lo + _mulberry32() * (hi - lo);
+function is_int32(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= -2147483648 && value <= 2147483647;
 }
-function irandom_range(lo, hi) {
-  return Math.floor(lo + _mulberry32() * (hi - lo + 1));
+function is_int64(value) {
+  return typeof value === "number" && Number.isInteger(value) && (value < -2147483648 || value > 2147483647);
 }
-function array_shuffle(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(_mulberry32() * (i + 1));
-    const tmp = arr[i];
-    arr[i] = arr[j];
-    arr[j] = tmp;
+function is_nan(value) {
+  return typeof value === "number" && Number.isNaN(value);
+}
+function is_infinity(value) {
+  return value === Infinity || value === -Infinity;
+}
+function is_method(value) {
+  return typeof value === "function";
+}
+
+// packages/engine/src/data/array_utils.ts
+function array_create(size, value = 0) {
+  return new Array(Math.max(0, Math.floor(size))).fill(value);
+}
+function array_length(arr) {
+  return arr.length;
+}
+function array_length_1d(arr) {
+  return arr.length;
+}
+function array_get(arr, index) {
+  return arr[index];
+}
+function array_set(arr, index, value) {
+  for (let i = arr.length; i < index; i++) arr[i] = 0;
+  arr[index] = value;
+}
+function array_resize(arr, new_size) {
+  const n = Math.max(0, Math.floor(new_size));
+  if (n < arr.length) arr.length = n;
+  else for (let i = arr.length; i < n; i++) arr[i] = 0;
+}
+function array_copy(dest, dest_index, src, src_index, length) {
+  for (let i = 0; i < length; i++) dest[dest_index + i] = src[src_index + i];
+}
+function array_equals(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+function array_push(arr, ...values) {
+  return arr.push(...values);
+}
+function array_pop(arr) {
+  return arr.pop();
+}
+function array_shift(arr) {
+  return arr.shift();
+}
+function array_insert(arr, index, ...values) {
+  arr.splice(index, 0, ...values);
+}
+function array_delete(arr, index, number = 1) {
+  arr.splice(index, number);
+}
+function array_sort(arr, type = true) {
+  if (typeof type === "function") {
+    arr.sort(type);
+    return;
   }
-  return arr;
+  arr.sort((a, b) => {
+    const cmp = a < b ? -1 : a > b ? 1 : 0;
+    return type ? cmp : -cmp;
+  });
 }
-function array_random(arr) {
-  if (arr.length === 0) return void 0;
-  return arr[Math.floor(_mulberry32() * arr.length)];
+function array_reverse(arr) {
+  return [...arr].reverse();
 }
-function random_native() {
-  return Math.random();
+function array_concat(...arrays) {
+  return [].concat(...arrays);
+}
+function array_contains(arr, value) {
+  return arr.includes(value);
+}
+function array_get_index(arr, value, offset = 0) {
+  return arr.indexOf(value, offset);
+}
+
+// packages/engine/src/core/window.ts
+function window_set_caption(caption) {
+  if (typeof document !== "undefined") document.title = caption;
+}
+function window_get_caption() {
+  return typeof document !== "undefined" ? document.title : "";
+}
+function window_get_width() {
+  try {
+    return renderer.get_canvas().width;
+  } catch {
+    return 0;
+  }
+}
+function window_get_height() {
+  try {
+    return renderer.get_canvas().height;
+  } catch {
+    return 0;
+  }
+}
+function window_set_size(w, h) {
+  try {
+    const c = renderer.get_canvas();
+    c.width = Math.max(1, w);
+    c.height = Math.max(1, h);
+  } catch {
+  }
+}
+function display_get_width() {
+  return typeof screen !== "undefined" ? screen.width : 0;
+}
+function display_get_height() {
+  return typeof screen !== "undefined" ? screen.height : 0;
+}
+function display_get_gui_width() {
+  return window_get_width();
+}
+function display_get_gui_height() {
+  return window_get_height();
+}
+function window_set_fullscreen(full) {
+  if (typeof document === "undefined") return;
+  try {
+    if (full) document.documentElement.requestFullscreen?.();
+    else if (document.fullscreenElement) document.exitFullscreen?.();
+  } catch {
+  }
+}
+function window_get_fullscreen() {
+  return typeof document !== "undefined" && !!document.fullscreenElement;
+}
+
+// packages/engine/src/core/variables.ts
+var global_store = {};
+function variable_instance_get(inst, name) {
+  return inst[name];
+}
+function variable_instance_set(inst, name, value) {
+  inst[name] = value;
+}
+function variable_instance_exists(inst, name) {
+  return name in inst;
+}
+function variable_instance_get_names(inst) {
+  return Object.keys(inst);
+}
+function variable_global_get(name) {
+  return global_store[name];
+}
+function variable_global_set(name, value) {
+  global_store[name] = value;
+}
+function variable_global_exists(name) {
+  return Object.prototype.hasOwnProperty.call(global_store, name);
+}
+function variable_global_get_names() {
+  return Object.keys(global_store);
 }
 
 // packages/engine/src/math/string_utils.ts
@@ -9305,6 +10112,9 @@ function chr(code) {
 }
 function ord(str) {
   return str.codePointAt(0) ?? 0;
+}
+function string_ord_at(str, index) {
+  return str.codePointAt(index - 1) ?? 0;
 }
 function ansi_char(code) {
   return String.fromCharCode(code);
@@ -9403,8 +10213,26 @@ export {
   arcsin,
   arctan,
   arctan2,
+  array_concat,
+  array_contains,
+  array_copy,
+  array_create,
+  array_delete,
+  array_equals,
+  array_get,
+  array_get_index,
+  array_insert,
+  array_length,
+  array_length_1d,
+  array_pop,
+  array_push,
   array_random,
+  array_resize,
+  array_reverse,
+  array_set,
+  array_shift,
   array_shuffle,
+  array_sort,
   audio_get_listener_x,
   audio_get_listener_y,
   audio_get_master_gain,
@@ -9449,7 +10277,10 @@ export {
   buffer_get_bytes,
   buffer_get_size,
   buffer_grow,
+  buffer_peek,
+  buffer_poke,
   buffer_read,
+  buffer_resize,
   buffer_s16,
   buffer_s32,
   buffer_s8,
@@ -9457,6 +10288,7 @@ export {
   buffer_seek_end,
   buffer_seek_relative,
   buffer_seek_start,
+  buffer_sizeof,
   buffer_string,
   buffer_tell,
   buffer_u16,
@@ -9487,6 +10319,7 @@ export {
   camera_set_view_pos,
   camera_set_view_size,
   ceil,
+  choose,
   chr,
   circle_in_instance,
   clamp,
@@ -9499,8 +10332,17 @@ export {
   collision_rectangle,
   color_get_blue,
   color_get_green,
+  color_get_hue,
   color_get_red,
+  color_get_saturation,
+  color_get_value,
   color_to_rgb_normalized,
+  colour_get_blue,
+  colour_get_green,
+  colour_get_hue,
+  colour_get_red,
+  colour_get_saturation,
+  colour_get_value,
   cross2,
   current_day,
   current_hour,
@@ -9545,6 +10387,10 @@ export {
   d3d_transform_stack_clear,
   d3d_transform_stack_pop,
   d3d_transform_stack_push,
+  darccos,
+  darcsin,
+  darctan,
+  darctan2,
   date_compare_datetime,
   date_create_date,
   date_create_datetime,
@@ -9583,8 +10429,14 @@ export {
   device_mouse_check_button_released,
   device_mouse_x,
   device_mouse_y,
+  display_get_gui_height,
+  display_get_gui_width,
+  display_get_height,
+  display_get_width,
   dot2,
   dot3,
+  dot_product,
+  dot_product_3d,
   draw_background,
   draw_background_ext,
   draw_background_stretched,
@@ -9594,6 +10446,7 @@ export {
   draw_ellipse,
   draw_get_alpha,
   draw_get_color,
+  draw_get_colour,
   draw_line,
   draw_line_width,
   draw_point,
@@ -9601,6 +10454,7 @@ export {
   draw_set_alpha,
   draw_set_blend_mode,
   draw_set_color,
+  draw_set_colour,
   draw_set_font,
   draw_set_halign,
   draw_set_valign,
@@ -9745,9 +10599,13 @@ export {
   gamepad_manager,
   gamepad_set_vibration,
   get_bbox,
+  get_health,
   get_integer,
+  get_lives,
+  get_score,
   get_string,
   get_timer,
+  global_store,
   gm_object,
   gp_axislh,
   gp_axislv,
@@ -9790,6 +10648,17 @@ export {
   io_clear,
   irandom,
   irandom_range,
+  is_array,
+  is_bool,
+  is_infinity,
+  is_int32,
+  is_int64,
+  is_method,
+  is_nan,
+  is_numeric,
+  is_real,
+  is_string,
+  is_undefined,
   json_decode,
   json_deep_clone,
   json_delete,
@@ -9816,8 +10685,11 @@ export {
   ln,
   log10,
   log2,
+  logn,
   make_color_hsv,
   make_color_rgb,
+  make_colour_hsv,
+  make_colour_rgb,
   mat4_identity,
   mat4_look_at,
   mat4_mul,
@@ -9838,6 +10710,7 @@ export {
   mean,
   median,
   merge_color,
+  merge_colour,
   min,
   model_load_obj,
   model_load_obj_url,
@@ -9984,10 +10857,14 @@ export {
   physics_world_on_collision_end,
   physics_world_on_collision_start,
   physics_world_step,
+  pi,
   point_direction,
   point_distance,
   point_distance_3d,
+  point_in_circle,
   point_in_instance,
+  point_in_rectangle,
+  point_in_triangle,
   position_destroy,
   position_meeting,
   power,
@@ -10027,6 +10904,9 @@ export {
   randomize,
   real,
   rect_in_instance,
+  rectangle_in_circle,
+  rectangle_in_rectangle,
+  rectangle_in_triangle,
   regex_find,
   regex_find_all,
   regex_groups,
@@ -10040,6 +10920,9 @@ export {
   room,
   round,
   set_application_title,
+  set_health,
+  set_lives,
+  set_score,
   sha1_string_utf8,
   shader_current,
   shader_get_uniform,
@@ -10058,7 +10941,9 @@ export {
   show_question,
   sign,
   sound_asset,
+  sound_get_name,
   sound_instance,
+  sound_register_name,
   spatial_sound_instance,
   sprite,
   sprite_add,
@@ -10090,6 +10975,7 @@ export {
   string_letters,
   string_lettersdigits,
   string_lower,
+  string_ord_at,
   string_pos,
   string_pos_ext,
   string_repeat,
@@ -10144,6 +11030,14 @@ export {
   touch_manager,
   update_bbox,
   user_shader,
+  variable_global_exists,
+  variable_global_get,
+  variable_global_get_names,
+  variable_global_set,
+  variable_instance_exists,
+  variable_instance_get,
+  variable_instance_get_names,
+  variable_instance_set,
   vector2,
   view_apply,
   view_get,
@@ -10219,9 +11113,16 @@ export {
   webrtc_set_on_message,
   webrtc_set_on_open,
   webrtc_set_remote_answer,
+  window_get_caption,
+  window_get_fullscreen,
+  window_get_height,
+  window_get_width,
   window_mouse_get_x,
   window_mouse_get_y,
   window_mouse_set,
+  window_set_caption,
+  window_set_fullscreen,
+  window_set_size,
   with_object,
   wrap
 };

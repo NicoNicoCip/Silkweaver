@@ -4,6 +4,7 @@
  */
 
 import { FloatingWindow }                                from '../window_manager.js'
+import { ICON } from "../icons.js"
 import { project_read_file, project_write_file, project_has_folder } from '../services/project.js'
 
 // =========================================================================
@@ -69,7 +70,7 @@ class font_editor_window {
             ranges:    [{ from: 32, to: 127 }],
         }
         this._win = new FloatingWindow(
-            `fnt-${name}`, `Font: ${name}`, 'icons/font.svg',
+            `fnt-${name}`, `Font: ${name}`, ICON.font,
             { x: 240, y: 100, w: 500, h: 380 }
         )
         this._build_ui()
@@ -179,8 +180,9 @@ class font_editor_window {
             sep.style.cssText = 'color:var(--sw-text-dim);margin:0 2px;'
 
             const del_btn = document.createElement('button')
-            del_btn.className = 'sw-btn'
-            del_btn.style.cssText = 'padding:2px 6px;font-size:10px;margin-left:auto;'
+            del_btn.className = 'sw-x-btn'
+            del_btn.title = 'Remove range'
+            del_btn.style.cssText = 'margin-left:auto;'
             del_btn.textContent = '✕'
             del_btn.addEventListener('click', () => {
                 this._data.ranges.splice(idx, 1)

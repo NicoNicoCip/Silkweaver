@@ -5,6 +5,7 @@
  */
 
 import { FloatingWindow }                                from '../window_manager.js'
+import { ICON } from "../icons.js"
 import { project_read_file, project_write_file, project_has_folder, project_get_dir } from '../services/project.js'
 import { script_editor_open_smart }                      from './script_editor.js'
 
@@ -62,7 +63,7 @@ class timeline_editor_window {
         this._data      = { moments: [] }
 
         this._win = new FloatingWindow(
-            `tl-${name}`, `Timeline: ${name}`, 'icons/timeline.svg',
+            `tl-${name}`, `Timeline: ${name}`, ICON.timeline,
             { x: 260, y: 120, w: 520, h: 400 }
         )
         this._build_ui()

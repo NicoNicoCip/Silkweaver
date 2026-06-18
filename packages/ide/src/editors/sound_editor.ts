@@ -4,6 +4,7 @@
  */
 
 import { FloatingWindow }                                              from '../window_manager.js'
+import { ICON } from "../icons.js"
 import { project_write_binary, project_read_file, project_write_file, project_has_folder } from '../services/project.js'
 
 // =========================================================================
@@ -73,7 +74,7 @@ class sound_editor_window {
             streaming: false,
         }
         this._win = new FloatingWindow(
-            `snd-${name}`, `Sound: ${name}`, 'icons/sound.svg',
+            `snd-${name}`, `Sound: ${name}`, ICON.sound,
             { x: 220, y: 80, w: 420, h: 320 }
         )
         this._build_ui()

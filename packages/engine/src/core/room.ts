@@ -46,6 +46,14 @@ export class room extends resource {
     public background_hspeed: number[] = []                     // Horizontal scroll speed for each background
     public background_vspeed: number[] = []                     // Vertical scroll speed for each background
     public background_color: number[] = []                      // Blend color for each background
+    public background_stretch: boolean[] = []                   // Whether each background stretches to fill the room
+
+    public background_show_color: boolean = true                // Whether to clear the room to a solid colour
+    public background_solid_color: number = 0x000000            // Room solid background (clear) colour, BGR
+
+    // Runtime auto-scroll offsets per background layer (not part of saved room data).
+    public _bg_scroll_x: number[] = []                          // Accumulated horizontal scroll per layer
+    public _bg_scroll_y: number[] = []                          // Accumulated vertical scroll per layer
 
     // =========================================================================
     // View Properties
@@ -321,6 +329,14 @@ export class room extends resource {
      * @param depth - Drawing depth
      * @returns The unique ID of the created tile
      */
+    /**
+     * Returns the room's tile list (used by the renderer to draw tile layers).
+     * @returns The array of tiles in this room
+     */
+    public get_tiles(): tile_data[] {
+        return this.tiles
+    }
+
     public tile_add(
         background: number,
         left: number,

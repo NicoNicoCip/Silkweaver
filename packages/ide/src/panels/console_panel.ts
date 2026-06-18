@@ -8,6 +8,7 @@
  */
 
 import { FloatingWindow } from '../window_manager.js'
+import { ICON } from '../icons.js'
 
 // =========================================================================
 // Types
@@ -44,7 +45,7 @@ const MAX_ENTRIES = 500
 export function console_open(workspace: HTMLElement, minimized = false): void {
     if (_win) { _win.bring_to_front(); return }
     _win = new FloatingWindow(
-        'sw-console', 'Output', 'icons/script.svg',
+        'sw-console', 'Output', ICON.script,
         { x: 0, y: 400, w: 700, h: 200 }
     )
     _win.on_close(() => { _win = null; _list_el = null })

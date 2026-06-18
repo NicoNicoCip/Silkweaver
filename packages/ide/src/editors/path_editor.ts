@@ -4,6 +4,7 @@
  */
 
 import { FloatingWindow }                                from '../window_manager.js'
+import { ICON } from "../icons.js"
 import { project_read_file, project_write_file, project_has_folder } from '../services/project.js'
 
 // =========================================================================
@@ -19,9 +20,19 @@ interface path_point {
 type path_kind = 'linear' | 'smooth'
 
 interface path_data {
-    kind:   path_kind
-    closed: boolean
-    points: path_point[]
+    kind:     path_kind
+    closed:   boolean
+    points:   path_point[]
+    ref_room?: string   // editor-only: a room to show as a backdrop (ignored at runtime)
+}
+
+/** Subset of a room used as the path editor's backdrop reference. */
+interface ref_room_data {
+    width:          number
+    height:         number
+    bg_color:       string
+    bg_show_color:  boolean
+    instances:      { x: number; y: number; object_name: string }[]
 }
 
 // =========================================================================
@@ -78,6 +89,10 @@ class path_editor_window {
     private _pan_origin_y: number   = 0
     private _first_resize: boolean  = true  // center origin on first layout
 
+    // Reference-room backdrop
+    private _ref_room_data: ref_room_data | null = null
+    private _room_sel!:      HTMLSelectElement
+
     // ResizeObserver
     private _ro!: ResizeObserver
 
@@ -86,7 +101,7 @@ class path_editor_window {
         this._data = { kind: 'linear', closed: false, points: [] }
 
         this._win = new FloatingWindow(
-            `path-${name}`, `Path: ${name}`, 'icons/path.svg',
+            `path-${name}`, `Path: ${name}`, ICON.path,
             { x: 250, y: 110, w: 600, h: 460 }
         )
         this._build_ui()
@@ -119,6 +134,14 @@ class path_editor_window {
 
         toolbar.appendChild(this._make_checkbox_inline('Closed', this._data.closed,
             (v) => { this._data.closed = v; this._draw(); this._save() }))
+
+        // Reference-room backdrop picker (so spatial routes can be traced over a level).
+        this._room_sel = document.createElement('select')
+        this._room_sel.className = 'sw-select'
+        const none = document.createElement('option'); none.value = ''; none.textContent = '(none)'
+        this._room_sel.appendChild(none)
+        this._room_sel.addEventListener('change', () => this._select_ref_room(this._room_sel.value))
+        toolbar.appendChild(this._make_label_wrap('Room:', this._room_sel))
 
         const clear_btn = document.createElement('button')
         clear_btn.className = 'sw-btn'
@@ -212,6 +235,9 @@ class path_editor_window {
         ctx.beginPath(); ctx.moveTo(ox2, 0);  ctx.lineTo(ox2, H); ctx.stroke()
         ctx.beginPath(); ctx.moveTo(0,  oy2); ctx.lineTo(W,  oy2); ctx.stroke()
 
+        // Reference-room backdrop (drawn before the early-return so it shows with no points yet).
+        this._draw_ref_room(ctx)
+
         const pts = this._data.points
         if (pts.length === 0) return
 
@@ -227,20 +253,30 @@ class path_editor_window {
         ctx.lineWidth = 2
 
         if (this._data.kind === 'smooth' && pts.length >= 2) {
-            const s = to_screen(pts[0]!)
-            ctx.moveTo(s.sx, s.sy)
-            for (let i = 1; i < pts.length; i++) {
-                const prev  = to_screen(pts[i - 1]!)
-                const cur   = to_screen(pts[i]!)
-                const cpx   = (prev.sx + cur.sx) / 2
-                const cpy   = (prev.sy + cur.sy) / 2
-                ctx.quadraticCurveTo(prev.sx, prev.sy, cpx, cpy)
-            }
-            const last = to_screen(pts[pts.length - 1]!)
-            ctx.lineTo(last.sx, last.sy)
+            // Midpoint-quadratic smoothing: the curve passes through the midpoints of each
+            // segment, using each point as a control handle.
+            const sp = pts.map(to_screen)
+            const n  = sp.length
+            const mid = (a: { sx: number; sy: number }, b: { sx: number; sy: number }) => ({ x: (a.sx + b.sx) / 2, y: (a.sy + b.sy) / 2 })
+
             if (this._data.closed) {
-                const first = to_screen(pts[0]!)
-                ctx.lineTo(first.sx, first.sy)
+                // Fully smooth loop — wrap around so the first/last points are smoothed too.
+                const start = mid(sp[n - 1]!, sp[0]!)
+                ctx.moveTo(start.x, start.y)
+                for (let i = 0; i < n; i++) {
+                    const cur = sp[i]!, next = sp[(i + 1) % n]!
+                    const m = mid(cur, next)
+                    ctx.quadraticCurveTo(cur.sx, cur.sy, m.x, m.y)
+                }
+            } else {
+                // Open curve — endpoints stay as anchors (corners), interior is smoothed.
+                ctx.moveTo(sp[0]!.sx, sp[0]!.sy)
+                for (let i = 1; i < n - 1; i++) {
+                    const cur = sp[i]!, next = sp[i + 1]!
+                    const m = mid(cur, next)
+                    ctx.quadraticCurveTo(cur.sx, cur.sy, m.x, m.y)
+                }
+                ctx.quadraticCurveTo(sp[n - 1]!.sx, sp[n - 1]!.sy, sp[n - 1]!.sx, sp[n - 1]!.sy)
             }
         } else {
             const s = to_screen(pts[0]!)
@@ -406,19 +442,92 @@ class path_editor_window {
     }
 
     // -----------------------------------------------------------------------
+    // Reference-room backdrop
+    // -----------------------------------------------------------------------
+
+    /** Fills the Room dropdown from the project's rooms and restores the current selection. */
+    private async _populate_room_options(): Promise<void> {
+        while (this._room_sel.options.length > 1) this._room_sel.remove(1)   // keep "(none)"
+        try {
+            const proj = JSON.parse(await project_read_file('project.json')) as { resources?: { rooms?: Record<string, unknown> } }
+            for (const r of Object.keys(proj.resources?.rooms ?? {}).sort()) {
+                const o = document.createElement('option'); o.value = r; o.textContent = r
+                this._room_sel.appendChild(o)
+            }
+        } catch { /* no project.json */ }
+        this._room_sel.value = this._data.ref_room ?? ''
+    }
+
+    private async _select_ref_room(name: string): Promise<void> {
+        if (name) this._data.ref_room = name
+        else      delete this._data.ref_room
+        if (name) await this._load_ref_room_data(name)
+        else      this._ref_room_data = null
+        this._draw()
+        this._save()
+    }
+
+    /** Loads a room's geometry (size, bg colour, instance positions) for the backdrop. */
+    private async _load_ref_room_data(name: string): Promise<void> {
+        try {
+            const rm = JSON.parse(await project_read_file(`rooms/${name}/room.json`)) as any
+            this._ref_room_data = {
+                width:         rm.width ?? 640,
+                height:        rm.height ?? 480,
+                bg_color:      rm.bg_color ?? '#000000',
+                bg_show_color: rm.bg_show_color ?? true,
+                instances:     Array.isArray(rm.instances)
+                    ? rm.instances.map((i: any) => ({ x: i.x ?? 0, y: i.y ?? 0, object_name: i.object_name ?? '' }))
+                    : [],
+            }
+        } catch { this._ref_room_data = null }
+    }
+
+    /** Renders the reference room (dimmed) behind the path: bounds, bg colour, instances. */
+    private _draw_ref_room(ctx: CanvasRenderingContext2D): void {
+        const r = this._ref_room_data
+        if (!r) return
+        const z = this._zoom
+        const sx = (x: number) => this._pan_x + x * z
+        const sy = (y: number) => this._pan_y + y * z
+        ctx.save()
+        if (r.bg_show_color) {
+            ctx.globalAlpha = 0.45; ctx.fillStyle = r.bg_color || '#000000'
+            ctx.fillRect(sx(0), sy(0), r.width * z, r.height * z); ctx.globalAlpha = 1
+        }
+        ctx.strokeStyle = 'rgba(120,160,230,0.9)'; ctx.lineWidth = 1
+        ctx.strokeRect(sx(0), sy(0), r.width * z, r.height * z)
+        const hw = 14 * z
+        for (const inst of r.instances) {
+            const cx = sx(inst.x), cy = sy(inst.y)
+            ctx.fillStyle = 'rgba(70,70,160,0.30)'; ctx.fillRect(cx - hw, cy - hw, hw * 2, hw * 2)
+            ctx.strokeStyle = 'rgba(140,140,220,0.5)'; ctx.lineWidth = 1; ctx.strokeRect(cx - hw, cy - hw, hw * 2, hw * 2)
+            if (z >= 0.4 && inst.object_name) {
+                ctx.fillStyle = 'rgba(210,210,255,0.85)'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+                ctx.fillText(inst.object_name.length > 9 ? inst.object_name.slice(0, 8) + '…' : inst.object_name, cx, cy)
+            }
+        }
+        ctx.restore()
+    }
+
+    // -----------------------------------------------------------------------
     // Persistence
     // -----------------------------------------------------------------------
 
     private async _load_data(): Promise<void> {
         try {
             const raw = await project_read_file(`paths/${this._name}/path.json`)
-            if (!raw) return
-            const parsed = JSON.parse(raw) as Partial<path_data>
-            if (parsed.kind)   this._data.kind   = parsed.kind
-            if (parsed.closed !== undefined) this._data.closed = parsed.closed
-            if (Array.isArray(parsed.points)) this._data.points = parsed.points
-            this._draw()
+            if (raw) {
+                const parsed = JSON.parse(raw) as Partial<path_data>
+                if (parsed.kind)   this._data.kind   = parsed.kind
+                if (parsed.closed !== undefined) this._data.closed = parsed.closed
+                if (Array.isArray(parsed.points)) this._data.points = parsed.points
+                if (parsed.ref_room) this._data.ref_room = parsed.ref_room
+            }
         } catch { /* no saved data yet */ }
+        await this._populate_room_options()
+        if (this._data.ref_room) await this._load_ref_room_data(this._data.ref_room)
+        this._draw()
     }
 
     private async _save(): Promise<void> {

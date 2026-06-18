@@ -9,6 +9,7 @@
  */
 
 import { FloatingWindow } from '../window_manager.js'
+import { ICON } from '../icons.js'
 
 // =========================================================================
 // Constants
@@ -56,7 +57,7 @@ let _heap_ui: metric_ui | null = null
 export function profiler_open(workspace: HTMLElement): void {
     if (_win) { _win.bring_to_front(); return }
     _win = new FloatingWindow(
-        'sw-profiler', 'Profiler', 'icons/script.svg',
+        'sw-profiler', 'Profiler', ICON.script,
         { x: 10, y: 60, w: 320, h: 480 }
     )
     _win.on_close(() => {

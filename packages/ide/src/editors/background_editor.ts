@@ -4,6 +4,7 @@
  */
 
 import { FloatingWindow }                                              from '../window_manager.js'
+import { ICON }                                                        from '../icons.js'
 import { project_write_binary, project_read_file, project_write_file, project_has_folder, project_read_binary_url, project_file_exists } from '../services/project.js'
 import { pixel_editor_open }                                           from './pixel_editor.js'
 import { show_alert, show_prompt }                                     from '../services/dialogs.js'
@@ -67,7 +68,7 @@ class background_editor_window {
             preload:   true,
         }
         this._win = new FloatingWindow(
-            `bg-${name}`, `Background: ${name}`, 'icons/background.svg',
+            `bg-${name}`, `Background: ${name}`, ICON.background,
             { x: 230, y: 90, w: 540, h: 400 }
         )
         this._build_ui()

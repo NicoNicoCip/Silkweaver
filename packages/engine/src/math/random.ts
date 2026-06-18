@@ -85,6 +85,16 @@ export function irandom_range(lo: number, hi: number): number {
 }
 
 /**
+ * Returns one of the given arguments chosen at random (GMS: choose(...)).
+ * Uses the seeded PRNG. Returns undefined if no arguments are given.
+ * @param values - Candidate values
+ */
+export function choose<T>(...values: T[]): T | undefined {
+    if (values.length === 0) return undefined
+    return values[Math.floor(_mulberry32() * values.length)]
+}
+
+/**
  * Randomly shuffles an array in-place (Fisher-Yates).
  * @param arr - Array to shuffle
  * @returns The same array (mutated)

@@ -16,8 +16,9 @@ interface menu_item {
 }
 
 interface menu_def {
-    label:   string
-    items:   menu_item[]
+    label:    string
+    items:    menu_item[]
+    dynamic?: () => menu_item[]   // computed each time the menu opens (appended after `items`)
 }
 
 // =========================================================================
@@ -60,46 +61,51 @@ export function menubar_create(menus: menu_def[]): HTMLElement {
 function _build_menu(def: menu_def): HTMLElement {
     const item = document.createElement('div')
     item.className = 'sw-menu-item'
-    item.textContent = def.label
+
+    const label = document.createElement('span')
+    label.textContent = def.label
+    item.appendChild(label)
 
     const dropdown = document.createElement('div')
     dropdown.className = 'sw-dropdown'
-
-    for (const entry of def.items) {
-        if (entry.separator) {
-            const sep = document.createElement('div')
-            sep.className = 'sw-dropdown-sep'
-            dropdown.appendChild(sep)
-            continue
-        }
-
-        const row = document.createElement('div')
-        row.className = 'sw-dropdown-item' + (entry.disabled ? ' disabled' : '')
-
-        const lbl = document.createElement('span')
-        lbl.textContent = entry.label ?? ''
-
-        row.appendChild(lbl)
-
-        if (entry.shortcut) {
-            const sc = document.createElement('span')
-            sc.className = 'sw-dropdown-shortcut'
-            sc.textContent = entry.shortcut
-            row.appendChild(sc)
-        }
-
-        if (!entry.disabled && entry.action) {
-            row.addEventListener('click', () => {
-                const bar = item.closest('#sw-menubar') as HTMLElement
-                _close_all(bar)
-                entry.action!()
-            })
-        }
-
-        dropdown.appendChild(row)
-    }
-
     item.appendChild(dropdown)
+
+    const render = (items: menu_item[]): void => {
+        dropdown.innerHTML = ''
+        for (const entry of items) {
+            if (entry.separator) {
+                const sep = document.createElement('div')
+                sep.className = 'sw-dropdown-sep'
+                dropdown.appendChild(sep)
+                continue
+            }
+
+            const row = document.createElement('div')
+            row.className = 'sw-dropdown-item' + (entry.disabled ? ' disabled' : '')
+
+            const lbl = document.createElement('span')
+            lbl.textContent = entry.label ?? ''
+            row.appendChild(lbl)
+
+            if (entry.shortcut) {
+                const sc = document.createElement('span')
+                sc.className = 'sw-dropdown-shortcut'
+                sc.textContent = entry.shortcut
+                row.appendChild(sc)
+            }
+
+            if (!entry.disabled && entry.action) {
+                row.addEventListener('click', () => {
+                    const bar = item.closest('#sw-menubar') as HTMLElement
+                    _close_all(bar)
+                    entry.action!()
+                })
+            }
+
+            dropdown.appendChild(row)
+        }
+    }
+    render(def.items)
 
     item.addEventListener('mousedown', (e) => {
         e.stopPropagation()
@@ -109,6 +115,8 @@ function _build_menu(def: menu_def): HTMLElement {
         const was_open = item.classList.contains('open')
         _close_all(bar)
         if (!was_open) {
+            // Dynamic menus (e.g. the open-windows list) recompute their items on open.
+            if (def.dynamic) render([...def.items, ...def.dynamic()])
             item.classList.add('open')
             _open_menu = item
         }
@@ -153,6 +161,11 @@ export interface menubar_actions {
     run_export_win:    () => void
     run_export_mac:    () => void
     run_export_linux:  () => void
+    window_cascade:      () => void
+    window_tile:         () => void
+    window_minimize_all: () => void
+    window_close_all:    () => void
+    window_list:         () => { title: string; focus: () => void }[]
     help_about:  () => void
 }
 
@@ -220,6 +233,21 @@ export function menubar_default(actions: menubar_actions): HTMLElement {
                 { label: 'Export macOS (.app)…',   action: actions.run_export_mac },
                 { label: 'Export Linux…',          action: actions.run_export_linux },
             ],
+        },
+        {
+            label: 'Window',
+            items: [
+                { label: 'Cascade',      action: actions.window_cascade },
+                { label: 'Tile',         action: actions.window_tile },
+                { separator: true },
+                { label: 'Minimize All', action: actions.window_minimize_all },
+                { label: 'Close All',    action: actions.window_close_all },
+            ],
+            dynamic: () => {
+                const wins = actions.window_list()
+                if (wins.length === 0) return []
+                return [{ separator: true }, ...wins.map(w => ({ label: w.title, action: w.focus }))]
+            },
         },
         {
             label: 'Help',

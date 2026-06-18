@@ -5,6 +5,10 @@
 export function theme_inject(): void {
     const style = document.createElement('style')
     style.textContent = /*css*/`
+/* ── Inline SVG icons (toolbar + resource tree); no font dependency ── */
+#sw-toolbar .sw-tb-btn svg { width: 16px; height: 16px; }
+.sw-tree-cat-glyph svg, .sw-tree-item-glyph svg { width: 13px; height: 13px; vertical-align: middle; }
+
 /* ── Reset ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
@@ -34,6 +38,7 @@ html, body {
     --sw-select-bg:  #094771;
     --sw-titlebar-h: 28px;
     --sw-menubar-h:  24px;
+    --sw-toolbar-h:  30px;
     --sw-statusbar-h:20px;
 }
 
@@ -43,14 +48,59 @@ html, body {
 ::-webkit-scrollbar-thumb { background: #666; }
 ::-webkit-scrollbar-thumb:hover { background: #888; }
 
-/* ── Workspace ── */
-#sw-workspace {
+/* ── Frame layout: menubar · toolbar · [dock | splitter | workspace] · statusbar ── */
+#sw-toolbar {
     position: fixed;
-    top: var(--sw-menubar-h);
-    left: 0;
-    right: 0;
+    top: var(--sw-menubar-h); left: 0; right: 0;
+    height: var(--sw-toolbar-h);
+    background: var(--sw-chrome);
+    border-bottom: 1px solid var(--sw-border);
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 6px;
+    z-index: 8999;
+}
+.sw-tb-btn {
+    min-width: 26px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    background: none; border: 1px solid transparent;
+    color: var(--sw-text); cursor: pointer;
+    font-size: 13px; line-height: 1; padding: 0 4px;
+}
+.sw-tb-btn:hover  { background: var(--sw-accent); border-color: var(--sw-accent-hov); }
+.sw-tb-btn:active { background: var(--sw-accent-hov); }
+.sw-tb-sep { width: 1px; height: 18px; background: var(--sw-border); margin: 0 5px; flex-shrink: 0; }
+
+#sw-main {
+    position: fixed;
+    top: calc(var(--sw-menubar-h) + var(--sw-toolbar-h));
+    left: 0; right: 0;
     bottom: var(--sw-statusbar-h);
+    display: flex;
     overflow: hidden;
+}
+#sw-dock {
+    width: 240px; min-width: 150px; max-width: 600px;
+    flex-shrink: 0;
+    overflow: auto;
+    background: var(--sw-chrome2);
+}
+#sw-dock.sw-dock-hidden,
+#sw-dock.sw-dock-hidden + #sw-splitter { display: none; }
+#sw-splitter {
+    width: 5px; flex-shrink: 0;
+    cursor: col-resize;
+    background: var(--sw-chrome);
+    border-left: 1px solid var(--sw-border);
+    border-right: 1px solid var(--sw-border);
+}
+#sw-splitter:hover { background: var(--sw-accent); }
+#sw-workspace {
+    flex: 1; min-width: 0;
+    position: relative;
+    overflow: hidden;
+    background: var(--sw-workspace);
 }
 
 /* ── Menubar ── */
@@ -109,6 +159,49 @@ html, body {
     color: var(--sw-text-dim);
     font-size: 11px;
 }
+
+/* ── Context menu (right-click) ── */
+.sw-ctxmenu {
+    position: fixed;
+    z-index: 10000;
+    background: var(--sw-chrome);
+    border: 1px solid var(--sw-border);
+    box-shadow: 0 3px 12px rgba(0,0,0,0.45);
+    padding: 3px 0;
+    min-width: 168px;
+    font-size: 12px;
+}
+.sw-ctxmenu-item {
+    display: flex; align-items: center; gap: 8px;
+    height: 25px; padding: 0 14px 0 8px;
+    cursor: pointer; color: var(--sw-text); white-space: nowrap;
+}
+.sw-ctxmenu-item:hover { background: var(--sw-accent); }
+.sw-ctxmenu-item.disabled { color: var(--sw-text-dim); cursor: default; }
+.sw-ctxmenu-item.disabled:hover { background: none; }
+.sw-ctxmenu-icon { width: 15px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--sw-text-dim); }
+.sw-ctxmenu-icon svg { width: 14px; height: 14px; }
+.sw-ctxmenu-item:hover .sw-ctxmenu-icon { color: #fff; }
+.sw-ctxmenu-sep { height: 1px; background: var(--sw-border); margin: 3px 0; }
+
+/* ── Resource-tree root (project) node ── */
+.sw-tree-root {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 6px; cursor: default;
+    border-bottom: 1px solid var(--sw-border2);
+    color: var(--sw-text);
+}
+.sw-tree-root .sw-tree-cat-glyph { color: var(--sw-accent); }
+.sw-tree-root-label { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Resource-tree filter box (sticky at the top of the dock) ── */
+.sw-tree-filter {
+    position: sticky; top: 0; z-index: 2;
+    padding: 6px;
+    background: var(--sw-chrome2);
+    border-bottom: 1px solid var(--sw-border);
+}
+.sw-tree-filter .sw-input { height: 24px; font-size: 12px; }
 
 /* ── Status Bar ── */
 #sw-statusbar {
@@ -177,8 +270,29 @@ html, body {
     margin: -4px -2px;
 }
 .sw-window-btn:hover { background: rgba(255,255,255,0.1); }
-.sw-window-btn.close:hover { background: var(--sw-close-hov); }
+.sw-window-btn.close:hover { background: var(--sw-close-hov); color: #fff; }
 .sw-window-btn.close:active { background: var(--sw-close-act); }
+
+/* Small inline delete / clear button (✕) — used by list rows in the editors.
+   Subtle at rest, turns red and brightens on hover so it reads as a destructive action. */
+.sw-x-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px; height: 18px;
+    flex-shrink: 0;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: var(--sw-text-dim);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.1s ease, color 0.1s ease;
+}
+.sw-x-btn:hover  { background: var(--sw-close-hov); color: #fff; }
+.sw-x-btn:active { background: var(--sw-close-act); color: #fff; }
 .sw-window-body {
     flex: 1;
     overflow: hidden;
@@ -318,12 +432,12 @@ html, body {
 
 /* ── Room Editor ── */
 .sw-room-panel {
-    width: 220px;
-    min-width: 220px;
+    width: 230px;
+    min-width: 230px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    border-left: 1px solid var(--sw-border);
+    border-right: 1px solid var(--sw-border);
     background: var(--sw-chrome2);
     overflow: hidden;
 }

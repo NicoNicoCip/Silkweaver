@@ -1,11 +1,11 @@
 /**
- * Resource Tree floating window.
- * GMS 1.4-style collapsible tree with 9 resource categories.
+ * Resource Tree — a docked left panel (GMS 1.4 style) with collapsible resource categories.
  * Double-clicking a resource dispatches a custom 'sw:open_resource' event.
  */
 
-import { FloatingWindow } from './window_manager.js'
 import type { project_state } from './services/project.js'
+import { ICON } from './icons.js'
+import { show_context_menu } from './services/context_menu.js'
 import { project_read_binary_url, project_read_file } from './services/project.js'
 
 // =========================================================================
@@ -24,7 +24,7 @@ export type resource_category =
 interface category_def {
     id:    resource_category
     label: string
-    glyph: string   // UTF character used as icon
+    glyph: string   // inline SVG icon markup (see icons.ts)
 }
 
 // =========================================================================
@@ -32,15 +32,15 @@ interface category_def {
 // =========================================================================
 
 const CATEGORIES: category_def[] = [
-    { id: 'sprites',     label: 'Sprites',     glyph: '\u25A4' },  // ▤  image grid
-    { id: 'sounds',      label: 'Sounds',      glyph: '\u266A' },  // ♪  music note
-    { id: 'backgrounds', label: 'Backgrounds', glyph: '\u2588' },  // █  solid block
-    { id: 'paths',       label: 'Paths',       glyph: '\u2922' },  // ⤢  crossed arrows
-    { id: 'scripts',     label: 'Scripts',     glyph: '\u007B' },  // {  brace
-    { id: 'fonts',       label: 'Fonts',       glyph: 'A'       }, //    letter A
-    { id: 'timelines',   label: 'Timelines',   glyph: '\u23F1' },  // ⏱  clock
-    { id: 'objects',     label: 'Objects',     glyph: '\u25CB' },  // ○  circle
-    { id: 'rooms',       label: 'Rooms',       glyph: '\u2395' },  // ⎕  rectangle
+    { id: 'sprites',     label: 'Sprites',     glyph: ICON.sprite },  // ▤  image grid
+    { id: 'sounds',      label: 'Sounds',      glyph: ICON.sound },  // ♪  music note
+    { id: 'backgrounds', label: 'Backgrounds', glyph: ICON.background },  // █  solid block
+    { id: 'paths',       label: 'Paths',       glyph: ICON.path },  // ⤢  crossed arrows
+    { id: 'scripts',     label: 'Scripts',     glyph: ICON.script },  // {  brace
+    { id: 'fonts',       label: 'Fonts',       glyph: ICON.font       }, //    letter A
+    { id: 'timelines',   label: 'Timelines',   glyph: ICON.timeline },  // ⏱  clock
+    { id: 'objects',     label: 'Objects',     glyph: ICON.object },  // ○  circle
+    { id: 'rooms',       label: 'Rooms',       glyph: ICON.room },  // ⎕  rectangle
 ]
 
 // =========================================================================
@@ -48,65 +48,131 @@ const CATEGORIES: category_def[] = [
 // =========================================================================
 
 export class ResourceTree {
-    private _win:          FloatingWindow
     private _container:    HTMLElement
-    private _workspace:    HTMLElement | null = null
-    private _closed:       boolean = false
+    private _dock:         HTMLElement | null = null
+    private _root_label:   HTMLElement | null = null
     private _state:        project_state | null = null
     private _category_els: Map<resource_category, HTMLElement> = new Map()
     private _arrows:       Map<resource_category, HTMLElement> = new Map()
     private _expanded:     Set<resource_category>              = new Set()
 
     // Callbacks
-    on_add_resource:    (cat: resource_category) => void = () => {}
-    on_delete_resource: (cat: resource_category, name: string) => void = () => {}
-    on_rename_resource: (cat: resource_category, old_name: string, new_name: string) => void = () => {}
+    on_add_resource:       (cat: resource_category) => void = () => {}
+    on_delete_resource:    (cat: resource_category, name: string) => void = () => {}
+    on_rename_resource:    (cat: resource_category, old_name: string, new_name: string) => void = () => {}
+    on_duplicate_resource: (cat: resource_category, name: string) => void = () => {}
 
     constructor() {
-        this._win = new FloatingWindow(
-            'resource-tree',
-            'Resources',
-            null,
-            { x: 8, y: 8, w: 220, h: 500 },
-        )
-        this._win.on_close(() => { this._closed = true })
-
         this._container = document.createElement('div')
-        this._container.style.cssText = 'overflow-y:auto; height:100%; padding:4px 0;'
-
+        this._container.style.cssText = 'padding:0 0 2px;'
+        this._container.appendChild(this._build_root())
         for (const cat of CATEGORIES) {
             this._container.appendChild(this._build_category(cat))
         }
+        // An editor changed a resource's on-disk data (e.g. sprite frames) → refresh its row/thumbnail.
+        document.addEventListener('sw:resource_changed', (e) => {
+            const detail = (e as CustomEvent).detail as { category?: resource_category } | undefined
+            if (detail?.category && this._state) this._refresh_category(detail.category)
+        })
+    }
 
-        this._win.body.appendChild(this._container)
+    /** Builds the project root node (shows the project name). */
+    private _build_root(): HTMLElement {
+        const root = document.createElement('div')
+        root.className = 'sw-tree-root'
+        const icon = document.createElement('span')
+        icon.className = 'sw-tree-cat-glyph'
+        icon.innerHTML = ICON.project
+        this._root_label = document.createElement('span')
+        this._root_label.className = 'sw-tree-root-label'
+        this._root_label.textContent = 'No project'
+        root.append(icon, this._root_label)
+        root.addEventListener('contextmenu', (e) => {
+            e.preventDefault(); e.stopPropagation()
+            show_context_menu(e.clientX, e.clientY, [
+                { label: 'Expand All',   action: () => this.expand_all() },
+                { label: 'Collapse All', action: () => this.collapse_all() },
+            ])
+        })
+        return root
     }
 
     // ── Public API ────────────────────────────────────────────────────────
 
-    /** Mount the resource tree window to the workspace. */
-    mount(parent: HTMLElement): void {
-        this._workspace = parent
-        this._closed = false
-        this._win.mount(parent)
+    /** Mount the tree into the docked panel. */
+    mount(dock: HTMLElement): void {
+        this._dock = dock
+        dock.appendChild(this._build_filter())
+        dock.appendChild(this._container)
+    }
+
+    /** Builds the resource filter box (sticky at the top of the dock). */
+    private _build_filter(): HTMLElement {
+        const wrap = document.createElement('div')
+        wrap.className = 'sw-tree-filter'
+        wrap.style.display    = 'flex'
+        wrap.style.alignItems = 'center'
+        wrap.style.gap        = '4px'
+        const input = document.createElement('input')
+        input.type = 'search'
+        input.className = 'sw-input'
+        input.placeholder = 'Filter resources…'
+        input.style.flex = '1'
+        input.style.minWidth = '0'
+        input.addEventListener('input', () => this._apply_filter(input.value))
+        const expand_btn   = _text_btn('⊕', 'Expand all',   () => this.expand_all())    // ⊕
+        const collapse_btn = _text_btn('⊖', 'Collapse all', () => this.collapse_all())  // ⊖
+        wrap.append(input, expand_btn, collapse_btn)
+        return wrap
     }
 
     /**
-     * Show the resource tree. If it was closed, remounts it.
-     * If already open, brings it to the front.
+     * Filters the tree by resource name. A non-empty query hides non-matching rows, auto-expands
+     * categories that have matches, and hides categories with none. Clearing it restores the tree.
      */
-    show(): void {
-        if (!this._workspace) return
-        if (this._closed) {
-            this._closed = false
-            this._win.mount(this._workspace)
-        } else {
-            this._win.bring_to_front()
+    private _apply_filter(query: string): void {
+        const q = query.trim().toLowerCase()
+        for (const cat of CATEGORIES) {
+            const list = this._category_els.get(cat.id)
+            if (!list) continue
+            const wrapper = list.parentElement as HTMLElement | null
+            const arrow   = this._arrows.get(cat.id)
+            const rows    = Array.from(list.children) as HTMLElement[]
+
+            if (q === '') {
+                if (wrapper) wrapper.style.display = ''
+                for (const row of rows) row.style.display = ''
+                const expanded = this._expanded.has(cat.id)
+                list.style.display = expanded ? 'block' : 'none'
+                arrow?.classList.toggle('open', expanded)
+                continue
+            }
+
+            let matches = 0
+            for (const row of rows) {
+                const show = (row.dataset.name ?? '').toLowerCase().includes(q)
+                row.style.display = show ? '' : 'none'
+                if (show) matches++
+            }
+            if (matches > 0) {
+                if (wrapper) wrapper.style.display = ''
+                list.style.display = 'block'
+                arrow?.classList.add('open')
+            } else if (wrapper) {
+                wrapper.style.display = 'none'
+            }
         }
+    }
+
+    /** Toggle the docked resource panel's visibility. */
+    show(): void {
+        this._dock?.classList.toggle('sw-dock-hidden')
     }
 
     /** Populate the tree from a loaded project state. */
     load(state: project_state): void {
         this._state = state
+        if (this._root_label) this._root_label.textContent = state.name || 'Untitled'
         this._refresh_all()
     }
 
@@ -150,7 +216,7 @@ export class ResourceTree {
         // Category glyph icon
         const glyph = document.createElement('span')
         glyph.className = 'sw-tree-cat-glyph'
-        glyph.textContent = cat.glyph
+        glyph.innerHTML = cat.glyph
 
         const label = document.createElement('span')
         label.textContent = cat.label
@@ -162,6 +228,18 @@ export class ResourceTree {
 
         header.append(arrow, glyph, label, add_btn)
 
+        // Right-click → "Create <type>" + expand/collapse
+        header.addEventListener('contextmenu', (e) => {
+            e.preventDefault(); e.stopPropagation()
+            const list_el = this._category_els.get(cat.id)
+            const expanded = !!list_el && list_el.style.display !== 'none'
+            show_context_menu(e.clientX, e.clientY, [
+                { label: `Create ${cat.label.slice(0, -1)}`, icon: cat.glyph, action: () => this.on_add_resource(cat.id) },
+                { separator: true },
+                { label: expanded ? 'Collapse' : 'Expand', action: () => header.click() },
+            ])
+        })
+
         // Item list
         const list = document.createElement('div')
         list.style.cssText = 'display:none;'
@@ -171,19 +249,72 @@ export class ResourceTree {
         // Toggle expand on header click
         header.addEventListener('click', (e) => {
             if ((e.target as HTMLElement).closest('.sw-tree-btn')) return
-            const is_open = list.style.display !== 'none'
-            list.style.display = is_open ? 'none' : 'block'
-            if (is_open) {
-                arrow.classList.remove('open')
-                this._expanded.delete(cat.id)
-            } else {
-                arrow.classList.add('open')
-                this._expanded.add(cat.id)
-            }
+            this._set_expanded(cat.id, list.style.display === 'none')
         })
 
         wrapper.append(header, list)
         return wrapper
+    }
+
+    // ── Expand / collapse ───────────────────────────────────────────────────
+
+    /** Sets a category's expanded state (updates the list, arrow, and tracking set). */
+    private _set_expanded(cat_id: resource_category, expanded: boolean): void {
+        const list  = this._category_els.get(cat_id)
+        const arrow = this._arrows.get(cat_id)
+        if (!list) return
+        list.style.display = expanded ? 'block' : 'none'
+        arrow?.classList.toggle('open', expanded)
+        if (expanded) this._expanded.add(cat_id)
+        else          this._expanded.delete(cat_id)
+    }
+
+    /** Expands a single category (used after creating a resource). */
+    expand_category(cat_id: resource_category): void { this._set_expanded(cat_id, true) }
+
+    /** Expands every category. */
+    expand_all(): void { for (const c of CATEGORIES) this._set_expanded(c.id, true) }
+
+    /** Collapses every category. */
+    collapse_all(): void { for (const c of CATEGORIES) this._set_expanded(c.id, false) }
+
+    /**
+     * Starts inline (in-place) renaming of a resource row, Windows-Explorer style:
+     * the label becomes a text field pre-filled with the name (selected). Enter commits
+     * (fires on_rename_resource); Escape cancels; blur commits.
+     */
+    begin_rename(cat_id: resource_category, name: string): void {
+        this._set_expanded(cat_id, true)
+        const list = this._category_els.get(cat_id)
+        if (!list) return
+        const row = Array.from(list.children).find(r => (r as HTMLElement).dataset.name === name) as HTMLElement | undefined
+        const label = row?.querySelector('.sw-tree-item-label') as HTMLElement | null
+        if (!row || !label) return
+
+        const input = document.createElement('input')
+        input.className = 'sw-input'
+        input.value = name
+        input.style.cssText = 'flex:1; min-width:0; font-size:12px; height:18px; padding:0 3px;'
+        label.replaceWith(input)
+        input.focus()
+        input.select()
+
+        let done = false
+        const finish = (commit: boolean): void => {
+            if (done) return
+            done = true
+            const new_name = input.value.trim()
+            input.replaceWith(label)   // transient: a successful rename refreshes the category
+            if (commit && new_name && new_name !== name) this.on_rename_resource(cat_id, name, new_name)
+        }
+        input.addEventListener('keydown', (e) => {
+            e.stopPropagation()
+            if (e.key === 'Enter')       { e.preventDefault(); finish(true) }
+            else if (e.key === 'Escape') { e.preventDefault(); finish(false) }
+        })
+        input.addEventListener('blur',     () => finish(true))
+        input.addEventListener('click',    (e) => e.stopPropagation())
+        input.addEventListener('dblclick', (e) => e.stopPropagation())
     }
 
     private _refresh_all(): void {
@@ -206,6 +337,7 @@ export class ResourceTree {
 
     private _build_item(cat_id: resource_category, name: string): HTMLElement {
         const row = document.createElement('div')
+        row.dataset.name = name   // for the resource filter
         row.style.cssText = `
             display:flex; align-items:center; gap:5px;
             height:22px; padding:0 6px 0 28px;
@@ -217,6 +349,7 @@ export class ResourceTree {
         const icon_el = this._make_item_icon(cat_id, name)
 
         const label = document.createElement('span')
+        label.className = 'sw-tree-item-label'
         label.textContent = name
         label.style.cssText = 'flex:1; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'
 
@@ -238,13 +371,25 @@ export class ResourceTree {
             row.style.background = ''
         })
 
+        const open = () => document.dispatchEvent(new CustomEvent<open_resource_event>('sw:open_resource', {
+            bubbles: true,
+            detail:  { category: cat_id, name },
+        }))
+
         // Double-click → open resource editor
-        row.addEventListener('dblclick', () => {
-            const event = new CustomEvent<open_resource_event>('sw:open_resource', {
-                bubbles: true,
-                detail:  { category: cat_id, name },
-            })
-            document.dispatchEvent(event)
+        row.addEventListener('dblclick', open)
+
+        // Right-click → context menu
+        row.addEventListener('contextmenu', (e) => {
+            e.preventDefault(); e.stopPropagation()
+            show_context_menu(e.clientX, e.clientY, [
+                { label: 'Open',      icon: ICON.open,   action: open },
+                { separator: true },
+                { label: 'Rename',                       action: () => this.begin_rename(cat_id, name) },
+                { label: 'Duplicate',                    action: () => this.on_duplicate_resource(cat_id, name) },
+                { separator: true },
+                { label: 'Delete',    icon: ICON.delete, action: () => this.on_delete_resource(cat_id, name) },
+            ])
         })
 
         return row
@@ -333,7 +478,7 @@ export class ResourceTree {
         // Fallback: glyph span
         const span = document.createElement('span')
         span.className = 'sw-tree-item-glyph'
-        span.textContent = cat_def.glyph
+        span.innerHTML = cat_def.glyph
         return span
     }
 }
