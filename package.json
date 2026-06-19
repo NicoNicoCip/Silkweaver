@@ -1,6 +1,6 @@
 {
     "name": "silkweaver",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "A GMS 1.4 inspired web game engine and IDE using modern TypeScript, along with some other cool stuff :3",
     "main": "./exports/electron/main.js",
     "scripts": {
@@ -94,7 +94,7 @@
         "typescript": "^5.9.3"
     },
     "dependencies": {
-        "@silkweaver/build": "1.0.0",
+        "@silkweaver/build": "^1.0.0",
         "matter-js": "^0.20.0"
     }
 }

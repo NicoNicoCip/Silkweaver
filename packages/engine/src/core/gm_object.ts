@@ -22,8 +22,12 @@ import type { sprite } from '../drawing/sprite.js'
 /**
  * Base class for all game objects.
  * Extend this to define a new object type. Override lifecycle methods as needed.
+ *
+ * Not `abstract`: object references (e.g. `place_meeting(x, y, obj_wall)`, `instance_create`) are
+ * typed `typeof gm_object`, and an *abstract* constructor type can't be passed where a concrete
+ * `typeof instance` is expected — so the base is concrete (it has no abstract members anyway).
  */
-export abstract class gm_object extends instance {
+export class gm_object extends instance {
     /** Default sprite for instances of this object (can be overridden per-instance). */
     public static default_sprite: sprite | null = null
 
@@ -84,9 +88,15 @@ export abstract class gm_object extends instance {
      * @returns True if this class is somewhere in child's prototype chain
      */
     public static is_ancestor_of(child: typeof gm_object): boolean {
-        let current: typeof gm_object | null = child.parent
-        while (current !== null) {
+        // `!= null` halts on null AND undefined — an object whose parent failed to
+        // resolve (e.g. init-order/codegen issue) must not throw here. The `seen`
+        // guard defends against an accidental parent cycle (would otherwise loop forever).
+        let current: typeof gm_object | null | undefined = child?.parent
+        const seen = new Set<typeof gm_object>()
+        while (current != null) {
             if (current === this) return true
+            if (seen.has(current)) break
+            seen.add(current)
             current = current.parent
         }
         return false
@@ -153,4 +163,32 @@ export function object_get_parent(obj: typeof gm_object): typeof gm_object | nul
  */
 export function object_is_ancestor(obj: typeof gm_object, parent: typeof gm_object): boolean {
     return parent.is_ancestor_of(obj)
+}
+
+// =========================================================================
+// Object-name registry — resolve an object class from a string name
+// =========================================================================
+
+/** name → object class, populated at startup by the build's generated bootstrap. */
+const _object_names: Map<string, typeof gm_object> = new Map()
+
+/**
+ * Registers an object class under its project name. Called by the build's bootstrap; you
+ * normally never call this yourself.
+ * @param name - Object resource name (e.g. 'obj_wall')
+ * @param obj  - The object's class
+ */
+export function object_register_name(name: string, obj: typeof gm_object): void {
+    _object_names.set(name, obj)
+}
+
+/**
+ * Returns the object class for a resource name, or `undefined` if no such object exists.
+ * The GMS-style dynamic counterpart to writing the object's name directly: the result can be
+ * passed anywhere an object is expected (`place_meeting`, `instance_create`, …), and because
+ * matching is `instanceof`, resolving a *parent* still checks all of its children.
+ * @param name - Object resource name (e.g. 'par_solid')
+ */
+export function object_get(name: string): typeof gm_object | undefined {
+    return _object_names.get(name)
 }

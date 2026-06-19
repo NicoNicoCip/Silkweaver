@@ -3,6 +3,11 @@
     "compilerOptions": {
         "noEmit": true
     },
+    // Solution-style root: builds only its references (engine + ide). `files: []` stops the root
+    // from default-including every .ts in the repo — which would otherwise sweep in game files like
+    // the bundled templates' object classes (they resolve their auto-injected globals only at game
+    // build time). build/cli/electron are type-checked by their own `tsc -p` in the build scripts.
+    "files": [],
     "references": [
         { "path": "./packages/engine" },
         { "path": "./packages/ide" }

@@ -1,0 +1,44 @@
+{
+  "name": "Platformer",
+  "version": "1.0.0",
+  "engineVersion": "1.0.0",
+  "settings": {
+    "roomSpeed": 60,
+    "windowWidth": 640,
+    "windowHeight": 480,
+    "startRoom": "room_main",
+    "displayColor": "#10131c"
+  },
+  "resources": {
+    "sprites": {
+      "spr_player": {
+        "name": "spr_player"
+      },
+      "spr_platform": {
+        "name": "spr_platform"
+      }
+    },
+    "sounds": {},
+    "backgrounds": {},
+    "paths": {},
+    "scripts": {},
+    "fonts": {},
+    "timelines": {},
+    "objects": {
+      "obj_player": {
+        "name": "obj_player"
+      },
+      "_col": {
+        "name": "_col"
+      },
+      "obj_platform": {
+        "name": "obj_platform"
+      }
+    },
+    "rooms": {
+      "room_main": {
+        "name": "room_main"
+      }
+    }
+  }
+}

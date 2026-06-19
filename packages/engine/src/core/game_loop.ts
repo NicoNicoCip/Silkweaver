@@ -18,6 +18,9 @@ let _end_frame:   (() => void) | null = null
  */
 let _draw_room: ((rm: room, run_instances: () => void) => void) | null = null
 
+/** Max real time (ms) fed into the fixed-step accumulator per frame — caps catch-up after a stall. */
+const MAX_CATCHUP_MS = 250
+
 /**
  * Registers frame begin/end callbacks from the renderer.
  * Must be called from renderer.init() before the loop starts.
@@ -106,7 +109,10 @@ export abstract class game_loop {
         if (this._stopped) return
         this.room_delta = current - this.last_delta
         this.last_delta = current
-        this.accumulator += this.room_delta
+        // Clamp the catch-up budget: after a long stall (backgrounded tab, paused
+        // debugger), room_delta can be seconds — feeding that raw into the fixed-step
+        // accumulator would run hundreds of updates at once (spiral of death / freeze).
+        this.accumulator += Math.min(this.room_delta, MAX_CATCHUP_MS)
 
         // Frame timing globals (fps / fps_real / delta_time).
         this.delta_time_us = this.room_delta * 1000

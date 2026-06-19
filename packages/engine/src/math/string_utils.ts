@@ -9,7 +9,9 @@
  *   chr, ord, ansi_char, string_char_at, string_byte_at, string_byte_length,
  *   string_set_byte_at
  *
- * String indexing is 1-based (matching GMS), unlike JavaScript's 0-based indexing.
+ * String indexing is 0-based (JS convention) — Silkweaver's documented design decision,
+ * unlike GMS's 1-based strings. Position-returning functions (string_pos*) return the
+ * 0-based index, or -1 when not found (matching JS indexOf), not GMS's 0.
  */
 
 // =========================================================================
@@ -27,57 +29,56 @@ export function string_length(str: string): number {
 /**
  * Returns a substring.
  * @param str - Input string
- * @param index - Start index (1-based)
+ * @param index - Start index (0-based)
  * @param count - Number of characters to copy
  */
 export function string_copy(str: string, index: number, count: number): string {
-    return str.substring(index - 1, index - 1 + count)
+    return str.substring(index, index + count)
 }
 
 /**
- * Returns the 1-based position of substr in str, or 0 if not found.
+ * Returns the 0-based position of substr in str, or -1 if not found.
  * @param substr - Substring to search for
  * @param str - String to search in
  */
 export function string_pos(substr: string, str: string): number {
-    const i = str.indexOf(substr)
-    return i < 0 ? 0 : i + 1
+    return str.indexOf(substr)
 }
 
 /**
- * Returns the 1-based position of the nth occurrence of substr in str.
+ * Returns the 0-based position of the nth occurrence of substr in str, or -1 if not found.
  * @param substr - Substring to find
  * @param str - String to search in
  * @param occurrence - Which occurrence to find (1 = first)
  */
 export function string_pos_ext(substr: string, str: string, occurrence: number = 1): number {
-    let pos = 0
+    let from = 0, found = -1
     for (let i = 0; i < occurrence; i++) {
-        const found = str.indexOf(substr, pos)
-        if (found < 0) return 0
-        pos = found + (i < occurrence - 1 ? 1 : 0)
+        found = str.indexOf(substr, from)
+        if (found < 0) return -1
+        from = found + 1
     }
-    return pos + 1
+    return found
 }
 
 /**
- * Deletes count characters from str starting at index (1-based).
+ * Deletes count characters from str starting at index (0-based).
  * @param str - Input string
- * @param index - Start index (1-based)
+ * @param index - Start index (0-based)
  * @param count - Number of characters to delete
  */
 export function string_delete(str: string, index: number, count: number): string {
-    return str.slice(0, index - 1) + str.slice(index - 1 + count)
+    return str.slice(0, index) + str.slice(index + count)
 }
 
 /**
- * Inserts substr into str at 1-based index.
+ * Inserts substr into str at 0-based index.
  * @param substr - String to insert
  * @param str - Target string
- * @param index - Insertion position (1-based)
+ * @param index - Insertion position (0-based)
  */
 export function string_insert(substr: string, str: string, index: number): string {
-    return str.slice(0, index - 1) + substr + str.slice(index - 1)
+    return str.slice(0, index) + substr + str.slice(index)
 }
 
 /**
@@ -158,18 +159,18 @@ export function string_reverse(str: string): string {
 }
 
 /**
- * Returns a character at 1-based index.
+ * Returns a character at 0-based index.
  * Returns an empty string if out of range.
  */
 export function string_char_at(str: string, index: number): string {
-    return str[index - 1] ?? ''
+    return str[index] ?? ''
 }
 
 /**
- * Returns the byte value at 1-based index (uses charCodeAt).
+ * Returns the byte value at 0-based index (uses charCodeAt).
  */
 export function string_byte_at(str: string, index: number): number {
-    return str.charCodeAt(index - 1) || 0
+    return str.charCodeAt(index) || 0
 }
 
 /** Returns the byte length of the UTF-16 encoded string. */
@@ -194,11 +195,11 @@ export function ord(str: string): number {
 }
 
 /**
- * Returns the Unicode code point of the character at a 1-based index.
+ * Returns the Unicode code point of the character at a 0-based index.
  * GMS equivalent: string_ord_at(str, index)
  */
 export function string_ord_at(str: string, index: number): number {
-    return str.codePointAt(index - 1) ?? 0
+    return str.codePointAt(index) ?? 0
 }
 
 /** Alias for chr(), matching GMS's ansi_char. */

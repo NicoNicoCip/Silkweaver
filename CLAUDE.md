@@ -69,7 +69,7 @@ conditional spread: `...(x && { x })`).
 | API names | GMS function names (`draw_sprite`, `instance_create`) | Familiarity |
 | String indexing | 0-based | JS convention |
 | Arrays | Native JS arrays | TypeScript support |
-| Timers | Named (not alarm[0-11]) | More intuitive |
+| Timers | Numbered `alarm[0..11]` + `on_alarm(index)` | GMS parity |
 | Views | Unlimited | WebGL capability |
 | Game objects | Class-based | Modern OOP |
 | Async | Promise-based | Web standard |

@@ -135,11 +135,13 @@ function _close_all(bar: HTMLElement): void {
 // =========================================================================
 
 export interface menubar_actions {
+    file_start_page: () => void
     file_new:    () => void
     file_open:   () => void
     file_save:   () => void
     file_save_as:() => void
     edit_game_settings: () => void
+    edit_preferences:   () => void
     res_add_sprite:   () => void
     res_add_sound:    () => void
     res_add_background:() => void
@@ -154,6 +156,12 @@ export interface menubar_actions {
     view_debugger:   () => void
     view_profiler:   () => void
     view_preview:    () => void
+    view_zoom_in:          () => void
+    view_zoom_out:         () => void
+    view_zoom_reset:       () => void
+    view_editor_font_in:   () => void
+    view_editor_font_out:  () => void
+    view_editor_font_reset:() => void
     run_play:    () => void
     run_stop:    () => void
     run_build:   () => void
@@ -179,6 +187,8 @@ export function menubar_default(actions: menubar_actions): HTMLElement {
         {
             label: 'File',
             items: [
+                { label: 'Start Page',                          action: actions.file_start_page },
+                { separator: true },
                 { label: 'New Project',     shortcut: 'Ctrl+N', action: actions.file_new },
                 { label: 'Open Project…',   shortcut: 'Ctrl+O', action: actions.file_open },
                 { separator: true },
@@ -192,6 +202,7 @@ export function menubar_default(actions: menubar_actions): HTMLElement {
                 { label: 'Undo',           shortcut: 'Ctrl+Z',       disabled: true },
                 { label: 'Redo',           shortcut: 'Ctrl+Y',       disabled: true },
                 { separator: true },
+                { label: 'Preferences…',   shortcut: 'Ctrl+,',       action: actions.edit_preferences },
                 { label: 'Game Settings…', shortcut: 'Ctrl+Shift+P', action: actions.edit_game_settings },
             ],
         },
@@ -219,6 +230,14 @@ export function menubar_default(actions: menubar_actions): HTMLElement {
                 { label: 'Debugger',     shortcut: 'F9',     action: actions.view_debugger },
                 { label: 'Profiler',     shortcut: 'F10',    action: actions.view_profiler },
                 { label: 'Game Preview', shortcut: '',       action: actions.view_preview },
+                { separator: true },
+                { label: 'Zoom In',      shortcut: 'Ctrl++', action: actions.view_zoom_in },
+                { label: 'Zoom Out',     shortcut: 'Ctrl+-', action: actions.view_zoom_out },
+                { label: 'Reset Zoom',   shortcut: 'Ctrl+0', action: actions.view_zoom_reset },
+                { separator: true },
+                { label: 'Editor Font: Larger',  action: actions.view_editor_font_in },
+                { label: 'Editor Font: Smaller', action: actions.view_editor_font_out },
+                { label: 'Editor Font: Reset',   action: actions.view_editor_font_reset },
             ],
         },
         {

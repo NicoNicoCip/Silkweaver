@@ -10,6 +10,55 @@ import * as path    from 'node:path'
 import * as build   from '@silkweaver/build'
 
 // =========================================================================
+// Project file watcher (parallel-edit propagation)
+// =========================================================================
+
+let _win: BrowserWindow | null = null
+let _watcher: fs.FSWatcher | null = null
+const _last_written = new Map<string, string>()           // abs path → content the IDE last wrote
+const _watch_debounce = new Map<string, NodeJS.Timeout>()  // per-path debounce (fs.watch double-fires)
+
+/** Records what the IDE wrote so the watcher can tell our own saves from external edits. */
+function _note_write(abs_path: string, content: string): void {
+    _last_written.set(abs_path, content)
+}
+
+/** Starts (or restarts) a recursive watch of the project folder. */
+function _start_watch(folder: string): void {
+    _stop_watch()
+    if (!folder) return
+    try {
+        _watcher = fs.watch(folder, { recursive: true }, (_event, filename) => {
+            if (!filename) return
+            const fname = filename.toString()
+            if (!/\.(ts|json)$/i.test(fname)) return        // only code/manifest files matter to editors
+            const abs = path.join(folder, fname)
+            const prev = _watch_debounce.get(abs); if (prev) clearTimeout(prev)
+            _watch_debounce.set(abs, setTimeout(() => void _emit_change(folder, abs), 120))
+        })
+    } catch { /* recursive watch unsupported on this OS (e.g. Linux) — feature degrades to off */ }
+}
+
+function _stop_watch(): void {
+    if (_watcher) { try { _watcher.close() } catch { /* ignore */ } _watcher = null }
+    for (const t of _watch_debounce.values()) clearTimeout(t)
+    _watch_debounce.clear()
+}
+
+/** Reads the changed file, ignores our own writes, and notifies the renderer of external edits. */
+async function _emit_change(folder: string, abs: string): Promise<void> {
+    let content: string | null
+    try { content = await fs.promises.readFile(abs, 'utf8') } catch { content = null }   // deleted/unreadable
+    if (content !== null && content === _last_written.get(abs)) return   // our own save — ignore
+    if (content !== null) _last_written.set(abs, content)                // so repeat events don't re-fire
+    const rel = path.relative(folder, abs).replace(/\\/g, '/')
+    _win?.webContents.send('sw:file-changed', rel)
+}
+
+/** Renderer asks to watch a project folder (or null to stop). */
+ipcMain.handle('sw:watch-folder', (_e, folder: string | null) => { folder ? _start_watch(folder) : _stop_watch() })
+
+// =========================================================================
 // Window
 // =========================================================================
 
@@ -29,6 +78,8 @@ function create_window(): void {
         },
     })
 
+    _win = win
+    win.on('closed', () => { if (_win === win) _win = null })
     win.setMenuBarVisibility(false)
     win.loadFile(path.join(__dirname, '../../exports/ide/index.html'))
 
@@ -83,6 +134,7 @@ ipcMain.handle('sw:read-file-base64', async (_e, abs_path: string) => {
 
 /** Write a text file (creates intermediate directories) */
 ipcMain.handle('sw:write-file', async (_e, abs_path: string, content: string) => {
+    _note_write(abs_path, content)   // mark as our own so the watcher ignores the resulting event
     await fs.promises.mkdir(path.dirname(abs_path), { recursive: true })
     await fs.promises.writeFile(abs_path, content, 'utf8')
 })
@@ -151,19 +203,40 @@ ipcMain.handle('sw:export-exe', async (_e, project_folder: string, out_dir: stri
 })
 
 // =========================================================================
+// IPC — Starter templates (New Project)
+// =========================================================================
+
+/** Lists the bundled starter templates (id / label / description / display color). */
+ipcMain.handle('sw:list-templates', () => build.list_templates())
+
+/** Materializes a starter template into a new project folder (recursive copy + name patch). */
+ipcMain.handle('sw:create-from-template', async (_e, template_id: string, dest_folder: string, name?: string) => {
+    try {
+        await build.create_from_template(template_id, dest_folder, name)
+        return { ok: true }
+    } catch (e: any) {
+        return { ok: false, error: String(e?.message ?? e) }
+    }
+})
+
+// =========================================================================
 // IPC — Object class-file format (parse/patch for the object editor)
 // =========================================================================
 
 /** Whitelisted object_format operations callable from the renderer. */
 const OBJECT_OPS = {
-    parse_object:  build.parse_object,
-    set_static:    build.set_static,
-    remove_static: build.remove_static,
-    set_field:     build.set_field,
-    remove_field:  build.remove_field,
-    add_method:    build.add_method,
-    remove_method: build.remove_method,
-    scaffold:      build.scaffold_object,
+    parse_object:    build.parse_object,
+    this_members:    build.this_members,
+    set_static:      build.set_static,
+    remove_static:   build.remove_static,
+    set_field:       build.set_field,
+    remove_field:    build.remove_field,
+    add_method:      build.add_method,
+    remove_method:   build.remove_method,
+    get_event_body:  build.get_event_body,
+    set_event_body:  build.set_event_body,
+    normalize_object: build.normalize_object,
+    scaffold:        build.scaffold_object,
 } as const
 
 /** Generic dispatcher for class-file parse/patch ops (returns a model or patched source). */

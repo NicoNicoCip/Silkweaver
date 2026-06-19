@@ -138,7 +138,10 @@ export function serve(dir: string, port: number): http.Server {
         let rel = decodeURIComponent((req.url ?? '/').split('?')[0]!)
         if (rel === '/' || rel === '') rel = '/index.html'
         const file = path.join(dir, rel)
-        if (!file.startsWith(dir)) { res.writeHead(403).end('Forbidden'); return }
+        // Containment check: reject anything that escapes `dir` (path.relative avoids the
+        // prefix-match pitfall of startsWith, where a sibling dir with the same name prefix passes).
+        const within = path.relative(dir, file)
+        if (within.startsWith('..') || path.isAbsolute(within)) { res.writeHead(403).end('Forbidden'); return }
         fs.readFile(file, (err, data) => {
             if (err) { res.writeHead(404).end('Not found'); return }
             res.writeHead(200, { 'content-type': MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream' }).end(data)

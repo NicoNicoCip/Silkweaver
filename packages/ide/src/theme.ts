@@ -49,6 +49,9 @@ html, body {
 ::-webkit-scrollbar-thumb:hover { background: #888; }
 
 /* ── Frame layout: menubar · toolbar · [dock | splitter | workspace] · statusbar ── */
+/* When the Start Page is up, it IS the page — hide the editor chrome so nothing overlaps it. */
+body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
+
 #sw-toolbar {
     position: fixed;
     top: var(--sw-menubar-h); left: 0; right: 0;

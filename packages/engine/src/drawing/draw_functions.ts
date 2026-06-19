@@ -5,6 +5,7 @@
 
 import { renderer } from './renderer.js'
 import type { sprite } from './sprite.js'
+import { sprite_resolve } from './sprite.js'
 import type { surface } from './renderer.js'
 import { font_resource, font_get } from './font.js'
 
@@ -81,13 +82,14 @@ export function draw_set_blend_mode(mode: number): void {
 
 /**
  * Draws a sprite at the given position.
- * @param spr - Sprite resource
+ * @param spr - Sprite resource, or its id (e.g. from sprite_get_index('spr_x'))
  * @param subimg - Frame index (float, will be wrapped)
  * @param x - X position
  * @param y - Y position
  */
-export function draw_sprite(spr: sprite, subimg: number, x: number, y: number): void {
-    renderer.draw_sprite(spr, subimg, x, y)
+export function draw_sprite(spr: sprite | number, subimg: number, x: number, y: number): void {
+    const s = sprite_resolve(spr)
+    if (s) renderer.draw_sprite(s, subimg, x, y)
 }
 
 /**
@@ -103,12 +105,13 @@ export function draw_sprite(spr: sprite, subimg: number, x: number, y: number): 
  * @param alpha - Alpha (0–1)
  */
 export function draw_sprite_ext(
-    spr: sprite, subimg: number,
+    spr: sprite | number, subimg: number,
     x: number, y: number,
     xscale: number, yscale: number,
     rot: number, color: number, alpha: number
 ): void {
-    renderer.draw_sprite_ext(spr, subimg, x, y, xscale, yscale, rot, color, alpha)
+    const s = sprite_resolve(spr)
+    if (s) renderer.draw_sprite_ext(s, subimg, x, y, xscale, yscale, rot, color, alpha)
 }
 
 /**
@@ -123,11 +126,12 @@ export function draw_sprite_ext(
  * @param y - Destination Y
  */
 export function draw_sprite_part(
-    spr: sprite, subimg: number,
+    spr: sprite | number, subimg: number,
     left: number, top: number, width: number, height: number,
     x: number, y: number
 ): void {
-    renderer.draw_sprite_part(spr, subimg, left, top, width, height, x, y)
+    const s = sprite_resolve(spr)
+    if (s) renderer.draw_sprite_part(s, subimg, left, top, width, height, x, y)
 }
 
 /**
@@ -139,8 +143,9 @@ export function draw_sprite_part(
  * @param w - Target width in pixels
  * @param h - Target height in pixels
  */
-export function draw_sprite_stretched(spr: sprite, subimg: number, x: number, y: number, w: number, h: number): void {
-    renderer.draw_sprite_stretched(spr, subimg, x, y, w, h)
+export function draw_sprite_stretched(spr: sprite | number, subimg: number, x: number, y: number, w: number, h: number): void {
+    const s = sprite_resolve(spr)
+    if (s) renderer.draw_sprite_stretched(s, subimg, x, y, w, h)
 }
 
 // =========================================================================

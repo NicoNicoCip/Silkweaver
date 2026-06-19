@@ -96,17 +96,17 @@ export function regex_split(str: string, pattern: string, flags: string = ''): s
 }
 
 /**
- * Returns the 1-based index of the first match, or 0 if not found.
+ * Returns the 0-based index of the first match, or -1 if not found.
+ * Matches Silkweaver's 0-based string-indexing convention (see string_pos).
  * @param str - String to search
  * @param pattern - Regular expression pattern string
  * @param flags - RegExp flags
  */
 export function regex_pos(str: string, pattern: string, flags: string = ''): number {
     try {
-        const m = str.search(new RegExp(pattern, flags))
-        return m < 0 ? 0 : m + 1
+        return str.search(new RegExp(pattern, flags))   // 0-based index, or -1 if not found
     } catch {
-        return 0
+        return -1
     }
 }
 

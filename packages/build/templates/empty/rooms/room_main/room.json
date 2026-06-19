@@ -1,0 +1,16 @@
+{
+  "width": 640,
+  "height": 480,
+  "room_speed": 60,
+  "persistent": false,
+  "creation_code": "",
+  "instances": [],
+  "backgrounds": [],
+  "views": [],
+  "tiles": [],
+  "bg_color": "#1a1a2e",
+  "bg_show_color": true,
+  "physics_world": false,
+  "physics_gravity_x": 0,
+  "physics_gravity_y": 10
+}

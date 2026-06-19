@@ -50,6 +50,22 @@ export function set_draw_sprite_ext(fn: typeof _renderer_draw_sprite_ext): void 
 }
 
 /**
+ * GMS-style object matching used by all collision/instance functions: true when `inst` is an
+ * instance of object `obj`, OR `obj` is an ancestor of `inst`'s object via the `static parent`
+ * chain. Raw `instanceof` only sees JS inheritance, but Silkweaver objects all `extend gm_object`
+ * and carry their GMS parent as `static parent` metadata — so `place_meeting(x, y, par)` must walk
+ * that chain for a parent to match its children (exactly like GameMaker).
+ * @param inst - The instance to test
+ * @param obj  - The object class (or a parent) to match against
+ */
+export function object_match(inst: instance, obj: typeof instance): boolean {
+    const ctor = inst.constructor   // capture before instanceof narrows `inst`
+    if (inst instanceof obj) return true
+    const is_ancestor_of = (obj as any).is_ancestor_of
+    return typeof is_ancestor_of === 'function' && is_ancestor_of.call(obj, ctor)
+}
+
+/**
  * Base class for all game object instances.
  * Instances exist within rooms and can have events, properties, and behaviors.
  */
@@ -447,7 +463,7 @@ export class instance extends resource {
         if (!rm) return 0
         let count = 0
         for (const inst of rm.instance_get_all()) {
-            if (inst instanceof obj && inst.active) count++
+            if (object_match(inst, obj) && inst.active) count++
         }
         return count
     }
@@ -463,7 +479,7 @@ export class instance extends resource {
         if (!rm) return undefined
         let i = 0
         for (const inst of rm.instance_get_all()) {
-            if (inst instanceof obj && inst.active) {
+            if (object_match(inst, obj) && inst.active) {
                 if (i === n) return inst
                 i++
             }
@@ -482,7 +498,7 @@ export class instance extends resource {
         const rm = game_loop.room
         if (!rm) return undefined
         for (const inst of rm.instance_get_all()) {
-            if (inst instanceof obj && inst.active && point_in_instance(x, y, inst)) {
+            if (object_match(inst, obj) && inst.active && point_in_instance(x, y, inst)) {
                 return inst
             }
         }
@@ -502,7 +518,7 @@ export class instance extends resource {
         let nearest: instance | undefined
         let min_dist = Infinity
         for (const inst of rm.instance_get_all()) {
-            if (inst instanceof obj && inst.active) {
+            if (object_match(inst, obj) && inst.active) {
                 const dx = inst.x - x
                 const dy = inst.y - y
                 const d = dx * dx + dy * dy
@@ -528,7 +544,7 @@ export class instance extends resource {
         let furthest: instance | undefined
         let max_dist = -1
         for (const inst of rm.instance_get_all()) {
-            if (inst instanceof obj && inst.active) {
+            if (object_match(inst, obj) && inst.active) {
                 const dx = inst.x - x
                 const dy = inst.y - y
                 const d = dx * dx + dy * dy
@@ -563,7 +579,7 @@ export class instance extends resource {
         const rm = game_loop.room
         if (!rm) return
         for (const inst of rm.instance_get_all()) {
-            if (inst instanceof obj) inst.active = false
+            if (object_match(inst, obj)) inst.active = false
         }
     }
 
@@ -586,7 +602,7 @@ export class instance extends resource {
         const rm = game_loop.room
         if (!rm) return
         for (const inst of rm.instance_get_all()) {
-            if (inst instanceof obj) inst.active = true
+            if (object_match(inst, obj)) inst.active = true
         }
     }
 
@@ -657,7 +673,7 @@ export class instance extends resource {
         if (!rm) return false
         for (const other of rm.instance_get_all()) {
             if (other === this) continue
-            if (!(other instanceof obj)) continue
+            if (!(object_match(other, obj))) continue
             if (!other.active) continue
             if (instances_collide(this, x, y, other)) return true
         }
@@ -710,7 +726,7 @@ export class instance extends resource {
         if (!rm) return undefined
         for (const other of rm.instance_get_all()) {
             if (other === this || !other.active) continue
-            if (!(other instanceof obj)) continue
+            if (!(object_match(other, obj))) continue
             if (instances_collide(this, x, y, other)) return other
         }
         return undefined
@@ -891,7 +907,7 @@ export class instance extends resource {
         let min_dist = Infinity
         for (const inst of rm.instance_get_all()) {
             if (inst === this || !inst.active) continue
-            if (!(inst instanceof obj)) continue
+            if (!(object_match(inst, obj))) continue
             const dx = inst.x - this.x
             const dy = inst.y - this.y
             const d = Math.sqrt(dx * dx + dy * dy)
@@ -1438,7 +1454,7 @@ export function with_object<T extends instance>(
     const rm = game_loop.room
     if (!rm) return
     for (const inst of rm.instance_get_all()) {
-        if (inst instanceof obj && inst.active) {
+        if (object_match(inst, obj) && inst.active) {
             callback(inst as T)
         }
     }
@@ -1454,7 +1470,7 @@ export function collision_point(x: number, y: number, obj: typeof instance): ins
     const rm = game_loop.room
     if (!rm) return undefined
     for (const inst of rm.instance_get_all()) {
-        if (inst instanceof obj && inst.active && point_in_instance(x, y, inst)) return inst
+        if (object_match(inst, obj) && inst.active && point_in_instance(x, y, inst)) return inst
     }
     return undefined
 }
@@ -1478,7 +1494,7 @@ export function collision_rectangle(x1: number, y1: number, x2: number, y2: numb
     const rm = game_loop.room
     if (!rm) return undefined
     for (const inst of rm.instance_get_all()) {
-        if (inst instanceof obj && inst.active && rect_in_instance(x1, y1, x2, y2, inst)) return inst
+        if (object_match(inst, obj) && inst.active && rect_in_instance(x1, y1, x2, y2, inst)) return inst
     }
     return undefined
 }
@@ -1488,7 +1504,7 @@ export function collision_circle(x: number, y: number, radius: number, obj: type
     const rm = game_loop.room
     if (!rm) return undefined
     for (const inst of rm.instance_get_all()) {
-        if (inst instanceof obj && inst.active && circle_in_instance(x, y, radius, inst)) return inst
+        if (object_match(inst, obj) && inst.active && circle_in_instance(x, y, radius, inst)) return inst
     }
     return undefined
 }
@@ -1498,7 +1514,7 @@ export function collision_line(x1: number, y1: number, x2: number, y2: number, o
     const rm = game_loop.room
     if (!rm) return undefined
     for (const inst of rm.instance_get_all()) {
-        if (inst instanceof obj && inst.active && line_in_instance(x1, y1, x2, y2, inst)) return inst
+        if (object_match(inst, obj) && inst.active && line_in_instance(x1, y1, x2, y2, inst)) return inst
     }
     return undefined
 }

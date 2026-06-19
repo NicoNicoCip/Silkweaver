@@ -144,6 +144,16 @@ function _sprite_by_id(sprite_index: number): sprite | null {
     return res instanceof sprite ? res : null
 }
 
+/**
+ * Resolves a sprite argument that may be a sprite object OR a resource id
+ * (e.g. from `sprite_get_index('spr_x')`). Lets the draw_sprite_* family accept
+ * an index the GMS way as well as a direct sprite object. Returns null if unresolvable.
+ * @param spr - A sprite object or its resource id
+ */
+export function sprite_resolve(spr: sprite | number): sprite | null {
+    return typeof spr === 'number' ? _sprite_by_id(spr) : (spr ?? null)
+}
+
 /** Returns true if the id refers to a sprite resource. */
 export function sprite_exists(sprite_index: number): boolean {
     return _sprite_by_id(sprite_index) !== null

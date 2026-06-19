@@ -1,132 +1,376 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Silkweaver — a 2D game engine inspired by GameMaker 1.4</title>
-<meta name="description" content="Silkweaver is a 2D game engine and editor inspired by GameMaker Studio 1.4, written in modern TypeScript. Make a game with the IDE or the CLI, or use the WebGL2 engine as a library.">
-<style>
-  :root{
-    --bg:#1b1b1b; --panel:#222; --panel2:#262626; --fg:#e6e6e6; --muted:#9a9a9a;
-    --border:#363636; --accent:#4cc2ff; --accent2:#2b88d8; --code:#181818; --codefg:#9cdcfe;
-    --title:#cfe0ff; --pill:#2a2a2a;
-  }
-  *{box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{margin:0;background:var(--bg);color:var(--fg);
-    font:16px/1.6 "Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif}
-  a{color:var(--accent);text-decoration:none}
-  a:hover{text-decoration:underline}
-  code{font-family:Consolas,"SF Mono",Menlo,monospace;background:#2a2a2a;padding:1px 5px;border-radius:4px;font-size:.9em}
-  .wrap{max-width:960px;margin:0 auto;padding:0 22px}
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Silkweaver — a 2D game engine inspired by GameMaker 1.4</title>
+    <meta name="description"
+        content="Silkweaver is a 2D game engine and editor inspired by GameMaker Studio 1.4, written in modern TypeScript. Make a game with the IDE or the CLI, or use the WebGL2 engine as a library.">
+    <style>
+        :root {
+            --bg: #1b1b1b;
+            --panel: #222;
+            --panel2: #262626;
+            --fg: #e6e6e6;
+            --muted: #9a9a9a;
+            --border: #363636;
+            --accent: #4cc2ff;
+            --accent2: #2b88d8;
+            --code: #181818;
+            --codefg: #9cdcfe;
+            --title: #cfe0ff;
+            --pill: #2a2a2a;
+        }
 
-  /* top nav */
-  header{position:sticky;top:0;z-index:10;background:rgba(27,27,27,.86);backdrop-filter:blur(8px);
-    border-bottom:1px solid var(--border)}
-  nav{display:flex;align-items:center;gap:18px;height:58px}
-  .brand{font-weight:700;font-size:18px;color:var(--fg)}
-  .brand span{color:var(--accent)}
-  nav .links{margin-left:auto;display:flex;gap:20px;flex-wrap:wrap}
-  nav .links a{color:var(--muted);font-size:14px}
-  nav .links a:hover{color:var(--fg);text-decoration:none}
+        * {
+            box-sizing: border-box
+        }
 
-  /* hero */
-  .hero{padding:74px 0 56px;text-align:center}
-  .hero h1{font-size:44px;line-height:1.15;margin:0 0 14px;color:#fff;letter-spacing:-.5px}
-  .hero p.lead{font-size:19px;color:var(--muted);max-width:680px;margin:0 auto 28px}
-  .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-  .btn{display:inline-block;padding:11px 20px;border-radius:8px;font-weight:600;font-size:15px;border:1px solid var(--border)}
-  .btn.primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
-  .btn.primary:hover{background:var(--accent);text-decoration:none}
-  .btn.ghost{background:transparent;color:var(--fg)}
-  .btn.ghost:hover{border-color:var(--accent);text-decoration:none}
-  .tag{display:inline-block;margin-top:26px;color:var(--muted);font-size:13px}
-  .tag b{color:var(--fg)}
+        html {
+            scroll-behavior: smooth
+        }
 
-  section{padding:40px 0;border-top:1px solid var(--border)}
-  h2{font-size:25px;color:var(--title);margin:0 0 6px}
-  .sub{color:var(--muted);margin:0 0 24px}
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--fg);
+            font: 16px/1.6 "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif
+        }
 
-  /* two audiences */
-  .cards{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:22px}
-  .card h3{margin:0 0 8px;font-size:18px;color:#fff}
-  .card p{margin:0 0 14px;color:var(--muted);font-size:15px}
+        a {
+            color: var(--accent);
+            text-decoration: none
+        }
 
-  pre{background:var(--code);border:1px solid var(--border);border-radius:10px;padding:16px 18px;overflow:auto;
-    font-family:Consolas,"SF Mono",Menlo,monospace;font-size:13.5px;color:var(--codefg);line-height:1.55}
-  pre .c{color:#6a9955}
-  pre .k{color:#569cd6}
+        a:hover {
+            text-decoration: underline
+        }
 
-  .feat{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-  .pill{background:var(--pill);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:14px;color:var(--fg)}
-  .pill b{display:block;color:var(--accent);font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+        code {
+            font-family: Consolas, "SF Mono", Menlo, monospace;
+            background: #2a2a2a;
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-size: .9em
+        }
 
-  .start{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-  .start h3{font-size:16px;margin:0 0 8px;color:#fff}
+        .wrap {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 0 22px
+        }
 
-  footer{border-top:1px solid var(--border);padding:30px 0;color:var(--muted);font-size:14px}
-  footer .wrap{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
-  footer a{color:var(--muted)} footer a:hover{color:var(--fg)}
-  footer .sp{margin-left:auto}
+        /* top nav */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: rgba(27, 27, 27, .86);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid var(--border)
+        }
 
-  @media (max-width:720px){
-    .cards,.feat,.start{grid-template-columns:1fr}
-    .hero h1{font-size:34px}
-    nav .links a:nth-child(1){display:none}
-  }
-</style>
+        nav {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            height: 58px
+        }
+
+        .brand {
+            font-weight: 700;
+            font-size: 18px;
+            color: var(--fg)
+        }
+
+        .brand span {
+            color: var(--accent)
+        }
+
+        nav .links {
+            margin-left: auto;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap
+        }
+
+        nav .links a {
+            color: var(--muted);
+            font-size: 14px
+        }
+
+        nav .links a:hover {
+            color: var(--fg);
+            text-decoration: none
+        }
+
+        /* hero */
+        .hero {
+            padding: 74px 0 56px;
+            text-align: center
+        }
+
+        .hero h1 {
+            font-size: 44px;
+            line-height: 1.15;
+            margin: 0 0 14px;
+            color: #fff;
+            letter-spacing: -.5px
+        }
+
+        .hero p.lead {
+            font-size: 19px;
+            color: var(--muted);
+            max-width: 680px;
+            margin: 0 auto 28px
+        }
+
+        .cta {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 11px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 15px;
+            border: 1px solid var(--border)
+        }
+
+        .btn.primary {
+            background: var(--accent2);
+            border-color: var(--accent2);
+            color: #fff
+        }
+
+        .btn.primary:hover {
+            background: var(--accent);
+            text-decoration: none
+        }
+
+        .btn.ghost {
+            background: transparent;
+            color: var(--fg)
+        }
+
+        .btn.ghost:hover {
+            border-color: var(--accent);
+            text-decoration: none
+        }
+
+        .tag {
+            display: inline-block;
+            margin-top: 26px;
+            color: var(--muted);
+            font-size: 13px
+        }
+
+        .tag b {
+            color: var(--fg)
+        }
+
+        section {
+            padding: 40px 0;
+            border-top: 1px solid var(--border)
+        }
+
+        h2 {
+            font-size: 25px;
+            color: var(--title);
+            margin: 0 0 6px
+        }
+
+        .sub {
+            color: var(--muted);
+            margin: 0 0 24px
+        }
+
+        /* two audiences */
+        .cards {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px
+        }
+
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 22px
+        }
+
+        .card h3 {
+            margin: 0 0 8px;
+            font-size: 18px;
+            color: #fff
+        }
+
+        .card p {
+            margin: 0 0 14px;
+            color: var(--muted);
+            font-size: 15px
+        }
+
+        pre {
+            background: var(--code);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px 18px;
+            overflow: auto;
+            font-family: Consolas, "SF Mono", Menlo, monospace;
+            font-size: 13.5px;
+            color: var(--codefg);
+            line-height: 1.55
+        }
+
+        pre .c {
+            color: #6a9955
+        }
+
+        pre .k {
+            color: #569cd6
+        }
+
+        .feat {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px
+        }
+
+        .pill {
+            background: var(--pill);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 14px;
+            color: var(--fg)
+        }
+
+        .pill b {
+            display: block;
+            color: var(--accent);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            margin-bottom: 2px
+        }
+
+        .start {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px
+        }
+
+        .start h3 {
+            font-size: 16px;
+            margin: 0 0 8px;
+            color: #fff
+        }
+
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 30px 0;
+            color: var(--muted);
+            font-size: 14px
+        }
+
+        footer .wrap {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+            align-items: center
+        }
+
+        footer a {
+            color: var(--muted)
+        }
+
+        footer a:hover {
+            color: var(--fg)
+        }
+
+        footer .sp {
+            margin-left: auto
+        }
+
+        @media (max-width:720px) {
+
+            .cards,
+            .feat,
+            .start {
+                grid-template-columns: 1fr
+            }
+
+            .hero h1 {
+                font-size: 34px
+            }
+
+            nav .links a:nth-child(1) {
+                display: none
+            }
+        }
+    </style>
 </head>
+
 <body>
-<header><div class="wrap"><nav>
-  <div class="brand">Silk<span>weaver</span></div>
-  <div class="links">
-    <a href="#make">Make a game</a>
-    <a href="#engine">Engine</a>
-    <a href="api/index.html">Docs</a>
-    <a href="https://github.com/NicoNicoCip/Silkweaver">GitHub</a>
-  </div>
-</nav></div></header>
+    <header>
+        <div class="wrap">
+            <nav>
+                <div class="brand">Silk<span>weaver</span></div>
+                <div class="links">
+                    <a href="#make">Make a game</a>
+                    <a href="#engine">Engine</a>
+                    <a href="api/index.html">Docs</a>
+                    <a href="https://github.com/NicoNicoCip/Silkweaver">GitHub</a>
+                </div>
+            </nav>
+        </div>
+    </header>
 
-<div class="wrap">
+    <div class="wrap">
 
-  <div class="hero">
-    <h1>A 2D game engine,<br>in the spirit of GameMaker 1.4</h1>
-    <p class="lead">Silkweaver keeps the familiar GameMaker workflow — sprites, objects, rooms, events,
-      and function names you already know — rebuilt in modern TypeScript with WebGL&nbsp;2. Make a game
-      with the editor, with code, or use the engine entirely on its own.</p>
-    <div class="cta">
-      <a class="btn primary" href="https://github.com/NicoNicoCip/Silkweaver/releases">Download the IDE</a>
-      <a class="btn ghost" href="api/index.html">Read the docs</a>
-    </div>
-    <div class="tag"><b>1.0.0</b> · WebGL 2 · Web Audio · matter.js physics · GPL-3.0</div>
-  </div>
+        <div class="hero">
+            <h1>A 2D game engine,<br>in the spirit of GameMaker 1.4</h1>
+            <p class="lead">Silkweaver keeps the familiar GameMaker workflow — sprites, objects, rooms, events,
+                and function names you already know — rebuilt in modern TypeScript with WebGL&nbsp;2. Make a game
+                with the editor, with code, or use the engine entirely on its own.</p>
+            <div class="cta">
+                <a class="btn primary" href="https://github.com/NicoNicoCip/Silkweaver/releases">Download the IDE</a>
+                <a class="btn ghost" href="api/index.html">Read the docs</a>
+            </div>
+            <div class="tag"><b>1.0.0</b> · WebGL 2 · Web Audio · matter.js physics · GPL-3.0</div>
+        </div>
 
-  <section id="make">
-    <h2>Two ways in</h2>
-    <p class="sub">Both read and write the same plain project folder, so you can switch whenever you like.</p>
-    <div class="cards">
-      <div class="card">
-        <h3>Make a game</h3>
-        <p>Use the GameMaker-style desktop IDE — resource tree, sprite/object/room editors, a code
-          editor, and one-click Play and Export. Prefer code? The <code>silkweaver</code> CLI gives you
-          the same workflow from the terminal.</p>
-        <a href="#start">Get started →</a>
-      </div>
-      <div class="card">
-        <h3>Use the engine</h3>
-        <p>Just want the runtime? <code>@silkweaver/engine</code> is a standalone WebGL 2 + Web Audio
-          library. Install it, import what you need, and drive your own loop — no editor, no project
-          format, no lock-in.</p>
-        <a href="#engine">See how →</a>
-      </div>
-    </div>
-  </section>
+        <section id="make">
+            <h2>Two ways in</h2>
+            <p class="sub">Both read and write the same plain project folder, so you can switch whenever you like.</p>
+            <div class="cards">
+                <div class="card">
+                    <h3>Make a game</h3>
+                    <p>Use the GameMaker-style desktop IDE — resource tree, sprite/object/room editors, a code
+                        editor, and one-click Play and Export. Prefer code? The <code>silkweaver</code> CLI gives you
+                        the same workflow from the terminal.</p>
+                    <a href="#start">Get started →</a>
+                </div>
+                <div class="card">
+                    <h3>Use the engine</h3>
+                    <p>Just want the runtime? <code>@silkweaver/engine</code> is a standalone WebGL 2 + Web Audio
+                        library. Install it, import what you need, and drive your own loop — no editor, no project
+                        format, no lock-in.</p>
+                    <a href="#engine">See how →</a>
+                </div>
+            </div>
+        </section>
 
-  <section>
-    <h2>Familiar by design</h2>
-    <p class="sub">A game is one file per object — a class with settings, variables, and event methods.</p>
-<pre><span class="k">export class</span> obj_player <span class="k">extends</span> gm_object {
+        <section>
+            <h2>Familiar by design</h2>
+            <p class="sub">A game is one file per object — a class with settings, variables, and event methods.</p>
+            <pre><span class="k">export class</span> obj_player <span class="k">extends</span> gm_object {
     <span class="k">static</span> sprite = <span style="color:#ce9178">'spr_player'</span>    <span class="c">// object settings</span>
     <span class="k">static</span> solid  = <span class="k">true</span>
     hp = <span style="color:#b5cea8">100</span>                        <span class="c">// instance variables</span>
@@ -140,42 +384,44 @@
         <span class="k">this</span>.draw_self()
     }
 }</pre>
-    <p class="sub" style="margin-top:14px">Engine functions like <code>keyboard_check</code> and
-      <code>draw_text</code> are available without imports — the build wires them in. Anything that acts
-      on <em>this</em> instance uses <code>this.</code></p>
-  </section>
+            <p class="sub" style="margin-top:14px">Engine functions like <code>keyboard_check</code> and
+                <code>draw_text</code> are available without imports — the build wires them in. Anything that acts
+                on <em>this</em> instance uses <code>this.</code>
+            </p>
+        </section>
 
-  <section>
-    <h2>What's in the box</h2>
-    <p class="sub">The full GameMaker 1.4 surface (everything except drag-and-drop).</p>
-    <div class="feat">
-      <div class="pill"><b>Drawing</b>Sprites, shapes, text, surfaces, blend modes</div>
-      <div class="pill"><b>Audio</b>Web Audio, including 3D / spatial sound</div>
-      <div class="pill"><b>Physics</b>matter.js, wired through object metadata</div>
-      <div class="pill"><b>Input</b>Keyboard, mouse, gamepad, touch</div>
-      <div class="pill"><b>Rooms</b>Views, backgrounds, tiles, persistence</div>
-      <div class="pill"><b>Motion</b>Paths, timelines, mp_* pathfinding</div>
-      <div class="pill"><b>Data</b>All the <code>ds_*</code> structures, ini/file/json storage</div>
-      <div class="pill"><b>Maths</b>Vectors, random, string &amp; colour helpers</div>
-      <div class="pill"><b>More</b>Particles, networking, 3D basics</div>
-    </div>
-  </section>
+        <section>
+            <h2>What's in the box</h2>
+            <p class="sub">The full GameMaker 1.4 surface (everything except drag-and-drop).</p>
+            <div class="feat">
+                <div class="pill"><b>Drawing</b>Sprites, shapes, text, surfaces, blend modes</div>
+                <div class="pill"><b>Audio</b>Web Audio, including 3D / spatial sound</div>
+                <div class="pill"><b>Physics</b>matter.js, wired through object metadata</div>
+                <div class="pill"><b>Input</b>Keyboard, mouse, gamepad, touch</div>
+                <div class="pill"><b>Rooms</b>Views, backgrounds, tiles, persistence</div>
+                <div class="pill"><b>Motion</b>Paths, timelines, mp_* pathfinding</div>
+                <div class="pill"><b>Data</b>All the <code>ds_*</code> structures, ini/file/json storage</div>
+                <div class="pill"><b>Maths</b>Vectors, random, string &amp; colour helpers</div>
+                <div class="pill"><b>More</b>Particles, networking, 3D basics</div>
+            </div>
+        </section>
 
-  <section id="start">
-    <h2>Get started</h2>
-    <div class="start">
-      <div>
-        <h3>Make a game (CLI)</h3>
-<pre>npx silkweaver new my-game
+        <section id="start">
+            <h2>Get started</h2>
+            <div class="start">
+                <div>
+                    <h3>Make a game (CLI)</h3>
+                    <pre>npx silkweaver new my-game
 <span class="k">cd</span> my-game
 npx silkweaver run</pre>
-        <p class="sub" style="margin-top:10px">Or <a href="https://github.com/NicoNicoCip/Silkweaver/releases">download the IDE</a>
-          for a visual editor — no terminal needed.</p>
-      </div>
-      <div id="engine">
-        <h3>Use the engine (library)</h3>
-<pre>npm install @silkweaver/engine</pre>
-<pre><span class="k">import</span> { renderer, game_loop, EVENT_TYPE,
+                    <p class="sub" style="margin-top:10px">Or <a
+                            href="https://github.com/NicoNicoCip/Silkweaver/releases">download the IDE</a>
+                        for a visual editor — no terminal needed.</p>
+                </div>
+                <div id="engine">
+                    <h3>Use the engine (library)</h3>
+                    <pre>npm install @silkweaver/engine</pre>
+                    <pre><span class="k">import</span> { renderer, game_loop, EVENT_TYPE,
     draw_set_color, draw_rectangle, c_white }
     <span class="k">from</span> <span style="color:#ce9178">'@silkweaver/engine'</span>
 
@@ -185,28 +431,31 @@ game_loop.register(EVENT_TYPE.draw, () => {
     draw_rectangle(<span style="color:#b5cea8">32</span>, <span style="color:#b5cea8">32</span>, <span style="color:#b5cea8">96</span>, <span style="color:#b5cea8">96</span>, <span class="k">false</span>)
 })
 game_loop.start()</pre>
-      </div>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>Documentation</h2>
+            <p class="sub">The API reference is generated straight from the engine source and JSDoc, so it
+                can't drift from the code.</p>
+            <div class="cta" style="justify-content:flex-start">
+                <a class="btn primary" href="api/index.html">API reference &amp; guides</a>
+                <a class="btn ghost" href="https://github.com/NicoNicoCip/Silkweaver">Source on GitHub</a>
+            </div>
+        </section>
+
     </div>
-  </section>
 
-  <section>
-    <h2>Documentation</h2>
-    <p class="sub">The API reference is generated straight from the engine source and JSDoc, so it
-      can't drift from the code.</p>
-    <div class="cta" style="justify-content:flex-start">
-      <a class="btn primary" href="api/index.html">API reference &amp; guides</a>
-      <a class="btn ghost" href="https://github.com/NicoNicoCip/Silkweaver">Source on GitHub</a>
-    </div>
-  </section>
-
-</div>
-
-<footer><div class="wrap">
-  <span>Silkweaver · GPL-3.0</span>
-  <a href="api/index.html">Docs</a>
-  <a href="https://github.com/NicoNicoCip/Silkweaver">GitHub</a>
-  <a href="https://github.com/NicoNicoCip/Silkweaver/releases">Releases</a>
-  <span class="sp">Happy weaving. 🕸️</span>
-</div></footer>
+    <footer>
+        <div class="wrap">
+            <span>Silkweaver · GPL-3.0</span>
+            <a href="api/index.html">Docs</a>
+            <a href="https://github.com/NicoNicoCip/Silkweaver">GitHub</a>
+            <a href="https://github.com/NicoNicoCip/Silkweaver/releases">Releases</a>
+            <span class="sp">Happy weaving. 🕸️</span>
+        </div>
+    </footer>
 </body>
+
 </html>

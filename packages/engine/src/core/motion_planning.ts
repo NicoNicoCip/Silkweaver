@@ -11,6 +11,7 @@
 
 import { game_loop } from './game_loop.js'
 import type { instance } from './instance.js'
+import { object_match } from './instance.js'
 import { path_clear_points, path_add_point } from './path.js'
 
 // =========================================================================
@@ -115,7 +116,7 @@ export function mp_grid_add_instances(grid_id: number, obj: typeof instance, _pr
     const room = game_loop.room
     if (!g || !room) return
     for (const inst of room.instance_get_all()) {
-        if (!(inst instanceof obj) || !inst.active) continue
+        if (!object_match(inst, obj) || !inst.active) continue
         _rect_cells(g, inst.bbox_left, inst.bbox_top, inst.bbox_right, inst.bbox_bottom, 1)
     }
 }

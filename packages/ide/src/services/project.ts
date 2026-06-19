@@ -33,6 +33,7 @@ const _el = () => (window as any).swfs as {
     copy:             (src: string, dst: string) => Promise<void>
     delete_path:      (target: string) => Promise<void>
     join:             (...parts: string[]) => string
+    create_from_template: (template_id: string, dest_folder: string, name?: string) => Promise<{ ok: boolean; error?: string }>
 } | undefined
 
 const _has_electron = () => !!_el()
@@ -328,6 +329,79 @@ export function project_get_dir(): FileSystemDirectoryHandle | null {
  */
 export function project_has_folder(): boolean {
     return !!_folder_path || !!_dir_handle
+}
+
+/**
+ * Opens the desktop folder picker (Electron only; the deprecated browser backend has no
+ * persistent paths). Returns the chosen absolute folder path, or null if cancelled/unsupported.
+ * @param mode - 'open' to choose an existing project, 'save' to choose where a new one lives
+ */
+export async function project_pick_folder(mode: 'open' | 'save', defaultPath?: string): Promise<string | null> {
+    const fs = _el()
+    if (!fs) return null
+    return fs.pick_folder(mode, defaultPath)
+}
+
+/** Joins path segments with the host's separator (Electron); falls back to '/' in the browser. */
+export function project_join(...parts: string[]): string {
+    const fs = _el()
+    return fs ? fs.join(...parts) : parts.join('/')
+}
+
+/** True when running in the Electron desktop host (path-based projects + recent list). */
+export function project_is_desktop(): boolean {
+    return !!_el()
+}
+
+/**
+ * Opens a project from a specific folder path (Electron only) — used by the Start Page's
+ * recent list. Sets it as the active folder and returns its state, or null if missing.
+ */
+export async function project_open_path(folder: string): Promise<project_state | null> {
+    const fs = _el()
+    if (!fs) return null
+    try {
+        const proj_path = fs.join(folder, 'project.json')
+        if (!(await fs.exists(proj_path))) return null
+        const state = JSON.parse(await fs.read_file(proj_path)) as project_state
+        _folder_path = folder
+        localStorage.setItem(LAST_FOLDER_KEY, folder)
+        return state
+    } catch {
+        return null
+    }
+}
+
+/**
+ * Materializes a bundled starter template into a new project folder (Electron only). Recursively
+ * copies the template's project folder and writes `name` into its project.json. Open it afterwards
+ * with `project_open_path(dest_folder)`.
+ * @param template_id - 'empty' | 'platformer' | 'topdown'
+ * @param dest_folder - Absolute path of the new project folder
+ * @param name        - Display name for the project
+ */
+export async function project_create_from_template(template_id: string, dest_folder: string, name: string): Promise<{ ok: boolean; error?: string }> {
+    const fs = _el()
+    if (!fs) return { ok: false, error: 'Creating from a template requires the desktop app.' }
+    return fs.create_from_template(template_id, dest_folder, name)
+}
+
+/**
+ * Renames a project's display name in its project.json on disk, without opening it (Electron only).
+ * The folder is left as-is. Returns true on success.
+ */
+export async function project_rename_at(folder: string, new_name: string): Promise<boolean> {
+    const fs = _el()
+    if (!fs) return false
+    try {
+        const p = fs.join(folder, 'project.json')
+        const state = JSON.parse(await fs.read_file(p)) as project_state
+        state.name = new_name
+        await fs.write_file(p, JSON.stringify(state, null, 2))
+        return true
+    } catch {
+        return false
+    }
 }
 
 // =========================================================================

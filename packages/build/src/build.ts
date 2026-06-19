@@ -17,6 +17,7 @@ import * as path from 'node:path'
 import * as os   from 'node:os'
 import { pathToFileURL } from 'node:url'
 import type { project_file as project_data, room_file } from '@silkweaver/project'
+import { parse_object } from './object_format.js'
 
 export type { project_data }
 
@@ -74,7 +75,8 @@ async function generate_entry_code(
     proj: project_data,
     asset_mode: 'preview' | 'export',
 ): Promise<string> {
-        const object_names   = Object.keys(proj.resources.objects ?? {})
+        // Parent-before-child so generated imports/registrations init objects in dependency order.
+        const object_names   = await _objects_parent_first(project_folder, Object.keys(proj.resources.objects ?? {}))
         const room_names     = Object.keys(proj.resources.rooms   ?? {})
         const sprite_names   = Object.keys(proj.resources.sprites ?? {})
         const script_names   = Object.keys(proj.resources.scripts ?? {})
@@ -88,10 +90,12 @@ async function generate_entry_code(
         // Each object is a single class file: objects/<name>.ts (a gm_object subclass).
         // It is imported as-is; metadata/variables/events all live in the class.
         const object_imports: string[] = []
+        const object_registrations: string[] = []   // object_register_name('x', x) → resolves object_get('x')
         for (const obj_name of object_names) {
             const class_file = path.join(project_folder, 'objects', `${obj_name}.ts`)
             if (await _path_exists(class_file)) {
                 object_imports.push(`import { ${obj_name} } from '${class_file.replace(/\\/g, '/')}'`)
+                object_registrations.push(`object_register_name('${obj_name}', ${obj_name})`)
             } else {
                 console.warn(`[build] object '${obj_name}' has no objects/${obj_name}.ts — skipped`)
             }
@@ -304,6 +308,9 @@ ${engine_import}
 
 ${object_imports.join('\n')}
 
+// Register objects by name so object_get('name') resolves them at runtime.
+${object_registrations.join('\n')}
+
 ${script_imports}
 
 // ── Sprite loader ───────────────────────────────────────────────────────────
@@ -483,7 +490,23 @@ async function bundle_game(
     // `draw_sprite`) resolve to an auto-injected import — tree-shaken — so users never write or
     // manage `import … from '@silkweaver/engine'` themselves.
     const engine_names = await engine_export_names(engine_entry())
-    await fs.promises.writeFile(globals_path, `export { ${engine_names.join(', ')} } from '@silkweaver/engine'\n`, 'utf8')
+    // Also re-export the project's OBJECT classes by name, so they can be referenced bare —
+    // GMS-style, e.g. `place_meeting(x, y, obj_wall)` or `static parent = par_solid` — with no
+    // import (matching what the IDE editor already declares). The defining file won't self-import;
+    // skip any object whose name would collide with an engine export.
+    // Parent-before-child order: the re-export order here becomes the module init order, so an
+    // object's `static parent = par` resolves to a defined class instead of undefined.
+    const object_order = await _objects_parent_first(project_folder, Object.keys(proj.resources.objects ?? {}))
+    const object_lines: string[] = []
+    for (const obj_name of object_order) {
+        if (engine_names.includes(obj_name)) continue
+        const class_file = path.join(project_folder, 'objects', `${obj_name}.ts`)
+        if (await _path_exists(class_file)) {
+            object_lines.push(`export { ${obj_name} } from '${class_file.replace(/\\/g, '/')}'`)
+        }
+    }
+    await fs.promises.writeFile(globals_path,
+        `export { ${engine_names.join(', ')} } from '@silkweaver/engine'\n${object_lines.join('\n')}\n`, 'utf8')
 
     try {
         // Run esbuild via its Node API. Alias the package specifier to the resolved engine
@@ -496,6 +519,10 @@ async function bundle_game(
             outfile:     out_path,
             format:      'esm',
             minify,
+            // Preserve class/function `.name` even when minifying — the engine reads
+            // `this.constructor.name` (resource.name, room type checks, object_get_name),
+            // so identifier mangling would otherwise break exported (minified) games.
+            keepNames:   true,
             alias:       { '@silkweaver/engine': engine_entry() },
             inject:      [globals_path],
         })
@@ -690,6 +717,44 @@ function _safe_name(name: string): string {
 /** Returns true if a filesystem path exists. */
 async function _path_exists(p: string): Promise<boolean> {
     try { await fs.promises.access(p); return true } catch { return false }
+}
+
+/**
+ * Orders object names so every object's `static parent` (when it's another project object)
+ * appears BEFORE it. esbuild lazy-initializes the object modules (the inject shim and each
+ * object form an import cycle), running them in declaration order inside one initializer; a
+ * child whose `static parent = par` is evaluated before `par`'s module would capture
+ * `undefined`. Initializing parents first makes the reference resolve to the real class.
+ * A parent cycle (user error) is broken gracefully so this never loops.
+ */
+async function _objects_parent_first(project_folder: string, names: string[]): Promise<string[]> {
+    const present = new Set(names)
+    const parent_of = new Map<string, string | undefined>()
+    for (const name of names) {
+        const file = path.join(project_folder, 'objects', `${name}.ts`)
+        let parent: string | undefined
+        if (await _path_exists(file)) {
+            try {
+                const p = parse_object(await fs.promises.readFile(file, 'utf8')).parent
+                if (p && p !== name && present.has(p)) parent = p
+            } catch { /* unparseable — treat as no parent */ }
+        }
+        parent_of.set(name, parent)
+    }
+    const out: string[] = []
+    const done = new Set<string>()
+    const onstack = new Set<string>()
+    const visit = (n: string): void => {
+        if (done.has(n) || onstack.has(n)) return   // onstack guard breaks any parent cycle
+        onstack.add(n)
+        const p = parent_of.get(n)
+        if (p) visit(p)
+        onstack.delete(n)
+        done.add(n)
+        out.push(n)
+    }
+    for (const n of names) visit(n)
+    return out
 }
 
 /** Recursively copies a directory tree from src to dst. */

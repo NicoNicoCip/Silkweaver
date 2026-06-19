@@ -1,12 +1,12 @@
 {
     "name": "@silkweaver/electron",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Desktop host for the Silkweaver IDE (window + IPC file bridge; delegates builds to @silkweaver/build)",
     "type": "commonjs",
     "main": "../../exports/electron/main.js",
     "private": true,
     "dependencies": {
-        "@silkweaver/build": "1.0.0"
+        "@silkweaver/build": "^1.0.0"
     },
     "peerDependencies": {
         "electron": "*"

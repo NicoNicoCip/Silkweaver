@@ -5,11 +5,15 @@
 
 import { theme_inject }                                              from './theme.js'
 import { menubar_default }                                           from './menubar.js'
+import { ui_scale_init, ui_scale_in, ui_scale_out, ui_scale_reset, editor_font_in, editor_font_out, editor_font_reset } from './ui_scale.js'
+import { file_watch_init, file_watch_set_folder } from './services/file_watch.js'
+import { ide_theme_init } from './ide_prefs.js'
 import { status_bar_create, status_set_project, status_set_unsaved } from './status_bar.js'
 import { ResourceTree }                                              from './resource_tree.js'
 import type { open_resource_event, resource_category }               from './resource_tree.js'
-import { project_new, project_open, project_open_last, project_save, project_set_dir, project_set_folder, project_get_dir, project_has_folder, project_get_folder_path, project_get_last_folder, project_read_file, project_write_file, project_file_exists, project_rename, project_copy, project_delete }  from './services/project.js'
+import { project_new, project_open, project_save, project_set_dir, project_set_folder, project_get_dir, project_has_folder, project_get_folder_path, project_get_last_folder, project_read_file, project_write_file, project_file_exists, project_rename, project_copy, project_delete }  from './services/project.js'
 import type { project_state }                                         from './services/project.js'
+import { start_page_show, recent_add }                               from './start_page.js'
 import { undo_push, undo_undo, undo_redo, undo_clear }               from './services/undo.js'
 import { script_editor_open, script_editor_open_smart, inject_project_types } from './editors/script_editor.js'
 import { sprite_editor_open }      from './editors/sprite_editor.js'
@@ -21,6 +25,7 @@ import { font_editor_open }        from './editors/font_editor.js'
 import { path_editor_open }        from './editors/path_editor.js'
 import { timeline_editor_open }    from './editors/timeline_editor.js'
 import { settings_editor_open }   from './editors/settings_editor.js'
+import { preferences_editor_open } from './editors/preferences_editor.js'
 import { preview_open, preview_play, preview_stop, preview_reload }  from './panels/game_preview.js'
 import { console_open, console_write, console_toggle }               from './panels/console_panel.js'
 import { debugger_open, debugger_show_hit }                          from './panels/debugger_panel.js'
@@ -49,11 +54,15 @@ let _workspace: HTMLElement
 // =========================================================================
 
 function boot(): void {
-    // 1. Inject global styles
+    // 1. Inject global styles + apply persisted interface scale and IDE theme.
     theme_inject()
+    ide_theme_init()
+    ui_scale_init()
+    file_watch_init()   // listen for external file changes (parallel editing)
 
     // 2. Menubar (fixed, top)
     const menubar = menubar_default({
+        file_start_page:       _show_start_page,
         file_new:              on_file_new,
         file_open:             on_file_open,
         file_save:             on_file_save,
@@ -68,11 +77,18 @@ function boot(): void {
         res_add_object:        () => on_add_resource('objects'),
         res_add_room:          () => on_add_resource('rooms'),
         edit_game_settings:    on_edit_game_settings,
+        edit_preferences:      () => preferences_editor_open(_workspace),
         view_resources:        () => _tree.show(),
         view_console:          () => console_open(_workspace),
         view_debugger:         () => debugger_open(_workspace),
         view_profiler:         () => profiler_open(_workspace),
         view_preview:          () => preview_open(_workspace),
+        view_zoom_in:          ui_scale_in,
+        view_zoom_out:         ui_scale_out,
+        view_zoom_reset:       ui_scale_reset,
+        view_editor_font_in:   editor_font_in,
+        view_editor_font_out:  editor_font_out,
+        view_editor_font_reset:editor_font_reset,
         run_play:              on_run_play,
         run_stop:              on_run_stop,
         run_build:             on_run_build,
@@ -135,6 +151,11 @@ function boot(): void {
         // F11 now toggles output console (see below)
         if (e.ctrlKey && e.key === 'r')   { e.preventDefault(); _tree.show() }
         if (e.ctrlKey && e.shiftKey && e.key === 'P') { e.preventDefault(); on_edit_game_settings() }
+        if (e.ctrlKey && e.key === ',') { e.preventDefault(); preferences_editor_open(_workspace) }
+        // Interface scale: Ctrl +/-/0. '=' is the unshifted '+'.
+        if (e.ctrlKey && (e.key === '+' || e.key === '=')) { e.preventDefault(); ui_scale_in() }
+        if (e.ctrlKey && e.key === '-')                    { e.preventDefault(); ui_scale_out() }
+        if (e.ctrlKey && e.key === '0')                    { e.preventDefault(); ui_scale_reset() }
     })
 
     // 8. Register global breakpoint-hit handler
@@ -143,16 +164,9 @@ function boot(): void {
         console_write('warn', `[Debugger] Break at ${file}:${line}`)
     })
 
-    // 9. Try to reopen the last project; fall back to a blank one
-    project_open_last().then(result => {
-        if (result) {
-            _set_project(result.state, null)
-            // Output log stays closed by default — the message is buffered until it's opened (F11).
-            console_write('system', `[IDE] Reopened: ${result.state.name}`)
-        } else {
-            _set_project(project_new(), null)
-        }
-    })
+    // 9. Land on the Start Page (recent projects / new / open) instead of auto-opening.
+    _set_project(project_new(), null)   // a blank project sits behind the launcher until one is chosen
+    _show_start_page()
 
     // 10. Key bindings for panels
     window.addEventListener('keydown', (e) => {
@@ -234,17 +248,21 @@ function _setup_splitter(dock: HTMLElement, splitter: HTMLElement): void {
 // Project actions
 // =========================================================================
 
+/** Shows the Start Page launcher (recent projects / new-from-template / open). */
+function _show_start_page(): void {
+    start_page_show({ load_project: (state) => _set_project(state, null) })
+}
+
 async function on_file_new(): Promise<void> {
-    const name = await _prompt('Project name:', 'My Game') ?? 'My Game'
-    const state = project_new()
-    state.name = name
-    _set_project(state, null)
+    // The full new-project flow (name, location, template, defaults) lives on the Start Page.
+    _show_start_page()
 }
 
 async function on_file_open(): Promise<void> {
     const result = await project_open()
     if (!result) return
     _set_project(result.state, result.dir)
+    recent_add(result.state.name, project_get_folder_path() ?? '')
 }
 
 async function on_file_save(): Promise<void> {
@@ -305,8 +323,33 @@ async function on_add_resource(cat: resource_category): Promise<void> {
         execute:   () => { _tree.add_resource(cat, name);    _mark_unsaved() },
         unexecute: () => { _tree.remove_resource(cat, name); _mark_unsaved() },
     })
+    if (cat === 'objects') {
+        inject_project_types(_project)        // so editors can reference it by name
+        await _scaffold_object_file(name)     // write objects/<name>.ts now, so it always exists
+    }
     _tree.expand_category(cat)
     _tree.begin_rename(cat, name)
+}
+
+/**
+ * Writes a minimal class file for a new object so it always has a backing file on disk —
+ * otherwise an object that's created but never opened (e.g. a parent) is invisible to the build
+ * ("[build] object 'X' has no objects/X.ts — skipped") and bare references to it don't resolve.
+ * The class identifier is renamed along with the file when the resource is renamed.
+ */
+async function _scaffold_object_file(name: string): Promise<void> {
+    if (!project_has_folder()) return
+    const rel = `objects/${name}.ts`
+    if (await project_file_exists(rel)) return
+    try {
+        const op = (window as any).swfs?.object_op
+        const src = op
+            ? await op('scaffold', name)
+            : `export class ${name} extends gm_object {\n    on_create(): void {\n\n    }\n}\n`
+        await project_write_file(rel, src)
+    } catch (err) {
+        console.warn('[IDE] Failed to scaffold object file:', err)
+    }
 }
 
 async function on_delete_resource(cat: resource_category, name: string): Promise<void> {
@@ -342,6 +385,7 @@ async function on_rename_resource(cat: resource_category, name: string, new_name
     }
     _tree.remove_resource(cat, name)
     _tree.add_resource(cat, new_name)
+    if (cat === 'objects') inject_project_types(_project)   // refresh editor object declarations
     _mark_unsaved()
     console_write('system', `[IDE] Renamed ${cat.slice(0, -1)} "${name}" → "${new_name}".`)
 }
@@ -679,6 +723,9 @@ function _set_project(state: project_state, _dir: FileSystemDirectoryHandle | nu
 
     // Inject project-specific object type declarations into Monaco
     inject_project_types(state)
+
+    // (Re)watch the active project folder so external edits propagate to open windows.
+    file_watch_set_folder(project_get_folder_path())
 }
 
 function _mark_unsaved(): void {

@@ -37,7 +37,7 @@ export {
 } from './core/tiles.js'
 export { resource } from './core/resource.js'
 export { EVENT_TYPE, game_event } from './core/game_event.js'
-export { gm_object, object_exists, object_get_name, object_get_sprite, object_get_parent, object_is_ancestor } from './core/gm_object.js'
+export { gm_object, object_exists, object_get_name, object_get_sprite, object_get_parent, object_is_ancestor, object_register_name, object_get } from './core/gm_object.js'
 
 // Paths
 export {

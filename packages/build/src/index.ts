@@ -7,8 +7,10 @@
  *   - export_executable  → a packaged desktop application
  *
  * Also re-exports the class-file object read/write layer (object_format) used by the
- * IDE's object editor. Pure Node — drives both the IDE (over IPC) and the CLI.
+ * IDE's object editor, and the starter-template materializer (templates). Pure Node —
+ * drives both the IDE (over IPC) and the CLI.
  */
 
 export * from './build.js'
 export * from './object_format.js'
+export * from './templates.js'

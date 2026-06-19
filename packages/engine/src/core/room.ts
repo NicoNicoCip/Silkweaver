@@ -104,12 +104,12 @@ export class room extends resource {
                 return
             }
             
-            if (potential.constructor.name !== "room") {
+            if (!(potential instanceof room)) {
                 console.error(`ID ${target} is not a room.`)
                 return
             }
 
-            game_loop.change_room(potential as room)
+            game_loop.change_room(potential)
             return
         }
 
@@ -153,7 +153,7 @@ export class room extends resource {
             return false
         }
 
-        if(res.constructor.name !== "room") {
+        if(!(res instanceof room)) {
             return false
         }
 

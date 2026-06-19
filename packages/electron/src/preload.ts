@@ -5,7 +5,7 @@
  * the project directory it receives after folder-pick.
  */
 
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webFrame } from 'electron'
 
 contextBridge.exposeInMainWorld('swfs', {
     /**
@@ -100,6 +100,19 @@ contextBridge.exposeInMainWorld('swfs', {
     export_exe: (project_folder: string, out_dir: string, platform?: string, arch?: string): Promise<{ ok: boolean; error?: string; out_dir?: string }> =>
         ipcRenderer.invoke('sw:export-exe', project_folder, out_dir, platform, arch),
 
+    /** Lists the bundled starter templates (id / label / description / display color). */
+    list_templates: (): Promise<{ id: string; label: string; description: string; display_color: string }[]> =>
+        ipcRenderer.invoke('sw:list-templates'),
+
+    /**
+     * Materializes a starter template into a new project folder (recursive copy + name patch).
+     * @param template_id - 'empty' | 'platformer' | 'topdown'
+     * @param dest_folder - Absolute path of the new project folder
+     * @param name        - Display name to write into project.json
+     */
+    create_from_template: (template_id: string, dest_folder: string, name?: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('sw:create-from-template', template_id, dest_folder, name),
+
     /**
      * Parse/patch a class-per-object file. `action` is one of: parse_object,
      * set_static, remove_static, set_field, remove_field, add_method, remove_method, scaffold.
@@ -107,4 +120,18 @@ contextBridge.exposeInMainWorld('swfs', {
      */
     object_op: (action: string, ...args: any[]): Promise<any> =>
         ipcRenderer.invoke('sw:object-op', action, ...args),
+
+    /** Sets the renderer zoom factor (1 = 100%) — backs the IDE's interface-scale control. */
+    set_zoom_factor: (factor: number): void => webFrame.setZoomFactor(factor),
+
+    /** Returns the current renderer zoom factor. */
+    get_zoom_factor: (): number => webFrame.getZoomFactor(),
+
+    /** Starts watching `folder` for external file changes (pass null to stop). */
+    watch_folder: (folder: string | null): Promise<void> => ipcRenderer.invoke('sw:watch-folder', folder),
+
+    /** Registers a callback fired with the project-relative path of any externally-changed file. */
+    on_file_changed: (cb: (rel_path: string) => void): void => {
+        ipcRenderer.on('sw:file-changed', (_e, rel_path: string) => cb(rel_path))
+    },
 })

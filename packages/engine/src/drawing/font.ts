@@ -65,6 +65,14 @@ interface text_cache_entry {
 }
 
 /**
+ * Max number of distinct rendered strings kept on the GPU at once. The cache is
+ * keyed on the full text, so dynamic text (a score/timer/FPS that changes every
+ * frame) would otherwise allocate a new texture per frame and never free it. When
+ * the cap is exceeded the least-recently-used texture is evicted and freed.
+ */
+const MAX_TEXT_CACHE = 512
+
+/**
  * Manages text rasterization and caching.
  */
 export class font_renderer {
@@ -91,9 +99,23 @@ export class font_renderer {
     public get_texture(text: string, fnt: font_resource, color_css: string): text_cache_entry {
         const key = `${fnt.name}|${color_css}|${text}`
         const cached = this.cache.get(key)
-        if (cached) return cached
+        if (cached) {
+            // Mark as most-recently-used (Map keeps insertion order).
+            this.cache.delete(key)
+            this.cache.set(key, cached)
+            return cached
+        }
 
         const entry = this.rasterize(text, fnt, color_css)
+        // Evict the least-recently-used entry (and free its GPU texture) when full.
+        if (this.cache.size >= MAX_TEXT_CACHE) {
+            const oldest = this.cache.keys().next().value
+            if (oldest !== undefined) {
+                const evicted = this.cache.get(oldest)
+                if (evicted) this.tex_manager.free_texture(evicted.entry.texture)
+                this.cache.delete(oldest)
+            }
+        }
         this.cache.set(key, entry)
         return entry
     }

@@ -7,6 +7,8 @@
  * ds_list_destroy, ds_list_copy.
  */
 
+import { irandom } from '../math/random.js'
+
 // =========================================================================
 // Internal registry
 // =========================================================================
@@ -169,8 +171,10 @@ export function ds_list_sort(id: number, ascending: boolean): void {
  */
 export function ds_list_shuffle(id: number): void {
     const list = _get(id)
+    // Use the seeded engine PRNG (irandom → [0, i]) so shuffles are reproducible
+    // under random_set_seed, matching GMS and array_shuffle.
     for (let i = list.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1))
+        const j = irandom(i)
         ;[list[i], list[j]] = [list[j], list[i]]
     }
 }

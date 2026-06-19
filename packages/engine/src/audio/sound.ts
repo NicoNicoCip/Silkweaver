@@ -205,13 +205,13 @@ export function play_sound(
 // =========================================================================
 
 /**
- * Plays a sound asset.
- * @param asset - Sound to play
- * @param loop - Whether to loop
+ * Plays a sound asset. Argument order matches GMS: (index, priority, loop).
+ * @param asset - Sound to play (asset or its project name)
  * @param priority - Ignored (GMS API parity only)
+ * @param loop - Whether to loop
  * @returns sound_instance handle
  */
-export function audio_play_sound(asset: sound_asset | string, loop: boolean = false, priority: number = 0): sound_instance {
+export function audio_play_sound(asset: sound_asset | string, priority: number = 0, loop: boolean = false): sound_instance {
     void priority
     const a = typeof asset === 'string' ? _sound_names.get(asset) : asset
     if (!a) throw new Error(`audio_play_sound: sound '${String(asset)}' not found`)

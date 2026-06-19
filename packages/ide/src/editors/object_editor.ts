@@ -12,6 +12,7 @@ import { ICON } from "../icons.js"
 import { project_read_file, project_write_file, project_file_exists, project_get_dir } from '../services/project.js'
 import { script_editor_open_event, script_editor_open_full }     from './script_editor.js'
 import { get_project_resource_names }                            from '../index.js'
+import { file_watch_subscribe }                                  from '../services/file_watch.js'
 
 // =========================================================================
 // Object model (mirrors object_format.object_model)
@@ -92,6 +93,7 @@ class object_editor_window {
     private _event_list_el: HTMLElement = document.createElement('div')
     private _vars_list_el:  HTMLElement = document.createElement('div')
     private _on_closed_cb: (() => void) | null = null
+    private _unsub_watch:  (() => void) | null = null
 
     constructor(workspace: HTMLElement, object_name: string) {
         this._object_name = object_name
@@ -104,11 +106,14 @@ class object_editor_window {
             ICON.object,
             { x: 260 + off, y: 50 + off, w: 560, h: 480 },
         )
-        this._win.on_close(() => this._on_closed_cb?.())
+        this._win.on_close(() => { this._unsub_watch?.(); this._on_closed_cb?.() })
 
         this._build_ui()
         this._load()
         this._win.mount(workspace)
+
+        // Refresh the form when the class file is edited elsewhere (another window / outside the IDE).
+        this._unsub_watch = file_watch_subscribe(this._rel, () => void this._load())
     }
 
     bring_to_front(): void { this._win.bring_to_front() }
@@ -243,13 +248,17 @@ class object_editor_window {
             this._vars_list_el.appendChild(empty)
             return
         }
-        for (const v of this._model.variables) {
+        // Sorted alphabetically for a tidy list (kept display-only — instance-field initialization
+        // order can matter in code, e.g. one field referencing another, so we never reorder the file).
+        const vars = [...this._model.variables].sort((a, b) => a.name.localeCompare(b.name))
+        for (const v of vars) {
             const row = document.createElement('div')
             row.style.cssText = 'display:flex; align-items:center; gap:4px;'
 
             const name = document.createElement('span')
             name.textContent = v.name
-            name.style.cssText = 'width:90px; font-size:11px; font-family:monospace;'
+            name.title = v.name
+            name.style.cssText = 'width:96px; flex-shrink:0; font-size:11px; font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'
 
             const eq = document.createElement('span'); eq.textContent = '='; eq.style.cssText = 'color:var(--sw-text-dim);'
 
@@ -308,7 +317,13 @@ class object_editor_window {
             this._event_list_el.appendChild(empty)
             return
         }
-        for (const method of this._model.events) {
+        // List events in canonical GMS order (matches how add_method orders them in code).
+        const ordered = [...this._model.events].sort((a, b) => {
+            const ia = ALL_EVENTS.findIndex(e => e.method === a)
+            const ib = ALL_EVENTS.findIndex(e => e.method === b)
+            return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib)
+        })
+        for (const method of ordered) {
             const row = document.createElement('div')
             row.className = 'sw-obj-event-row'
 

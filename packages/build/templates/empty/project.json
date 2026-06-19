@@ -1,0 +1,27 @@
+{
+  "name": "Empty",
+  "version": "1.0.0",
+  "engineVersion": "1.0.0",
+  "settings": {
+    "roomSpeed": 60,
+    "windowWidth": 640,
+    "windowHeight": 480,
+    "startRoom": "room_main",
+    "displayColor": "#1a1a2e"
+  },
+  "resources": {
+    "sprites": {},
+    "sounds": {},
+    "backgrounds": {},
+    "paths": {},
+    "scripts": {},
+    "fonts": {},
+    "timelines": {},
+    "objects": {},
+    "rooms": {
+      "room_main": {
+        "name": "room_main"
+      }
+    }
+  }
+}
