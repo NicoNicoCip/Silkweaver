@@ -1,0 +1,40 @@
+name: Release installers
+
+# Triggered by pushing a version tag (e.g. `git tag v1.2.0 && git push --tags`).
+# Builds the desktop installer on each OS and uploads them — plus the electron-updater
+# metadata (latest*.yml) — to a GitHub Release. electron-builder creates the release as a
+# DRAFT; review the assets, then publish it so the in-app auto-updater can see it.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:   # allow a manual run (also publishes to a draft)
+
+permissions:
+  contents: write   # create / upload the GitHub Release
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false   # one OS failing shouldn't cancel the others
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build & publish installer
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No code-signing certs configured — build unsigned rather than fail looking for one.
+          CSC_IDENTITY_AUTO_DISCOVERY: false

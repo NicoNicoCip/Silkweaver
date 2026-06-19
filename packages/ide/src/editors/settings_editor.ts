@@ -7,6 +7,10 @@
 
 import { FloatingWindow } from '../window_manager.js'
 import type { project_state } from '../services/project.js'
+import {
+    project_is_desktop, project_get_folder_path, project_vendor_engine,
+    project_toolchain_engine_version, version_compare,
+} from '../services/project.js'
 
 // =========================================================================
 // Module state
@@ -65,9 +69,8 @@ function _build_ui(
     root.style.cssText = 'padding:12px; overflow-y:auto; height:100%; display:flex; flex-direction:column; gap:16px;'
 
     root.appendChild(_section('Project', [
-        _field_text('Name',           state.name,           v => { state.name = v;           on_change() }),
-        _field_text('Version',        state.version,        v => { state.version = v;        on_change() }),
-        _field_text('Engine Version', state.engineVersion,  null),  // read-only
+        _field_text('Name',    state.name,    v => { state.name    = v; on_change() }),
+        _field_text('Version', state.version, v => { state.version = v; on_change() }),
     ]))
 
     root.appendChild(_section('Display', [
@@ -82,7 +85,75 @@ function _build_ui(
             v => { state.settings.startRoom = v; on_change() }),
     ]))
 
+    root.appendChild(_engine_section(state, on_change))
+
     body.appendChild(root)
+}
+
+// =========================================================================
+// Engine section — the project's pinned engine + an "update engine" action
+// =========================================================================
+
+/**
+ * Builds the Engine section: the project's pinned engine version, a live comparison against the
+ * toolchain's engine, and an action to (re-)vendor it. The pinned engine is what the project always
+ * builds against — updating the IDE never changes it; this is the one place to move it forward.
+ */
+function _engine_section(state: project_state, on_change: () => void): HTMLElement {
+    const ver = document.createElement('span')
+    ver.textContent = state.engineVersion || '—'
+    ver.style.cssText = 'font-family:Consolas,monospace; font-size:12px; color:var(--sw-text); flex:1;'
+
+    const status = document.createElement('span')
+    status.style.cssText = 'font-size:11.5px; color:var(--sw-text-dim);'
+
+    const action = document.createElement('div')
+    action.style.cssText = 'display:flex; align-items:center; gap:8px; flex:1;'
+    action.appendChild(status)
+
+    const update = async (): Promise<void> => {
+        const folder = project_get_folder_path()
+        if (!folder) { status.textContent = 'Save the project to a folder first.'; return }
+        action.querySelectorAll('button').forEach(b => b.remove())
+        status.textContent = 'Updating engine…'
+        const v = await project_vendor_engine(folder)
+        if (v) {
+            state.engineVersion = v; on_change()
+            ver.textContent = v
+            status.textContent = `✓ Engine pinned at ${v}`
+        } else {
+            status.textContent = 'Engine update failed.'
+        }
+    }
+
+    if (project_is_desktop()) {
+        status.textContent = 'Checking…'
+        void project_toolchain_engine_version().then(toolchain => {
+            if (!toolchain) { status.textContent = ''; return }
+            const pinned = state.engineVersion || '0.0.0'
+            if (version_compare(pinned, toolchain) >= 0) {
+                status.textContent = `Up to date (toolchain ${toolchain})`
+                action.appendChild(_action_btn('Re-vendor', () => void update()))
+            } else {
+                status.textContent = `Update available → ${toolchain}`
+                status.style.color = 'var(--sw-text)'
+                action.appendChild(_action_btn(`Update to ${toolchain}`, () => void update()))
+            }
+        }).catch(() => { status.textContent = '' })
+    } else {
+        status.textContent = 'Pinned with the project.'
+    }
+
+    return _section('Engine', [_row('Engine version', ver), _row('', action)])
+}
+
+function _action_btn(label: string, on_click: () => void): HTMLButtonElement {
+    const b = document.createElement('button')
+    b.className = 'sw-btn'
+    b.textContent = label
+    b.style.cssText = 'padding:3px 10px; font-size:11.5px; cursor:pointer; flex-shrink:0;'
+    b.addEventListener('click', on_click)
+    return b
 }
 
 // =========================================================================

@@ -32,17 +32,75 @@ export async function read_project(project_folder: string): Promise<project_data
  * entry can import the whole API (keeping it in sync with the IDE's autocomplete).
  * esbuild tree-shakes whatever the game doesn't actually use.
  */
-let _engine_names: string[] | null = null
+const _engine_names = new Map<string, string[]>()   // engine path → its export names (per vendored engine)
 async function engine_export_names(engine_path: string): Promise<string[]> {
-    if (_engine_names) return _engine_names
+    const cached = _engine_names.get(engine_path)
+    if (cached) return cached
     const mod = await import(pathToFileURL(engine_path).href)
-    _engine_names = Object.keys(mod).filter(n => n !== 'default' && /^[A-Za-z_$][\w$]*$/.test(n))
-    return _engine_names
+    const names = Object.keys(mod).filter(n => n !== 'default' && /^[A-Za-z_$][\w$]*$/.test(n))
+    _engine_names.set(engine_path, names)
+    return names
 }
 
-/** Absolute path to the engine package entry — the esbuild alias target + export-name source. */
+/** Absolute path to the toolchain's own engine entry (the vendoring source + pre-vendoring fallback). */
 function engine_entry(): string {
     return require.resolve('@silkweaver/engine')
+}
+
+/** The version of the toolchain's own engine (what a freshly-vendored project pins). */
+function engine_version(): string {
+    try {
+        return JSON.parse(fs.readFileSync(path.join(path.dirname(engine_entry()), '..', 'package.json'), 'utf8')).version
+    } catch { return '0.0.0' }
+}
+
+/** Public: the engine version this toolchain ships — what "Update engine" would pin a project to. */
+export function toolchain_engine_version(): string {
+    return engine_version()
+}
+
+/**
+ * Resolves the engine a project builds against: its vendored copy (`.engine/engine.mjs`) when
+ * present, else the toolchain's own engine (projects created before per-project vendoring). This is
+ * what lets a project keep building against the exact engine it was made with — IDE updates don't
+ * touch it.
+ */
+function resolve_engine(project_folder: string): string {
+    const vendored = path.join(project_folder, '.engine', 'engine.mjs')
+    return fs.existsSync(vendored) ? vendored : engine_entry()
+}
+
+/**
+ * Vendors the toolchain's current engine into a project as one self-contained bundle
+ * (`.engine/engine.mjs`, matter-js inlined) and records its version (`.engine/version.json` +
+ * project.json `engineVersion`). Called at project creation; safe to re-run to upgrade the pin.
+ * @param project_folder - Absolute path to the project folder
+ * @returns The vendored engine version.
+ */
+export async function vendor_engine(project_folder: string): Promise<string> {
+    const version = engine_version()
+    const dir = path.join(project_folder, '.engine')
+    await fs.promises.mkdir(dir, { recursive: true })
+    const esbuild_api = require('esbuild')
+    await esbuild_api.build({
+        entryPoints: [engine_entry()],
+        bundle:      true,
+        format:      'esm',
+        outfile:     path.join(dir, 'engine.mjs'),
+        keepNames:   true,   // the engine reads constructor.name at runtime
+    })
+    await fs.promises.writeFile(path.join(dir, 'version.json'),
+        JSON.stringify({ version, vendoredAt: new Date().toISOString() }, null, 2) + '\n', 'utf8')
+
+    // Pin the version in project.json so the IDE can display it / gate features on it.
+    try {
+        const proj_path = path.join(project_folder, 'project.json')
+        const proj = JSON.parse(await fs.promises.readFile(proj_path, 'utf8'))
+        proj.engineVersion = version
+        await fs.promises.writeFile(proj_path, JSON.stringify(proj, null, 2) + '\n', 'utf8')
+    } catch { /* no project.json yet — caller sets engineVersion */ }
+
+    return version
 }
 
 /**
@@ -74,6 +132,7 @@ async function generate_entry_code(
     project_folder: string,
     proj: project_data,
     asset_mode: 'preview' | 'export',
+    engine_path: string,
 ): Promise<string> {
         // Parent-before-child so generated imports/registrations init objects in dependency order.
         const object_names   = await _objects_parent_first(project_folder, Object.keys(proj.resources.objects ?? {}))
@@ -84,8 +143,7 @@ async function generate_entry_code(
         const path_names     = Object.keys(proj.resources.paths     ?? {})
         const timeline_names = Object.keys(proj.resources.timelines ?? {})
 
-        // The engine is resolved from the @silkweaver/engine package (no path coupling).
-        const engine_path = engine_entry()
+        // engine_path is whatever the project resolves to — its vendored copy, or the toolchain's.
 
         // Each object is a single class file: objects/<name>.ts (a gm_object subclass).
         // It is imported as-is; metadata/variables/events all live in the class.
@@ -480,7 +538,8 @@ async function bundle_game(
     out_path: string,
     minify: boolean,
 ): Promise<void> {
-    const entry_code = await generate_entry_code(project_folder, proj, asset_mode)
+    const engine_path  = resolve_engine(project_folder)
+    const entry_code   = await generate_entry_code(project_folder, proj, asset_mode, engine_path)
     const entry_path   = path.join(project_folder, '_entry.ts')
     const globals_path = path.join(project_folder, '_engine_globals.ts')
     await fs.promises.writeFile(entry_path, entry_code, 'utf8')
@@ -489,7 +548,7 @@ async function bundle_game(
     // `inject`, it makes any *bare* engine reference in an object/script file (e.g. `gm_object`,
     // `draw_sprite`) resolve to an auto-injected import — tree-shaken — so users never write or
     // manage `import … from '@silkweaver/engine'` themselves.
-    const engine_names = await engine_export_names(engine_entry())
+    const engine_names = await engine_export_names(engine_path)
     // Also re-export the project's OBJECT classes by name, so they can be referenced bare —
     // GMS-style, e.g. `place_meeting(x, y, obj_wall)` or `static parent = par_solid` — with no
     // import (matching what the IDE editor already declares). The defining file won't self-import;
@@ -523,7 +582,7 @@ async function bundle_game(
             // `this.constructor.name` (resource.name, room type checks, object_get_name),
             // so identifier mangling would otherwise break exported (minified) games.
             keepNames:   true,
-            alias:       { '@silkweaver/engine': engine_entry() },
+            alias:       { '@silkweaver/engine': engine_path },
             inject:      [globals_path],
         })
     } finally {

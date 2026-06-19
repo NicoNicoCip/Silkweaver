@@ -9,6 +9,7 @@
 
 import * as fs   from 'node:fs'
 import * as path from 'node:path'
+import { vendor_engine } from './build.js'
 
 export interface template_info {
     id:            string
@@ -30,7 +31,7 @@ function templates_dir(): string {
 }
 
 /** Names never copied into a new project (build artifacts / VCS / deps), as a defensive guard. */
-const COPY_DENYLIST = new Set(['_entry.ts', '_engine_globals.ts', 'node_modules', '.git', 'exports', 'game.js'])
+const COPY_DENYLIST = new Set(['_entry.ts', '_engine_globals.ts', 'node_modules', '.git', 'exports', 'game.js', '.engine'])
 
 /** Returns the available starter templates — only those whose folder is actually installed. */
 export function list_templates(): template_info[] {
@@ -73,4 +74,9 @@ export async function create_from_template(template_id: string, dest_folder: str
             await fs.promises.writeFile(proj_path, JSON.stringify(j, null, 2) + '\n', 'utf8')
         } catch { /* keep the template's bundled name */ }
     }
+
+    // Vendor the current engine into the new project so it's pinned to this version (a later IDE
+    // update won't change it). Best-effort: if it fails, the project still builds against the
+    // toolchain engine via the resolve_engine fallback.
+    try { await vendor_engine(dest_folder) } catch { /* falls back to the toolchain engine */ }
 }

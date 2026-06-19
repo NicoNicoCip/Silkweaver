@@ -5,6 +5,7 @@
  */
 
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import * as fs      from 'node:fs'
 import * as path    from 'node:path'
 import * as build   from '@silkweaver/build'
@@ -97,6 +98,7 @@ function create_window(): void {
 
 app.whenReady().then(() => {
     create_window()
+    _init_updater()
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) create_window()
     })
@@ -105,6 +107,31 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
 })
+
+// =========================================================================
+// Auto-update (electron-updater → GitHub Releases)
+// =========================================================================
+//
+// Non-intrusive by design: we only *check* in the background and tell the renderer when an update
+// exists. Downloading and installing happen only when the user opts in (the renderer's update chip).
+// Only active in a packaged build — autoUpdater is a no-op / errors in `npm run electron` dev.
+
+function _init_updater(): void {
+    if (!app.isPackaged) return
+    autoUpdater.autoDownload         = false   // wait for the user to choose to download
+    autoUpdater.autoInstallOnAppQuit = true    // once downloaded, apply on the next quit if not sooner
+
+    autoUpdater.on('update-available',  info => _win?.webContents.send('sw:update-available',  info.version))
+    autoUpdater.on('download-progress', p    => _win?.webContents.send('sw:update-progress',   Math.round(p.percent)))
+    autoUpdater.on('update-downloaded', info => _win?.webContents.send('sw:update-downloaded',  info.version))
+    autoUpdater.on('error',             err  => console.warn('[updater]', err?.message ?? err))
+
+    autoUpdater.checkForUpdates().catch(() => { /* offline or no published release yet — ignore */ })
+}
+
+ipcMain.handle('sw:update-check',    () => { if (app.isPackaged) autoUpdater.checkForUpdates().catch(() => {}) })
+ipcMain.handle('sw:update-download', () => { autoUpdater.downloadUpdate().catch(e => console.warn('[updater]', e?.message ?? e)) })
+ipcMain.handle('sw:update-install',  () => { autoUpdater.quitAndInstall() })
 
 // =========================================================================
 // IPC — File System Bridge
@@ -214,6 +241,19 @@ ipcMain.handle('sw:create-from-template', async (_e, template_id: string, dest_f
     try {
         await build.create_from_template(template_id, dest_folder, name)
         return { ok: true }
+    } catch (e: any) {
+        return { ok: false, error: String(e?.message ?? e) }
+    }
+})
+
+/** Returns the engine version this toolchain ships (what "Update engine" would pin to). */
+ipcMain.handle('sw:engine-version', () => build.toolchain_engine_version())
+
+/** Vendors (or re-vendors / upgrades) the current engine into a project, pinning its version. */
+ipcMain.handle('sw:vendor-engine', async (_e, project_folder: string) => {
+    try {
+        const version = await build.vendor_engine(project_folder)
+        return { ok: true, version }
     } catch (e: any) {
         return { ok: false, error: String(e?.message ?? e) }
     }

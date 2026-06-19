@@ -1,6 +1,6 @@
 {
     "name": "@silkweaver/cli",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "Silkweaver command-line toolchain — create, build, run, and export a game with no IDE.",
     "type": "commonjs",
     "license": "GPL-3.0",

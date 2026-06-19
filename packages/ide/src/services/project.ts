@@ -34,6 +34,8 @@ const _el = () => (window as any).swfs as {
     delete_path:      (target: string) => Promise<void>
     join:             (...parts: string[]) => string
     create_from_template: (template_id: string, dest_folder: string, name?: string) => Promise<{ ok: boolean; error?: string }>
+    vendor_engine:        (project_folder: string) => Promise<{ ok: boolean; error?: string; version?: string }>
+    engine_version:       () => Promise<string>
 } | undefined
 
 const _has_electron = () => !!_el()
@@ -384,6 +386,43 @@ export async function project_create_from_template(template_id: string, dest_fol
     const fs = _el()
     if (!fs) return { ok: false, error: 'Creating from a template requires the desktop app.' }
     return fs.create_from_template(template_id, dest_folder, name)
+}
+
+/**
+ * Vendors (pins) the current engine into a project folder, freezing its `engineVersion` (Electron
+ * only). Use for projects created before per-project vendoring, or to upgrade a project's engine.
+ * @param project_folder - Absolute path of the project
+ * @returns The vendored engine version, or null if unavailable / it failed.
+ */
+export async function project_vendor_engine(project_folder: string): Promise<string | null> {
+    const fs = _el()
+    if (!fs) return null
+    const res = await fs.vendor_engine(project_folder)
+    return res.ok ? (res.version ?? null) : null
+}
+
+/** The engine version the toolchain ships (what "Update engine" pins to), or null in the browser. */
+export async function project_toolchain_engine_version(): Promise<string | null> {
+    const fs = _el()
+    if (!fs) return null
+    try { return await fs.engine_version() } catch { return null }
+}
+
+/**
+ * Compares two `x.y.z` version strings. Returns <0 if a<b, 0 if equal, >0 if a>b. Missing parts
+ * count as 0. Drives the engine "update available" status and is the basis for feature-gating
+ * ("this needs engine ≥ x.y").
+ */
+export function version_compare(a: string, b: string): number {
+    const pa = (a || '0').split('.').map(n => parseInt(n, 10) || 0)
+    const pb = (b || '0').split('.').map(n => parseInt(n, 10) || 0)
+    for (let i = 0; i < 3; i++) { const d = (pa[i] ?? 0) - (pb[i] ?? 0); if (d !== 0) return Math.sign(d) }
+    return 0
+}
+
+/** True when a project's pinned engine (`engineVersion`) is at least `required` — for feature gates. */
+export function engine_at_least(project_engine_version: string, required: string): boolean {
+    return version_compare(project_engine_version, required) >= 0
 }
 
 /**

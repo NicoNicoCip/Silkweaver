@@ -1,6 +1,6 @@
 {
     "name": "@silkweaver/project",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "Silkweaver project format — the shared manifest/room/object type contract (types only)",
     "type": "module",
     "license": "GPL-3.0",

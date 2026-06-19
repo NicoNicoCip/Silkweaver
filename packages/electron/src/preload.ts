@@ -113,6 +113,13 @@ contextBridge.exposeInMainWorld('swfs', {
     create_from_template: (template_id: string, dest_folder: string, name?: string): Promise<{ ok: boolean; error?: string }> =>
         ipcRenderer.invoke('sw:create-from-template', template_id, dest_folder, name),
 
+    /** The engine version this toolchain ships (what "Update engine" pins a project to). */
+    engine_version: (): Promise<string> => ipcRenderer.invoke('sw:engine-version'),
+
+    /** Vendors (pins) the current engine into a project folder; returns the vendored version. */
+    vendor_engine: (project_folder: string): Promise<{ ok: boolean; error?: string; version?: string }> =>
+        ipcRenderer.invoke('sw:vendor-engine', project_folder),
+
     /**
      * Parse/patch a class-per-object file. `action` is one of: parse_object,
      * set_static, remove_static, set_field, remove_field, add_method, remove_method, scaffold.
@@ -134,4 +141,18 @@ contextBridge.exposeInMainWorld('swfs', {
     on_file_changed: (cb: (rel_path: string) => void): void => {
         ipcRenderer.on('sw:file-changed', (_e, rel_path: string) => cb(rel_path))
     },
+
+    // ── Auto-update (electron-updater; packaged builds only) ──────────────
+    /** Asks the main process to check GitHub Releases for a newer version (background). */
+    check_for_updates: (): Promise<void> => ipcRenderer.invoke('sw:update-check'),
+    /** Starts downloading the available update (progress arrives via on_update_progress). */
+    download_update:   (): Promise<void> => ipcRenderer.invoke('sw:update-download'),
+    /** Quits and installs a downloaded update now. */
+    install_update:    (): Promise<void> => ipcRenderer.invoke('sw:update-install'),
+    /** Fires with the new version string when an update is available. */
+    on_update_available:  (cb: (version: string) => void): void => { ipcRenderer.on('sw:update-available',  (_e, v: string) => cb(v)) },
+    /** Fires with download percent (0–100) while an update downloads. */
+    on_update_progress:   (cb: (percent: number) => void): void => { ipcRenderer.on('sw:update-progress',   (_e, p: number) => cb(p)) },
+    /** Fires with the version string once an update has finished downloading. */
+    on_update_downloaded: (cb: (version: string) => void): void => { ipcRenderer.on('sw:update-downloaded', (_e, v: string) => cb(v)) },
 })

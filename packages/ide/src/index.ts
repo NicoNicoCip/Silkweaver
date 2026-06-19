@@ -8,6 +8,7 @@ import { menubar_default }                                           from './men
 import { ui_scale_init, ui_scale_in, ui_scale_out, ui_scale_reset, editor_font_in, editor_font_out, editor_font_reset } from './ui_scale.js'
 import { file_watch_init, file_watch_set_folder } from './services/file_watch.js'
 import { ide_theme_init } from './ide_prefs.js'
+import { updater_init } from './updater.js'
 import { status_bar_create, status_set_project, status_set_unsaved } from './status_bar.js'
 import { ResourceTree }                                              from './resource_tree.js'
 import type { open_resource_event, resource_category }               from './resource_tree.js'
@@ -59,6 +60,7 @@ function boot(): void {
     ide_theme_init()
     ui_scale_init()
     file_watch_init()   // listen for external file changes (parallel editing)
+    updater_init()      // desktop auto-update notice (no-op in the browser / dev)
 
     // 2. Menubar (fixed, top)
     const menubar = menubar_default({
