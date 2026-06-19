@@ -33,6 +33,7 @@ const _el = () => (window as any).swfs as {
     copy:             (src: string, dst: string) => Promise<void>
     delete_path:      (target: string) => Promise<void>
     join:             (...parts: string[]) => string
+    open_external:    (cmd: string, abs_path: string) => Promise<{ ok: boolean; error?: string }>
     create_from_template: (template_id: string, dest_folder: string, name?: string) => Promise<{ ok: boolean; error?: string }>
     vendor_engine:        (project_folder: string) => Promise<{ ok: boolean; error?: string; version?: string }>
     engine_version:       () => Promise<string>
@@ -399,6 +400,20 @@ export async function project_vendor_engine(project_folder: string): Promise<str
     if (!fs) return null
     const res = await fs.vendor_engine(project_folder)
     return res.ok ? (res.version ?? null) : null
+}
+
+/**
+ * Opens a project-relative file in an external editor (Electron only). `editor_cmd` is a full path
+ * to the editor executable, or '' to use the OS default app for the file type. The file-watcher (or
+ * the caller's focus reload) brings external edits back in.
+ * @param rel_path    - Project-relative file path (e.g. 'sprites/spr_x/0.png')
+ * @param editor_cmd  - Editor executable path, or '' for the OS default
+ */
+export async function project_open_external(rel_path: string, editor_cmd: string): Promise<{ ok: boolean; error?: string }> {
+    const fs = _el()
+    if (!fs) return { ok: false, error: 'Opening an external editor requires the desktop app.' }
+    if (!_folder_path) return { ok: false, error: 'Save the project to a folder first.' }
+    return fs.open_external(editor_cmd, fs.join(_folder_path, rel_path))
 }
 
 /** The engine version the toolchain ships (what "Update engine" pins to), or null in the browser. */

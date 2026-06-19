@@ -1,6 +1,6 @@
 {
     "name": "@silkweaver/build",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "description": "Silkweaver toolchain — compiles a project folder into a runnable game (HTML5 / desktop executable). Usable from a CLI or the IDE.",
     "type": "commonjs",
     "license": "GPL-3.0",

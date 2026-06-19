@@ -20,8 +20,13 @@ export function file_watch_init(): void {
     if (!fs?.on_file_changed) return   // not running under the desktop host
     _inited = true
     fs.on_file_changed((rel: string) => {
-        const cbs = _subs.get(rel)
-        if (cbs) for (const cb of [...cbs]) { try { cb(rel) } catch { /* ignore */ } }
+        // Notify exact-path subscribers AND folder subscribers (key is a parent dir of the changed
+        // file) — lets e.g. the sprite editor watch `sprites/<name>` for any frame/meta change.
+        for (const [key, cbs] of _subs) {
+            if (rel === key || rel.startsWith(key + '/')) {
+                for (const cb of [...cbs]) { try { cb(rel) } catch { /* ignore */ } }
+            }
+        }
     })
 }
 

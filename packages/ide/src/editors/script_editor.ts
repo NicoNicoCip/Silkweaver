@@ -18,7 +18,7 @@ import { ICON } from "../icons.js"
 import { bp_register_editor, bp_unregister_editor, bp_toggle } from '../panels/breakpoint_manager.js'
 import { project_read_file, project_write_file, project_has_folder } from '../services/project.js'
 import { ENGINE_DTS }                               from '../generated/engine_types.js'
-import { editor_monaco_options, editor_register_themes, editor_apply_all } from '../editor_prefs.js'
+import { editor_monaco_options, editor_register_themes, editor_apply_all, editor_prefs_get } from '../editor_prefs.js'
 import { file_watch_subscribe }                     from '../services/file_watch.js'
 
 // Monaco is loaded from CDN at runtime via AMD — type it as `any` to avoid
@@ -485,7 +485,9 @@ export async function script_editor_open_full(parent: HTMLElement, rel_path: str
         load: async () => {
             let src = ''
             try { src = await project_read_file(rel_path) } catch { return '' }
-            if (_has_object_op()) {
+            // Auto-organize (metadata → variables → events + `;`) only when the user wants it; otherwise
+            // the full view shows the file exactly as written and never reorganizes.
+            if (_has_object_op() && editor_prefs_get().autoOrganizeObjects) {
                 try {
                     const norm = await _object_op('normalize_object', src)
                     if (typeof norm === 'string' && norm !== src) { await project_write_file(rel_path, norm); src = norm }

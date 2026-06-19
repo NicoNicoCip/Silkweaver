@@ -13,7 +13,15 @@
 import * as ts from 'typescript'
 
 /** Known static-metadata field names an object class may declare. */
-export type meta_field = 'sprite' | 'solid' | 'visible' | 'persistent' | 'depth' | 'parent'
+export type meta_field =
+    | 'sprite' | 'solid' | 'visible' | 'persistent' | 'depth' | 'parent'
+    | 'physics' | 'physics_shape' | 'physics_density' | 'physics_restitution' | 'physics_friction' | 'physics_sensor'
+
+/** Canonical order of the `static` metadata fields (keeps them tidy + consistent across files). */
+export const META_ORDER: string[] = [
+    'sprite', 'parent', 'solid', 'visible', 'persistent', 'depth',
+    'physics', 'physics_shape', 'physics_density', 'physics_restitution', 'physics_friction', 'physics_sensor',
+]
 
 /** Canonical GMS-style order of `on_*` event methods (used to keep events ordered in code). */
 export const EVENT_ORDER: string[] = [
@@ -39,6 +47,7 @@ export interface object_model {
     depth:      number
     variables:  { name: string; value: string }[]   // instance fields (name + default expression text)
     events:     string[]                              // on_* method names present
+    statics:    Record<string, string>               // every static field → its initializer text (generic metadata)
 }
 
 // =========================================================================
@@ -70,7 +79,7 @@ export function parse_object(src: string): object_model {
         class_name: cls?.name?.text ?? '',
         sprite: null, parent: null,
         solid: false, visible: true, persistent: false, depth: 0,
-        variables: [], events: [],
+        variables: [], events: [], statics: {},
     }
     if (!cls) return model
 
@@ -85,6 +94,7 @@ export function parse_object(src: string): object_model {
             if (!n) continue
             const init = m.initializer ? m.initializer.getText(sf) : ''
             if (_is_static(m)) {
+                model.statics[n] = init   // generic: every static field, by name
                 switch (n) {
                     case 'sprite':     model.sprite     = _string_literal(m.initializer); break
                     case 'parent':     model.parent     = m.initializer ? init : null;    break
@@ -190,9 +200,22 @@ export function set_static(src: string, name: meta_field, expr: string): string 
     }
     if (existing) {
         // declared without initializer — replace the whole member
-        return _apply(src, { start: existing.getStart(sf), end: existing.getEnd(), text: `static ${name} = ${expr}` })
+        return _apply(src, { start: existing.getStart(sf), end: existing.getEnd(), text: `static ${name} = ${expr};` })
     }
-    return _insert_member(src, `    static ${name} = ${expr}\n`)
+    // New static: metadata lives at the TOP, ordered by META_ORDER. Insert before the first static
+    // that sorts after it; else before the first non-static member (so statics stay grouped up top).
+    const stub  = `    static ${name} = ${expr};\n`
+    const order = META_ORDER.indexOf(name)
+    if (order >= 0) {
+        const after = cls.members.find(m => {
+            const n = _name_of(m)
+            return ts.isPropertyDeclaration(m) && _is_static(m) && n != null && META_ORDER.indexOf(n) > order
+        })
+        if (after) return _insert_before(src, after.getStart(sf), stub)
+    }
+    const first_non_static = cls.members.find(m => !(ts.isPropertyDeclaration(m) && _is_static(m)))
+    if (first_non_static) return _insert_before(src, first_non_static.getStart(sf), stub)
+    return _insert_member(src, stub)
 }
 
 /** Removes a static metadata field if present (e.g. clearing the sprite). */
@@ -209,14 +232,17 @@ export function set_field(src: string, name: string, expr: string): string {
         return _apply(src, { start: existing.initializer.getStart(sf), end: existing.initializer.getEnd(), text: expr })
     }
     if (existing) {
-        return _apply(src, { start: existing.getStart(sf), end: existing.getEnd(), text: `${name} = ${expr}` })
+        return _apply(src, { start: existing.getStart(sf), end: existing.getEnd(), text: `${name} = ${expr};` })
     }
-    // New variable: keep all instance variables grouped at the TOP of the class, in add-order, so
-    // every event below can reference them — and a later variable's initializer can safely read an
-    // earlier one. Insert after the last existing variable; if none, before the first member.
-    const stub = `    ${name} = ${expr}\n`
-    const vars = cls.members.filter(m => ts.isPropertyDeclaration(m) && !_is_static(m))
-    if (vars.length) return _insert_after(src, vars[vars.length - 1]!.getEnd(), stub)
+    // New variable: variables sit between the static metadata and the events, in add-order (so a later
+    // one can read an earlier one, and every event below can reference them). Insert after the last
+    // variable; else after the last static; else before the first member.
+    const stub    = `    ${name} = ${expr};\n`
+    const props   = cls.members.filter(m => ts.isPropertyDeclaration(m))
+    const vars    = props.filter(m => !_is_static(m))
+    const statics = props.filter(m => _is_static(m))
+    if (vars.length)        return _insert_after(src, vars[vars.length - 1]!.getEnd(), stub)
+    if (statics.length)     return _insert_after(src, statics[statics.length - 1]!.getEnd(), stub)
     if (cls.members.length) return _insert_before(src, cls.members[0]!.getStart(sf), stub)
     return _insert_member(src, stub)
 }
@@ -385,12 +411,12 @@ function _reindent(code: string, unit = '    '): string {
 
 /**
  * Reorders all class members into canonical groups, preserving each member's attached comments:
- *   1. instance variables — in their existing relative order (field-init order can matter; one
+ *   1. `static` metadata (sprite/parent/solid/…) — at the TOP, in META_ORDER (non-meta statics after);
+ *   2. instance variables — in their existing relative order (field-init order can matter; one
  *      field's initializer may read another), so they're grouped but never shuffled among themselves;
- *   2. `on_*` event methods — in canonical EVENT_ORDER;
- *   3. everything else (statics, helper methods) — in place.
- * Variables-before-events is the whole point: every event can reference every variable. A no-op if
- * the order is already canonical.
+ *   3. `on_*` event methods — in canonical EVENT_ORDER;
+ *   4. everything else (helper methods) — in place, at the bottom.
+ * Metadata → variables → events (execution order) is the canonical shape. A no-op if already canonical.
  */
 function _reorder_members(src: string): string {
     const sf = _source(src); const cls = _find_class(sf)
@@ -400,12 +426,19 @@ function _reorder_members(src: string): string {
         const n = _name_of(m)
         return n && ts.isMethodDeclaration(m) ? EVENT_ORDER.indexOf(n) : -1
     }
-    const is_var = (m: ts.ClassElement): boolean => ts.isPropertyDeclaration(m) && !_is_static(m)
+    const is_static_prop = (m: ts.ClassElement): boolean => ts.isPropertyDeclaration(m) && _is_static(m)
+    const is_var         = (m: ts.ClassElement): boolean => ts.isPropertyDeclaration(m) && !_is_static(m)
+    // Statics: META_ORDER fields first (sprite, parent, …); any other static keeps its relative place.
+    const static_key = (m: ts.ClassElement): number => {
+        const n = _name_of(m); const i = n ? META_ORDER.indexOf(n) : -1
+        return i >= 0 ? i : META_ORDER.length + members.indexOf(m)
+    }
 
+    const statics = members.filter(is_static_prop).sort((a, b) => static_key(a) - static_key(b))
     const vars    = members.filter(is_var)
     const events  = members.filter(m => event_idx(m) >= 0).sort((a, b) => event_idx(a) - event_idx(b))
-    const others  = members.filter(m => !is_var(m) && event_idx(m) < 0)
-    const ordered = [...vars, ...events, ...others]
+    const rest    = members.filter(m => !is_static_prop(m) && !is_var(m) && event_idx(m) < 0)
+    const ordered = [...statics, ...vars, ...events, ...rest]
     if (ordered.every((m, i) => m === members[i])) return src   // already canonical
 
     // Rebuild the class body from each member's full text (getFullStart → getEnd includes the leading
@@ -417,20 +450,54 @@ function _reorder_members(src: string): string {
     return prefix + ordered.map(chunk).join('') + suffix
 }
 
+/** Ensures every field declaration (static + instance) ends with a `;`. Methods are left as-is. */
+function _ensure_field_semicolons(src: string): string {
+    const sf = _source(src); const cls = _find_class(sf)
+    if (!cls) return src
+    const ends: number[] = []
+    for (const m of cls.members) {
+        if (!ts.isPropertyDeclaration(m)) continue
+        const end = m.getEnd()
+        if (src[end - 1] !== ';') ends.push(end)
+    }
+    let out = src
+    for (const pos of ends.sort((a, b) => b - a)) out = out.slice(0, pos) + ';' + out.slice(pos)
+    return out
+}
+
 /**
- * Normalizes a class-per-object file for display in the full code view: variables hoisted above all
- * events, canonical event order, then consistent indentation. Unchanged if there's no class.
+ * Normalizes a class-per-object file for the full code view: metadata → variables → events
+ * (execution order), a `;` on every field, then consistent indentation. The IDE only applies this
+ * when the user's "auto-organize objects" setting is on. Unchanged if there's no class.
  */
 export function normalize_object(src: string): string {
-    return _reindent(_reorder_members(src))
+    return _reindent(_ensure_field_semicolons(_reorder_members(src)))
 }
 
 // =========================================================================
 // Scaffolding
 // =========================================================================
 
-/** Generates a minimal class-file source for a new object. Imports are auto-managed (none needed). */
-export function scaffold_object(class_name: string): string {
+/**
+ * Generates a class-file source for a new object. `kind` picks a starting template:
+ *   - 'normal'  → an empty object with an on_create stub;
+ *   - 'physics' → a ready-to-run dynamic matter.js body (physics metadata + a body-sizing mask).
+ * Imports are auto-managed (none needed).
+ */
+export function scaffold_object(class_name: string, kind: 'normal' | 'physics' = 'normal'): string {
+    if (kind === 'physics') {
+        return `export class ${class_name} extends gm_object {
+    static physics = true;
+    static physics_shape = 'box';
+    static physics_density = 0.5;
+    static physics_restitution = 0.1;
+    static physics_friction = 0.2;
+    on_create(): void {
+        this.mask_set_size(32, 32);
+    }
+}
+`
+    }
     return `export class ${class_name} extends gm_object {
     on_create(): void {
 

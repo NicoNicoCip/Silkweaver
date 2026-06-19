@@ -25,6 +25,7 @@ export interface editor_prefs {
     bracketPairColorization: boolean
     indentGuides:            boolean
     stickyScroll:            boolean
+    autoOrganizeObjects:     boolean  // reorder object .ts (metadata→vars→events) + add `;` on full-view open
 }
 
 const DEFAULTS: editor_prefs = {
@@ -41,6 +42,7 @@ const DEFAULTS: editor_prefs = {
     bracketPairColorization: true,
     indentGuides:            true,
     stickyScroll:            false,
+    autoOrganizeObjects:     true,
 }
 
 const LS = 'sw.editor.prefs'

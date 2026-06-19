@@ -15,6 +15,8 @@
 /** A reference to a project resource in the manifest's registry. */
 export interface resource_ref {
     name: string             // unique identifier
+    icon?: string            // optional sprite name to use as this resource's tree thumbnail
+    folder?: string          // optional '/'-separated tree folder path (empty/absent = category root)
     [key: string]: unknown   // type-specific extra fields
 }
 
@@ -47,6 +49,8 @@ export interface project_file {
     engineVersion: string
     settings:      project_settings
     resources:     project_resources
+    /** Tree organisation: per-category list of folder paths (so empty folders persist too). */
+    folders?:      Record<string, string[]>
 }
 
 /** A single placed instance in a room. */

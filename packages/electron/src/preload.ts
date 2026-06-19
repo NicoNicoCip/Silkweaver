@@ -62,6 +62,10 @@ contextBridge.exposeInMainWorld('swfs', {
     copy: (src: string, dst: string): Promise<void> =>
         ipcRenderer.invoke('sw:copy', src, dst),
 
+    /** Opens a file in an external editor (`cmd` = editor exe path, or '' for the OS default app). */
+    open_external: (cmd: string, abs_path: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('sw:open-external', cmd, abs_path),
+
     /** Recursively delete a file or folder. */
     delete_path: (target: string): Promise<void> =>
         ipcRenderer.invoke('sw:delete', target),

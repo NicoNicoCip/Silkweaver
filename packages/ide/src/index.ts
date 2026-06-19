@@ -35,6 +35,11 @@ import { docs_open }                                                 from './pan
 import { bp_resume, bp_on_hit }                                      from './panels/breakpoint_manager.js'
 import { show_alert, show_prompt, show_confirm }                     from './services/dialogs.js'
 import { ICON }                                                     from './icons.js'
+import { show_context_menu }                                       from './services/context_menu.js'
+
+/** Last known cursor position — lets click-to-create menus open where the pointer is. */
+const _last_mouse = { x: 200, y: 200 }
+window.addEventListener('mousemove', (e) => { _last_mouse.x = e.clientX; _last_mouse.y = e.clientY })
 import { FloatingWindow }                                           from './window_manager.js'
 
 // Alias dialog functions for local use
@@ -129,6 +134,8 @@ function boot(): void {
     _tree.on_delete_resource    = on_delete_resource
     _tree.on_rename_resource    = on_rename_resource
     _tree.on_duplicate_resource = on_duplicate_resource
+    _tree.on_set_icon           = () => _mark_unsaved()   // icon override lives in project.json
+    _tree.on_folders_changed    = () => _mark_unsaved()   // folder org lives in project.json
     _tree.mount(dock)
 
     // 6. Listen for resource open events
@@ -312,7 +319,20 @@ async function on_file_save_as(): Promise<void> {
 
 async function on_add_resource(cat: resource_category): Promise<void> {
     if (!_project) { await _alert('Open a project first.'); return }
-    // Create with a unique default name, then let the user rename it in place (Explorer-style).
+    // Objects offer a starter type (like GMS's create menu) — opened at the pointer, no delete/rename.
+    if (cat === 'objects') {
+        show_context_menu(_last_mouse.x, _last_mouse.y, [
+            { label: 'Object',         icon: ICON.object, action: () => void _create_resource('objects', 'normal') },
+            { label: 'Physics Object', icon: ICON.object, action: () => void _create_resource('objects', 'physics') },
+        ])
+        return
+    }
+    await _create_resource(cat)
+}
+
+/** Creates a resource with a unique default name, then starts an in-place rename (Explorer-style). */
+async function _create_resource(cat: resource_category, kind: 'normal' | 'physics' = 'normal'): Promise<void> {
+    if (!_project) return
     // Check the registry AND on-disk files so a new resource never reuses an orphaned folder
     // (e.g. a deleted sprite's files left behind), which would load stale data.
     const singular = cat.slice(0, -1)
@@ -326,8 +346,8 @@ async function on_add_resource(cat: resource_category): Promise<void> {
         unexecute: () => { _tree.remove_resource(cat, name); _mark_unsaved() },
     })
     if (cat === 'objects') {
-        inject_project_types(_project)        // so editors can reference it by name
-        await _scaffold_object_file(name)     // write objects/<name>.ts now, so it always exists
+        inject_project_types(_project)            // so editors can reference it by name
+        await _scaffold_object_file(name, kind)   // write objects/<name>.ts now, so it always exists
     }
     _tree.expand_category(cat)
     _tree.begin_rename(cat, name)
@@ -339,14 +359,14 @@ async function on_add_resource(cat: resource_category): Promise<void> {
  * ("[build] object 'X' has no objects/X.ts — skipped") and bare references to it don't resolve.
  * The class identifier is renamed along with the file when the resource is renamed.
  */
-async function _scaffold_object_file(name: string): Promise<void> {
+async function _scaffold_object_file(name: string, kind: 'normal' | 'physics' = 'normal'): Promise<void> {
     if (!project_has_folder()) return
     const rel = `objects/${name}.ts`
     if (await project_file_exists(rel)) return
     try {
         const op = (window as any).swfs?.object_op
         const src = op
-            ? await op('scaffold', name)
+            ? await op('scaffold', name, kind)
             : `export class ${name} extends gm_object {\n    on_create(): void {\n\n    }\n}\n`
         await project_write_file(rel, src)
     } catch (err) {

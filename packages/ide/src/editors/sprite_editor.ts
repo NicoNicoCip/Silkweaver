@@ -10,8 +10,10 @@
 
 import { FloatingWindow }                                                    from '../window_manager.js'
 import { ICON }                                                              from '../icons.js'
-import { project_write_binary, project_read_file, project_write_file, project_read_binary_url } from '../services/project.js'
+import { project_write_binary, project_read_file, project_write_file, project_read_binary_url, project_open_external } from '../services/project.js'
 import { pixel_editor_open }                                                 from './pixel_editor.js'
+import { ext_image_editor_get }                                             from '../external_tools.js'
+import { file_watch_subscribe }                                            from '../services/file_watch.js'
 
 interface sprite_frame { name: string; data_url: string }
 type mask_type = 'rectangle' | 'ellipse' | 'diamond' | 'precise'
@@ -64,6 +66,7 @@ class sprite_editor_window {
     private _playing       = false
     private _timer:        ReturnType<typeof setInterval> | null = null
     private _dragging:     'origin' | 'mask' | null = null
+    private _unwatch_sprite: (() => void) | null = null   // live-reload subscription (external/parallel edits)
     private _drag_off      = { x: 0, y: 0 }
     private _on_closed_cb:  (() => void) | null = null
 
@@ -80,8 +83,12 @@ class sprite_editor_window {
             this._pause()
             window.removeEventListener('mousemove', this._on_move)
             window.removeEventListener('mouseup', this._on_up)
+            this._unwatch_sprite?.()
             this._on_closed_cb?.()
         })
+        // Live-reload the preview whenever this sprite's files change on disk (external editor,
+        // another window, etc.) — no reopen needed.
+        this._unwatch_sprite = file_watch_subscribe(`sprites/${sprite_name}`, () => void this._reload_current_frame())
 
         this._data = {
             frames: [], origin_x: 0, origin_y: 0, width: 0, height: 0,
@@ -154,14 +161,14 @@ class sprite_editor_window {
         zlabel.style.cssText = 'font-size:11px; color:var(--sw-text); min-width:34px; text-align:center;'
         const set_zlabel = () => { zlabel.textContent = `${this._zoom}×` }
         bar.append(
-            _icon_btn('−', 'Zoom out', () => { this._set_zoom(this._zoom - 1); set_zlabel() }),
+            _icon_btn(ICON.zoom_out, 'Zoom out', () => { this._set_zoom(this._zoom - 1); set_zlabel() }),
             zlabel,
-            _icon_btn('+', 'Zoom in', () => { this._set_zoom(this._zoom + 1); set_zlabel() }),
+            _icon_btn(ICON.zoom_in, 'Zoom in', () => { this._set_zoom(this._zoom + 1); set_zlabel() }),
             _icon_btn('Fit', 'Fit to view', () => { this._fit_zoom(); set_zlabel() }, 30),
             _vsep(),
-            _icon_btn('⏮', 'Previous frame', () => this._goto(this._cur - 1)),
-            (this._play_btn = _icon_btn('▶', 'Play / pause', () => this._toggle_play()) as HTMLButtonElement),
-            _icon_btn('⏭', 'Next frame', () => this._goto(this._cur + 1)),
+            _icon_btn(ICON.skip_prev, 'Previous frame', () => this._goto(this._cur - 1)),
+            (this._play_btn = _icon_btn(ICON.play, 'Play / pause', () => this._toggle_play()) as HTMLButtonElement),
+            _icon_btn(ICON.skip_next, 'Next frame', () => this._goto(this._cur + 1)),
         )
         this._frame_label = document.createElement('span')
         this._frame_label.style.cssText = 'font-size:11px; color:var(--sw-text-dim); margin-left:4px;'
@@ -181,6 +188,7 @@ class sprite_editor_window {
             _btn('New', () => this._new_frame()),
             _btn('Import', () => this._import_frames()),
             _btn('Edit', () => this._edit_frame(this._cur)),
+            _btn('External', () => void this._edit_external()),
             _btn('Clear', () => this._clear_frames()),
         )
         el.appendChild(actions)
@@ -289,9 +297,9 @@ class sprite_editor_window {
 
             // Delete button: a corner overlay, so a horizontal scrollbar can never hide it.
             const del = document.createElement('div')
-            del.textContent = '×'
             del.title = 'Delete subimage'
-            del.style.cssText = 'position:absolute; top:0; right:0; width:14px; height:14px; line-height:13px; text-align:center; font-size:11px; color:#fff; background:rgba(180,40,40,0.85); cursor:pointer;'
+            del.style.cssText = 'position:absolute; top:0; right:0; width:14px; height:14px; display:flex; align-items:center; justify-content:center; color:#fff; background:rgba(180,40,40,0.85); cursor:pointer;'
+            _btn_svg(del, ICON.close, 10)
             del.addEventListener('click', (e) => { e.stopPropagation(); this._delete_frame(i) })
             cell.appendChild(del)
 
@@ -323,7 +331,7 @@ class sprite_editor_window {
     private _play(): void {
         if (this._data.frames.length <= 1) return
         this._playing = true
-        this._play_btn.textContent = '⏸'
+        _btn_svg(this._play_btn, ICON.pause)
         this._stop_timer()
         const ms = Math.round(1000 / Math.max(1, this._data.anim_speed))
         this._timer = setInterval(() => {
@@ -334,7 +342,7 @@ class sprite_editor_window {
 
     private _pause(): void {
         this._playing = false
-        if (this._play_btn) this._play_btn.textContent = '▶'
+        if (this._play_btn) _btn_svg(this._play_btn, ICON.play)
         this._stop_timer()
     }
 
@@ -505,6 +513,27 @@ class sprite_editor_window {
         })
     }
 
+    /** Opens the current subimage in the user's external image editor (or the OS default). */
+    private async _edit_external(): Promise<void> {
+        const frame = this._data.frames[this._cur]
+        if (!frame) { this._status_el.textContent = 'Add a subimage first (New / Import), then Edit externally.'; return }
+        await this._save_frame_file(frame.name, frame.data_url)   // make sure disk has the latest pixels
+        const res = await project_open_external(`sprites/${this._sprite_name}/${frame.name}`, ext_image_editor_get())
+        if (res.ok) this._status_el.textContent = `Editing ${frame.name} externally — saves reload here automatically.`
+        else        this._status_el.textContent = 'External editor: ' + (res.error ?? 'could not open')
+    }
+
+    private async _reload_current_frame(): Promise<void> {
+        const frame = this._data.frames[this._cur]
+        if (!frame) return
+        let url = ''
+        try { url = await project_read_binary_url(`sprites/${this._sprite_name}/${frame.name}`) } catch { return }
+        if (!url) return
+        frame.data_url = url
+        this._imgs[this._cur] = await _decode(url)
+        this._rebuild_strip(); this._redraw()
+    }
+
     private async _add_frame(url: string): Promise<void> {
         const name = this._unique_frame_name()
         this._data.frames.push({ name, data_url: url })
@@ -631,12 +660,21 @@ function _btn(label: string, cb: () => void): HTMLButtonElement {
     return b
 }
 
-function _icon_btn(char: string, title: string, cb: () => void, w = 24): HTMLButtonElement {
+function _icon_btn(content: string, title: string, cb: () => void, w = 24): HTMLButtonElement {
     const b = document.createElement('button')
-    b.textContent = char; b.title = title
-    b.style.cssText = `min-width:${w}px; height:24px; cursor:pointer; background:var(--sw-chrome2); border:1px solid var(--sw-border2); color:var(--sw-text); font-size:12px; padding:0 4px;`
+    b.title = title
+    b.style.cssText = `min-width:${w}px; height:24px; cursor:pointer; background:var(--sw-chrome2); border:1px solid var(--sw-border2); color:var(--sw-text); font-size:12px; padding:0 4px; display:flex; align-items:center; justify-content:center;`
+    if (content.trimStart().startsWith('<svg')) _btn_svg(b, content)   // SVG icon
+    else b.textContent = content                                       // text label (e.g. "Fit")
     b.addEventListener('click', cb)
     return b
+}
+
+/** Renders an inline-SVG icon into `el`, sized to `size` px (icons have no intrinsic size). */
+function _btn_svg(el: HTMLElement, svg: string, size = 15): void {
+    el.innerHTML = svg
+    const s = el.querySelector('svg')
+    if (s) { s.setAttribute('width', String(size)); s.setAttribute('height', String(size)) }
 }
 
 function _vsep(): HTMLElement {

@@ -8,6 +8,7 @@
  */
 
 import { FloatingWindow } from '../window_manager.js'
+import { ICON } from '../icons.js'
 
 /**
  * Opens the pixel editor to create a new frame or edit an existing one.
@@ -30,16 +31,16 @@ export function pixel_editor_open(
 type Tool = 'pencil' | 'eraser' | 'fill' | 'eyedropper' | 'line' | 'rect' | 'rect_fill' | 'ellipse' | 'ellipse_fill'
 type RGBA = [number, number, number, number]
 
-const TOOLS: { tool: Tool; char: string; title: string }[] = [
-    { tool: 'pencil',       char: '✎', title: 'Pencil (P)' },
-    { tool: 'eraser',       char: '⌫', title: 'Eraser (E)' },
-    { tool: 'fill',         char: '▥', title: 'Fill (F)' },
-    { tool: 'eyedropper',   char: '⦿', title: 'Pick colour (I)' },
-    { tool: 'line',         char: '╱', title: 'Line (L)' },
-    { tool: 'rect',         char: '▭', title: 'Rectangle (R)' },
-    { tool: 'rect_fill',    char: '▬', title: 'Filled rectangle' },
-    { tool: 'ellipse',      char: '◯', title: 'Ellipse (O)' },
-    { tool: 'ellipse_fill', char: '⬤', title: 'Filled ellipse' },
+const TOOLS: { tool: Tool; icon: string; title: string }[] = [
+    { tool: 'pencil',       icon: ICON.pencil,       title: 'Pencil (P)' },
+    { tool: 'eraser',       icon: ICON.eraser,       title: 'Eraser (E)' },
+    { tool: 'fill',         icon: ICON.fill,         title: 'Fill (F)' },
+    { tool: 'eyedropper',   icon: ICON.eyedropper,   title: 'Pick colour (I)' },
+    { tool: 'line',         icon: ICON.line,         title: 'Line (L)' },
+    { tool: 'rect',         icon: ICON.rect,         title: 'Rectangle (R)' },
+    { tool: 'rect_fill',    icon: ICON.rect_fill,    title: 'Filled rectangle' },
+    { tool: 'ellipse',      icon: ICON.ellipse,      title: 'Ellipse (O)' },
+    { tool: 'ellipse_fill', icon: ICON.ellipse_fill, title: 'Filled ellipse' },
 ]
 
 const PALETTE = [
@@ -50,6 +51,19 @@ const PALETTE = [
 ]
 
 const MAX_UNDO = 50
+
+// Recently-used colours — a most-recent-first palette persisted across edits/sessions, so you're
+// never stuck with just the fixed swatches.
+const LS_RECENT = 'sw.pixel.recent'
+const MAX_RECENT = 24
+function _recent_get(): string[] {
+    try { const v = JSON.parse(localStorage.getItem(LS_RECENT) ?? '[]'); return Array.isArray(v) ? v.slice(0, MAX_RECENT) : [] }
+    catch { return [] }
+}
+function _recent_add(hex: string): void {
+    const next = [hex, ..._recent_get().filter(c => c.toLowerCase() !== hex.toLowerCase())].slice(0, MAX_RECENT)
+    localStorage.setItem(LS_RECENT, JSON.stringify(next))
+}
 
 class PixelEditor {
     private _win:            FloatingWindow
@@ -84,6 +98,7 @@ class PixelEditor {
     private _tool_btns       = new Map<Tool, HTMLElement>()
     private _sw_primary!:     HTMLElement
     private _sw_secondary!:   HTMLElement
+    private _recent_row!:     HTMLElement
 
     constructor(workspace: HTMLElement, width: number, height: number, initial: string | null, on_save: (d: string) => void) {
         this._w = Math.max(1, width)
@@ -115,8 +130,8 @@ class PixelEditor {
         const bar = document.createElement('div')
         bar.style.cssText = 'display:flex; gap:4px; padding:6px; flex-wrap:wrap; align-items:center; background:var(--sw-chrome2); border-bottom:1px solid var(--sw-border2);'
 
-        for (const { tool, char, title } of TOOLS) {
-            const btn = _tbtn(char, title, () => this._set_tool(tool))
+        for (const { tool, icon, title } of TOOLS) {
+            const btn = _tbtn(icon, title, () => this._set_tool(tool))
             this._tool_btns.set(tool, btn)
             bar.appendChild(btn)
         }
@@ -133,11 +148,11 @@ class PixelEditor {
 
         // Zoom
         bar.append(
-            _tbtn('−', 'Zoom out', () => this._set_zoom(this._zoom - (this._zoom > 4 ? 2 : 1))),
-            _tbtn('+', 'Zoom in',  () => this._set_zoom(this._zoom + 2)),
+            _tbtn(ICON.zoom_out, 'Zoom out', () => this._set_zoom(this._zoom - (this._zoom > 4 ? 2 : 1))),
+            _tbtn(ICON.zoom_in,  'Zoom in',  () => this._set_zoom(this._zoom + 2)),
             _sep(),
-            _tbtn('↶', 'Undo (Ctrl+Z)', () => this._undo_op()),
-            _tbtn('↷', 'Redo (Ctrl+Y)', () => this._redo_op()),
+            _tbtn(ICON.undo, 'Undo (Ctrl+Z)', () => this._undo_op()),
+            _tbtn(ICON.redo, 'Redo (Ctrl+Y)', () => this._redo_op()),
             _sep(),
         )
 
@@ -170,17 +185,17 @@ class PixelEditor {
         swwrap.append(this._sw_secondary, this._sw_primary)
         cbar.appendChild(swwrap)
         cbar.appendChild(_sep())
-        for (const c of PALETTE) {
-            const sw = _swatch(c, c, () => {})
-            sw.style.cssText += 'width:18px; height:18px;'
-            sw.addEventListener('mousedown', (e) => {
-                e.preventDefault()
-                if (e.button === 2) { this._secondary = c; this._sw_secondary.style.background = c }
-                else                { this._primary   = c; this._sw_primary.style.background   = c }
-            })
-            sw.addEventListener('contextmenu', (e) => e.preventDefault())
-            cbar.appendChild(sw)
-        }
+        for (const c of PALETTE) cbar.appendChild(this._palette_swatch(c))
+
+        // Recently-used colours (fills in as you draw / pick).
+        cbar.appendChild(_sep())
+        const recent_lbl = document.createElement('span')
+        recent_lbl.textContent = 'Recent'
+        recent_lbl.style.cssText = 'font-size:11px; color:var(--sw-text-dim);'
+        this._recent_row = document.createElement('div')
+        this._recent_row.style.cssText = 'display:flex; gap:3px; flex-wrap:wrap;'
+        cbar.append(recent_lbl, this._recent_row)
+        this._render_recents()
 
         // Grid controls: spacing + colour + optional fine pixel grid.
         cbar.appendChild(_sep())
@@ -260,7 +275,32 @@ class PixelEditor {
             if (primary) { this._primary = inp.value; this._sw_primary.style.background = inp.value }
             else         { this._secondary = inp.value; this._sw_secondary.style.background = inp.value }
         })
+        inp.addEventListener('change', () => this._use_color(inp.value))
         inp.click()
+    }
+
+    /** A clickable palette/recent swatch: left-click = primary, right-click = secondary. */
+    private _palette_swatch(c: string): HTMLElement {
+        const sw = _swatch(c, c, () => {})
+        sw.style.cssText += 'width:18px; height:18px;'
+        sw.addEventListener('mousedown', (e) => {
+            e.preventDefault()
+            if (e.button === 2) { this._secondary = c; this._sw_secondary.style.background = c }
+            else                { this._primary   = c; this._sw_primary.style.background   = c }
+        })
+        sw.addEventListener('contextmenu', (e) => e.preventDefault())
+        return sw
+    }
+
+    /** Records a colour as used and refreshes the Recent row. */
+    private _use_color(hex: string): void {
+        _recent_add(hex)
+        this._render_recents()
+    }
+
+    private _render_recents(): void {
+        this._recent_row.innerHTML = ''
+        for (const c of _recent_get()) this._recent_row.appendChild(this._palette_swatch(c))
     }
 
     private _on_key = (e: KeyboardEvent): void => {
@@ -289,6 +329,7 @@ class PixelEditor {
         this._erasing = this._tool === 'eraser'
 
         if (this._tool === 'eyedropper') { this._pick(x, y, !right); return }
+        if (!this._erasing) this._use_color(this._draw_color)
         if (this._tool === 'fill')       { this._snapshot(); this._flood(x, y); return }
 
         this._snapshot()
@@ -362,6 +403,7 @@ class PixelEditor {
         const hex = `#${[d[0]!, d[1]!, d[2]!].map(v => v.toString(16).padStart(2, '0')).join('')}`
         if (primary) { this._primary = hex; this._sw_primary.style.background = hex }
         else         { this._secondary = hex; this._sw_secondary.style.background = hex }
+        this._use_color(hex)
     }
 
     private _flood(x: number, y: number): void {
@@ -491,10 +533,11 @@ function _fit_zoom(w: number, h: number): number {
     return Math.max(2, Math.min(20, Math.floor(Math.min(640 / w, 480 / h)) || 1))
 }
 
-function _tbtn(char: string, title: string, cb: () => void): HTMLElement {
+function _tbtn(icon: string, title: string, cb: () => void): HTMLElement {
     const b = document.createElement('button')
-    b.textContent = char; b.title = title
-    b.style.cssText = 'width:28px; height:28px; cursor:pointer; border:1px solid var(--sw-border2); background:var(--sw-chrome2); color:var(--sw-text); font-size:14px; padding:0; display:flex; align-items:center; justify-content:center;'
+    b.innerHTML = icon; b.title = title
+    b.style.cssText = 'width:28px; height:28px; cursor:pointer; border:1px solid var(--sw-border2); background:var(--sw-chrome2); color:var(--sw-text); padding:0; display:flex; align-items:center; justify-content:center;'
+    const svg = b.querySelector('svg'); if (svg) { svg.setAttribute('width', '17'); svg.setAttribute('height', '17') }
     b.addEventListener('click', cb)
     return b
 }

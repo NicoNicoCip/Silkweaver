@@ -1,6 +1,6 @@
 {
     "name": "@silkweaver/electron",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "description": "Desktop host for the Silkweaver IDE (window + IPC file bridge; delegates builds to @silkweaver/build)",
     "type": "commonjs",
     "main": "../../exports/electron/main.js",

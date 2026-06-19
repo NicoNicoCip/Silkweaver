@@ -4,8 +4,9 @@
  * from the renderer via the preload bridge.
  */
 
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import { spawn }    from 'node:child_process'
 import * as fs      from 'node:fs'
 import * as path    from 'node:path'
 import * as build   from '@silkweaver/build'
@@ -32,7 +33,7 @@ function _start_watch(folder: string): void {
         _watcher = fs.watch(folder, { recursive: true }, (_event, filename) => {
             if (!filename) return
             const fname = filename.toString()
-            if (!/\.(ts|json)$/i.test(fname)) return        // only code/manifest files matter to editors
+            if (!/\.(ts|json|png|jpe?g|gif|webp)$/i.test(fname)) return   // code/manifest + image assets
             const abs = path.join(folder, fname)
             const prev = _watch_debounce.get(abs); if (prev) clearTimeout(prev)
             _watch_debounce.set(abs, setTimeout(() => void _emit_change(folder, abs), 120))
@@ -192,6 +193,29 @@ ipcMain.handle('sw:copy', async (_e, src: string, dst: string) => {
 /** Recursively delete a file or folder (no error if it doesn't exist). */
 ipcMain.handle('sw:delete', async (_e, target: string) => {
     await fs.promises.rm(target, { recursive: true, force: true })
+})
+
+/**
+ * Opens a file in an external editor: `cmd` (a full path to the editor executable) with the file as
+ * its argument, or — if `cmd` is empty — the OS default app for that file type. Detached so it
+ * doesn't tie to the IDE's lifetime.
+ */
+ipcMain.handle('sw:open-external', async (_e, cmd: string, abs_path: string) => {
+    try {
+        // Tolerate a path pasted via Explorer's "Copy as path" (which wraps it in double quotes).
+        const exe = (cmd ?? '').trim().replace(/^"([\s\S]*)"$/, '$1')
+        if (exe) {
+            const child = spawn(exe, [abs_path], { detached: true, stdio: 'ignore' })
+            child.on('error', err => console.warn('[open-external]', err?.message ?? err))
+            child.unref()
+        } else {
+            const err = await shell.openPath(abs_path)   // OS default application
+            if (err) return { ok: false, error: err }
+        }
+        return { ok: true }
+    } catch (e: any) {
+        return { ok: false, error: String(e?.message ?? e) }
+    }
 })
 
 // =========================================================================

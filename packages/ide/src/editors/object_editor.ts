@@ -13,6 +13,7 @@ import { project_read_file, project_write_file, project_file_exists, project_get
 import { script_editor_open_event, script_editor_open_full }     from './script_editor.js'
 import { get_project_resource_names }                            from '../index.js'
 import { file_watch_subscribe }                                  from '../services/file_watch.js'
+import { show_context_menu }                                     from '../services/context_menu.js'
 
 // =========================================================================
 // Object model (mirrors object_format.object_model)
@@ -28,13 +29,31 @@ interface object_model {
     depth:      number
     variables:  { name: string; value: string }[]
     events:     string[]   // on_* method names present in the class
+    statics:    Record<string, string>   // every static field → its initializer text
 }
 
 const EMPTY_MODEL: object_model = {
     class_name: '', sprite: null, parent: null,
     solid: false, visible: true, persistent: false, depth: 0,
-    variables: [], events: [],
+    variables: [], events: [], statics: {},
 }
+
+/** Addable/toggleable object metadata (each is a `static` field). `def` is its initializer when added. */
+interface meta_def { key: string; label: string; kind: 'sprite' | 'object' | 'bool' | 'number' | 'enum'; def: string; options?: string[] }
+const META_CATALOG: meta_def[] = [
+    { key: 'sprite',              label: 'Sprite',              kind: 'sprite', def: "''" },
+    { key: 'parent',              label: 'Parent',              kind: 'object', def: '' },
+    { key: 'solid',               label: 'Solid',               kind: 'bool',   def: 'true' },
+    { key: 'visible',             label: 'Visible',             kind: 'bool',   def: 'true' },
+    { key: 'persistent',          label: 'Persistent',          kind: 'bool',   def: 'true' },
+    { key: 'depth',               label: 'Depth',               kind: 'number', def: '0' },
+    { key: 'physics',             label: 'Physics',             kind: 'bool',   def: 'true' },
+    { key: 'physics_shape',       label: 'Physics shape',       kind: 'enum',   def: "'box'", options: ['box', 'circle'] },
+    { key: 'physics_density',     label: 'Physics density',     kind: 'number', def: '0.5' },
+    { key: 'physics_restitution', label: 'Physics restitution', kind: 'number', def: '0.1' },
+    { key: 'physics_friction',    label: 'Physics friction',    kind: 'number', def: '0.2' },
+    { key: 'physics_sensor',      label: 'Physics sensor',      kind: 'bool',   def: 'false' },
+]
 
 /** Catalog of authorable events → class method names (+ params for the few that take args). */
 interface event_def { label: string; method: string; params: string }
@@ -167,6 +186,8 @@ class object_editor_window {
             this._src = await _op(action, this._src, ...args)
             await project_write_file(this._rel, this._src)
             this._model = await _op('parse_object', this._src)
+            // The tree's object icon shows the object's sprite — refresh it when the sprite changes.
+            if (args[0] === 'sprite') document.dispatchEvent(new CustomEvent('sw:resource_changed', { detail: { category: 'objects' } }))
         } catch (err) {
             console.error('[IDE] object patch failed:', err)
         }
@@ -184,34 +205,100 @@ class object_editor_window {
     private _build_props(): HTMLElement {
         const el = document.createElement('div')
         el.style.cssText = 'display:flex; flex-direction:column; gap:6px;'
-        const m = this._model
+        const statics = this._model.statics ?? {}
 
-        el.appendChild(_section_header('Sprite'))
-        el.appendChild(_asset_row(m.sprite, get_project_resource_names('sprites'), async (name) => {
-            await this._patch(name ? 'set_static' : 'remove_static', ...(name ? ['sprite', `'${name}'`] : ['sprite']))
-        }))
+        el.appendChild(_section_header('Metadata'))
 
-        el.appendChild(_section_header('Parent Object'))
-        el.appendChild(_asset_row(m.parent, get_project_resource_names('objects').filter(n => n !== this._object_name), async (name) => {
-            await this._patch(name ? 'set_static' : 'remove_static', ...(name ? ['parent', name] : ['parent']))
-        }))
+        // Only the metadata the object actually declares is shown — each editable/toggleable/removable.
+        const present = META_CATALOG.filter(d => d.key in statics)
+        if (present.length === 0) {
+            const empty = document.createElement('div')
+            empty.style.cssText = 'color:var(--sw-text-dim); font-size:11px;'
+            empty.textContent = 'No metadata yet — click + to add (sprite, parent, physics…).'
+            el.appendChild(empty)
+        }
+        for (const def of present) el.appendChild(this._meta_row(def, statics[def.key] ?? def.def))
 
-        el.appendChild(_section_header('Properties'))
-        el.append(
-            _checkbox_row('Visible',    m.visible,    (v) => this._patch(v ? 'remove_static' : 'set_static', ...(v ? ['visible'] : ['visible', 'false']))),
-            _checkbox_row('Solid',      m.solid,      (v) => this._patch(v ? 'set_static' : 'remove_static', ...(v ? ['solid', 'true'] : ['solid']))),
-            _checkbox_row('Persistent', m.persistent, (v) => this._patch(v ? 'set_static' : 'remove_static', ...(v ? ['persistent', 'true'] : ['persistent']))),
-            _number_row('Depth:', m.depth, (v) => this._patch(v !== 0 ? 'set_static' : 'remove_static', ...(v !== 0 ? ['depth', String(v)] : ['depth']))),
-        )
+        // + Add metadata → a menu of the fields not already present.
+        const add = document.createElement('button')
+        add.className = 'sw-btn'
+        add.textContent = '+ Add metadata'
+        add.style.cssText = 'font-size:11px; align-self:flex-start; padding:2px 8px;'
+        add.addEventListener('click', (e) => {
+            const absent = META_CATALOG.filter(d => !(d.key in statics))
+            if (absent.length === 0) return
+            show_context_menu((e as MouseEvent).clientX, (e as MouseEvent).clientY,
+                absent.map(d => ({ label: d.label, action: () => void this._patch('set_static', d.key, d.def) })))
+        })
+        el.appendChild(add)
 
         el.appendChild(this._build_variables_section())
-
-        const note = document.createElement('div')
-        note.style.cssText = 'font-size:10px; color:var(--sw-text-dim); margin-top:6px;'
-        note.textContent = 'Physics: add `static physics = true` in code.'
-        el.appendChild(note)
-
         return el
+    }
+
+    /**
+     * A single metadata field. Compact controls (toggles + short numbers) sit inline with the label;
+     * wide controls (sprite/parent/enum dropdowns) go full-width on their own line so long resource
+     * names never force a horizontal scroll. Long labels truncate with an ellipsis (+ title tooltip).
+     */
+    private _meta_row(def: meta_def, value: string): HTMLElement {
+        const inline = def.kind === 'bool' || def.kind === 'number'   // checkbox / short number → sits on the label row
+
+        const label = document.createElement('span')
+        label.textContent = def.label; label.title = def.label
+        label.style.cssText = 'flex:1; min-width:0; font-size:10px; color:var(--sw-text-dim); text-transform:uppercase; letter-spacing:0.04em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'
+        const del = document.createElement('button')
+        del.className = 'sw-x-btn'; del.textContent = '✕'; del.title = `Remove ${def.label}`; del.style.flexShrink = '0'
+        del.addEventListener('click', () => this._patch('remove_static', def.key))
+
+        const full = 'width:100%; min-width:0; box-sizing:border-box; font-size:11px;'
+        let control: HTMLElement
+        if (def.kind === 'bool') {
+            const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = value === 'true'
+            cb.style.cssText = 'width:16px; height:16px; cursor:pointer; flex-shrink:0; margin:0;'
+            cb.addEventListener('change', () => this._patch('set_static', def.key, cb.checked ? 'true' : 'false'))
+            control = cb
+        } else if (def.kind === 'number') {
+            const inp = document.createElement('input'); inp.className = 'sw-input'; inp.type = 'number'; inp.value = value
+            inp.style.cssText = 'width:72px; flex-shrink:0; box-sizing:border-box; font-size:11px;'
+            inp.addEventListener('change', () => this._patch('set_static', def.key, String(Number(inp.value) || 0)))
+            control = inp
+        } else if (def.kind === 'enum') {
+            const sel = document.createElement('select'); sel.className = 'sw-select'; sel.style.cssText = full
+            const cur = value.replace(/^'|'$/g, '')
+            for (const opt of def.options ?? []) { const o = document.createElement('option'); o.value = opt; o.textContent = opt; if (opt === cur) o.selected = true; sel.appendChild(o) }
+            sel.addEventListener('change', () => this._patch('set_static', def.key, `'${sel.value}'`))
+            control = sel
+        } else {   // 'sprite' | 'object' — a resource dropdown
+            const sel = document.createElement('select'); sel.className = 'sw-select'; sel.style.cssText = full
+            const names = def.kind === 'sprite'
+                ? get_project_resource_names('sprites')
+                : get_project_resource_names('objects').filter(n => n !== this._object_name)
+            const cur = def.kind === 'sprite' ? value.replace(/^'|'$/g, '') : value
+            const blank = document.createElement('option'); blank.value = ''; blank.textContent = '(none)'; sel.appendChild(blank)
+            for (const n of names) { const o = document.createElement('option'); o.value = n; o.textContent = n; if (n === cur) o.selected = true; sel.appendChild(o) }
+            sel.addEventListener('change', () => {
+                const v = sel.value
+                if (def.kind === 'sprite') this._patch('set_static', def.key, v ? `'${v}'` : "''")
+                else                       this._patch(v ? 'set_static' : 'remove_static', ...(v ? [def.key, v] : [def.key]))
+            })
+            control = sel
+        }
+
+        const wrap = document.createElement('div')
+        if (inline) {
+            // [label …………] [control] [✕]  — one tidy row.
+            wrap.style.cssText = 'display:flex; align-items:center; gap:6px;'
+            wrap.append(label, control, del)
+        } else {
+            // [label …] [✕] header, then the full-width control underneath.
+            wrap.style.cssText = 'display:flex; flex-direction:column; gap:2px;'
+            const head = document.createElement('div')
+            head.style.cssText = 'display:flex; align-items:center; gap:6px;'
+            head.append(label, del)
+            wrap.append(head, control)
+        }
+        return wrap
     }
 
     private _build_variables_section(): HTMLElement {
@@ -265,7 +352,7 @@ class object_editor_window {
             const val = document.createElement('input')
             val.className = 'sw-input'
             val.value = v.value
-            val.style.cssText = 'flex:1; font-size:11px; font-family:monospace;'
+            val.style.cssText = 'flex:1; min-width:0; font-size:11px; font-family:monospace;'
             val.addEventListener('change', () => this._patch('set_field', v.name, val.value || '0'))
 
             const del = document.createElement('button')
@@ -420,38 +507,6 @@ class object_editor_window {
 // Helpers
 // =========================================================================
 
-/**
- * A dropdown row used for the sprite and parent assignments — pick from the project's
- * resources instead of typing the name. A "(none)" option clears the assignment, and a
- * current value that is no longer in the list (renamed/deleted) is preserved as an option.
- */
-function _asset_row(value: string | null, options: string[], on_set: (name: string) => void): HTMLElement {
-    const row = document.createElement('div')
-    row.style.cssText = 'display:flex; gap:4px; align-items:center;'
-    const sel = document.createElement('select')
-    sel.className = 'sw-select'
-    sel.style.cssText = 'flex:1; min-width:0;'
-    const cur = value ?? ''
-
-    const none = document.createElement('option')
-    none.value = ''; none.textContent = '(none)'
-    if (!cur) none.selected = true
-    sel.appendChild(none)
-
-    const all = [...options]
-    if (cur && !all.includes(cur)) all.unshift(cur)
-    for (const name of all) {
-        const o = document.createElement('option')
-        o.value = name; o.textContent = name
-        if (name === cur) o.selected = true
-        sel.appendChild(o)
-    }
-
-    sel.addEventListener('change', () => on_set(sel.value))
-    row.appendChild(sel)
-    return row
-}
-
 function _input_overlay(msg: string, def: string): Promise<string | null> {
     return new Promise(resolve => {
         const overlay = document.createElement('div')
@@ -486,34 +541,3 @@ function _section_header(text: string): HTMLElement {
     return el
 }
 
-function _checkbox_row(label: string, initial: boolean, on_change: (v: boolean) => void): HTMLElement {
-    const row = document.createElement('label')
-    row.style.cssText = 'display:flex; align-items:center; gap:6px; cursor:pointer; font-size:11px;'
-    const inp = document.createElement('input')
-    inp.type = 'checkbox'
-    inp.className = 'sw-checkbox'
-    inp.checked = initial
-    inp.addEventListener('change', () => on_change(inp.checked))
-    const lbl = document.createElement('span')
-    lbl.textContent = label
-    row.append(inp, lbl)
-    return row
-}
-
-function _number_row(label: string, initial: number, on_change: (v: number) => void): HTMLElement {
-    const row = document.createElement('div')
-    row.style.cssText = 'display:flex; align-items:center; gap:6px;'
-    const lbl = document.createElement('span')
-    lbl.className = 'sw-label'
-    lbl.style.cssText += 'min-width:80px; margin:0;'
-    lbl.textContent = label
-    const inp = document.createElement('input')
-    inp.type = 'number'
-    inp.className = 'sw-input'
-    inp.style.cssText = 'width:70px;'
-    inp.valueAsNumber = initial
-    inp.step = '1'
-    inp.addEventListener('change', () => on_change(inp.valueAsNumber || 0))
-    row.append(lbl, inp)
-    return row
-}

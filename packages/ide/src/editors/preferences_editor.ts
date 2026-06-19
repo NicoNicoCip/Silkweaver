@@ -11,6 +11,7 @@ import {
     THEME_OPTIONS, FONT_OPTIONS, type editor_prefs,
 } from '../editor_prefs.js'
 import { ide_theme_get, ide_theme_set, ide_accent_effective, ide_accent_set, IDE_THEMES } from '../ide_prefs.js'
+import { ext_image_editor_get, ext_image_editor_set } from '../external_tools.js'
 
 let _win: FloatingWindow | null = null
 
@@ -78,6 +79,14 @@ function _rebuild(body: HTMLElement): void {
         _field_checkbox('Bracket pair colors', p.bracketPairColorization, v => editor_prefs_set({ bracketPairColorization: v })),
         _field_checkbox('Indent guides',       p.indentGuides,           v => editor_prefs_set({ indentGuides: v })),
         _field_checkbox('Sticky scroll',        p.stickyScroll,           v => editor_prefs_set({ stickyScroll: v })),
+        _field_checkbox('Auto-organize object files', p.autoOrganizeObjects, v => editor_prefs_set({ autoOrganizeObjects: v })),
+    ]))
+
+    // ── External tools ───────────────────────────────────────────────────
+    root.appendChild(_section('External Tools', [
+        _field_text('Image editor', ext_image_editor_get(),
+            'C:\\…\\Aseprite.exe  (empty = OS default app)',
+            v => ext_image_editor_set(v)),
     ]))
 
     // ── Reset ────────────────────────────────────────────────────────────
@@ -159,6 +168,15 @@ function _field_checkbox(label: string, value: boolean, on_change: (v: boolean) 
     box.style.cssText = 'width:16px; height:16px; cursor:pointer;'
     box.addEventListener('change', () => on_change(box.checked))
     return _row(label, box)
+}
+
+function _field_text(label: string, value: string, placeholder: string, on_change: (v: string) => void): HTMLElement {
+    const inp = document.createElement('input')
+    inp.className = 'sw-input'; inp.type = 'text'; inp.value = value; inp.placeholder = placeholder
+    inp.title = placeholder
+    inp.style.cssText += 'flex:1; min-width:0; font-size:11px;'
+    inp.addEventListener('change', () => on_change(inp.value))
+    return _row(label, inp)
 }
 
 function _field_color(label: string, value: string, on_change: (v: string) => void): HTMLElement {
