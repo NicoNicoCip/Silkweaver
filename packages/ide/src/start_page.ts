@@ -51,12 +51,18 @@ export interface start_page_hooks {
 
 let _overlay: HTMLElement | null = null
 let _hooks: start_page_hooks | null = null
+let _dismissable = false   // can the launcher be closed without choosing a project? (only when one is already open)
 
-function _on_key(e: KeyboardEvent): void { if (e.key === 'Escape') start_page_hide() }
+function _on_key(e: KeyboardEvent): void { if (e.key === 'Escape' && _dismissable) start_page_hide() }
 
-/** Shows the Start Page as a full page — the editor chrome is hidden while it's up. */
-export function start_page_show(hooks: start_page_hooks): void {
+/**
+ * Shows the Start Page as a full page — the editor chrome is hidden while it's up.
+ * @param dismissable - when false (no project open yet) the launcher is a required gate: no close
+ *   button, Esc does nothing — you must open or create a project to leave it.
+ */
+export function start_page_show(hooks: start_page_hooks, dismissable = false): void {
     _hooks = hooks
+    _dismissable = dismissable
     start_page_hide()
     _overlay = _build()
     document.body.appendChild(_overlay)
@@ -79,28 +85,46 @@ export function start_page_hide(): void {
 function _build(): HTMLElement {
     const o = document.createElement('div')
     o.id = 'sw-startpage'
-    o.style.cssText = 'position:fixed; inset:0; z-index:5000; background:var(--sw-bg,#1b1b1b); color:var(--sw-text,#e6e6e6); ' +
-        'display:flex; flex-direction:column; font:14px/1.5 "Segoe UI",system-ui,sans-serif; overflow:auto;'
+    o.style.cssText = 'position:fixed; inset:0; z-index:5000; background:var(--sw-l0,#1c1c1d); color:var(--sw-text,#f1f1f0); ' +
+        'display:flex; flex-direction:column; align-items:center; font:14px/1.5 "Segoe UI",system-ui,sans-serif; overflow:auto;'
 
-    // Header
+    // Centred content column — caps the width so the launcher stays centred when the window is
+    // maximised, instead of clinging to the left edge.
+    const inner = document.createElement('div')
+    inner.style.cssText = 'width:100%; max-width:1100px; display:flex; flex-direction:column;'
+    o.appendChild(inner)
+
+    // Header — the brand moment: the spider-lily mark sits inline next to the wordmark.
     const head = document.createElement('div')
-    head.style.cssText = 'padding:26px 34px 14px; flex-shrink:0; display:flex; align-items:flex-start;'
+    head.style.cssText = 'padding:30px 36px 18px; flex-shrink:0; display:flex; align-items:flex-start; gap:15px;'
     const title = document.createElement('div')
-    title.style.cssText = 'flex:1;'
-    title.innerHTML = '<div style="font-size:26px;font-weight:700;">Silk<span style="color:var(--sw-accent,#4cc2ff)">weaver</span>' +
-        `<span style="font-size:12px;font-weight:600;color:var(--sw-text-dim,#9a9a9a);margin-left:8px;vertical-align:middle;">v${SW_VERSION}</span></div>` +
-        '<div style="color:var(--sw-text-dim,#9a9a9a);font-size:13px;margin-top:2px;">Open a recent project, start a new one, or open from a folder.</div>'
-    const close = document.createElement('button')
-    close.className = 'sw-x-btn'; close.textContent = '✕'; close.title = 'Close (Esc)'
-    close.style.cssText = 'width:28px; height:28px; font-size:15px;'
-    close.addEventListener('click', () => start_page_hide())
-    head.append(title, close)
-    o.appendChild(head)
+    title.style.cssText = 'flex:1; min-width:0;'
+    const tagline = _dismissable
+        ? 'Open a recent project, start a new one, or open from a folder.'
+        : '<span style="color:var(--sw-accent,#e56878);font-weight:600;">No project open</span> — open a recent project, create a new one, or open from a folder to begin.'
+    title.innerHTML =
+        '<div style="display:flex;align-items:center;gap:11px;font-size:27px;font-weight:700;letter-spacing:.2px;">' +
+            '<img src="icon.png" alt="" style="width:30px;height:30px;flex-shrink:0;">' +
+            '<span>Silk<span style="color:var(--sw-accent,#e56878)">weaver</span>' +
+            `<span style="font-size:12px;font-weight:600;color:var(--sw-text-dim,#a6a6a4);margin-left:9px;vertical-align:middle;">v${SW_VERSION}</span></span>` +
+        '</div>' +
+        `<div style="color:var(--sw-text-dim,#a6a6a4);font-size:13px;margin-top:4px;">${tagline}</div>`
+    head.append(title)
+    // A close button only when a project is already open (re-opened via File → Start Page). On boot the
+    // launcher is a required gate — you must open or create a project to leave it.
+    if (_dismissable) {
+        const close = document.createElement('button')
+        close.className = 'sw-x-btn'; close.textContent = '✕'; close.title = 'Close (Esc)'
+        close.style.cssText = 'width:28px; height:28px; font-size:15px; align-self:flex-start;'
+        close.addEventListener('click', () => start_page_hide())
+        head.appendChild(close)
+    }
+    inner.appendChild(head)
 
     // Two columns
     const cols = document.createElement('div')
-    cols.style.cssText = 'display:flex; gap:24px; padding:6px 34px 34px; flex:1; min-height:0; align-items:flex-start; flex-wrap:wrap;'
-    o.appendChild(cols)
+    cols.style.cssText = 'display:flex; gap:26px; padding:8px 36px 36px; flex:1; min-height:0; align-items:flex-start; flex-wrap:wrap;'
+    inner.appendChild(cols)
 
     cols.appendChild(_recent_column())
     cols.appendChild(_new_column())
@@ -151,10 +175,12 @@ function _recent_column(): HTMLElement {
 
 function _recent_row(p: recent_project, refresh: () => void): HTMLElement {
     const row = document.createElement('div')
-    row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:9px 11px; border:1px solid var(--sw-border,#363636); ' +
-        'border-radius:8px; background:var(--sw-chrome,#222); cursor:pointer;'
-    row.addEventListener('mouseenter', () => row.style.borderColor = 'var(--sw-accent,#4cc2ff)')
-    row.addEventListener('mouseleave', () => row.style.borderColor = 'var(--sw-border,#363636)')
+    const _rest = 'var(--sw-shadow-sm), var(--sw-edge)'
+    const _lift = 'var(--sw-shadow-md), var(--sw-edge), inset 3px 0 0 var(--sw-accent-strong)'
+    row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:9px 12px; background:var(--sw-l2); ' +
+        'box-shadow:' + _rest + '; cursor:pointer;'
+    row.addEventListener('mouseenter', () => { row.style.background = 'var(--sw-l3)'; row.style.boxShadow = _lift })
+    row.addEventListener('mouseleave', () => { row.style.background = 'var(--sw-l2)'; row.style.boxShadow = _rest })
 
     const info = document.createElement('div')
     info.style.cssText = 'flex:1; min-width:0;'
@@ -189,7 +215,8 @@ async function _open_recent(p: recent_project): Promise<void> {
 
 function _new_column(): HTMLElement {
     const col = document.createElement('div')
-    col.style.cssText = 'flex:1 1 340px; min-width:300px; max-width:460px; background:var(--sw-chrome,#222); border:1px solid var(--sw-border,#363636); border-radius:10px; padding:18px 20px;'
+    col.style.cssText = 'flex:1 1 340px; min-width:300px; max-width:460px; background:var(--sw-l2); ' +
+        'box-shadow:var(--sw-shadow-lg), var(--sw-edge); padding:18px 20px;'
     col.appendChild(_section_title('New project'))
 
     const form = document.createElement('div')
@@ -318,10 +345,14 @@ function _text_input(val: string): HTMLInputElement {
 function _btn(label: string, kind: 'primary' | 'ghost', cb: () => void): HTMLButtonElement {
     const b = document.createElement('button')
     b.textContent = label
-    b.style.cssText = 'padding:9px 16px; border-radius:8px; font-weight:600; font-size:14px; cursor:pointer; border:1px solid var(--sw-border,#363636); ' +
+    const rest = kind === 'primary' ? 'var(--sw-shadow-md), var(--sw-edge)' : 'var(--sw-shadow-sm), var(--sw-edge)'
+    const hov  = kind === 'primary' ? 'var(--sw-shadow-lg), var(--sw-edge)' : 'var(--sw-shadow-md), var(--sw-edge)'
+    b.style.cssText = 'padding:9px 16px; font-weight:600; font-size:14px; cursor:pointer; border:1px solid var(--sw-border); box-shadow:' + rest + '; ' +
         (kind === 'primary'
-            ? 'background:var(--sw-accent,#4cc2ff); border-color:var(--sw-accent,#4cc2ff); color:#fff;'
-            : 'background:transparent; color:var(--sw-text,#e6e6e6);')
+            ? 'background:var(--sw-accent-strong,#e60012); border-color:#b00010; color:#fff;'
+            : 'background:var(--sw-l3); color:var(--sw-text);')
+    b.addEventListener('mouseenter', () => { b.style.filter = 'brightness(1.12)'; b.style.boxShadow = hov })
+    b.addEventListener('mouseleave', () => { b.style.filter = ''; b.style.boxShadow = rest })
     b.addEventListener('click', cb)
     return b
 }

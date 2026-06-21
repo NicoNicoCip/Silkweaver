@@ -1,6 +1,11 @@
 /**
  * Injects global CSS for the Silkweaver IDE.
- * Visual style: Windows 10 hard-edge dark, GMS 1.4 floating-window layout.
+ *
+ * Visual style: GMS-1.4 floating-window layout with a "stacked sheets" surface model — every region
+ * is a sheet of paper/cloth lit from above and laid ON the one behind it. Separation comes from
+ * ELEVATION (a tone ramp l0→l3 + drop shadows + a faint top edge-highlight), not from hairline
+ * borders. Brand palette is drawn from the spider-lily icon: reds lead (accent + branding), a green
+ * appears sparingly (run / success), black & white ground everything.
  */
 export function theme_inject(): void {
     const style = document.createElement('style')
@@ -22,20 +27,50 @@ html, body {
 
 /* ── CSS Variables ── */
 :root {
-    --sw-workspace:  #2b2b2b;
-    --sw-chrome:     #3c3c3c;
-    --sw-chrome2:    #333333;
-    --sw-border:     #555555;
-    --sw-border2:    #444444;
-    --sw-text:       #f0f0f0;
-    --sw-text-dim:   #aaaaaa;
-    --sw-accent:     #0078d4;
-    --sw-accent-hov: #106ebe;
-    --sw-close-hov:  #e81123;
-    --sw-close-act:  #f1707a;
-    --sw-input-bg:   #3a3a3a;
-    --sw-input-bdr:  #666666;
-    --sw-select-bg:  #094771;
+    /* Elevation ramp — sheets stacked and lit from above: the deeper it sits, the darker it is. */
+    --sw-l0:         #1c1c1d;   /* the back "table" the windows lie on (MDI workspace) */
+    --sw-l1:         #262627;   /* recessed trays (dock, editor side-panels, sunken areas) */
+    --sw-l2:         #333436;   /* base sheets (window body, toolbar, menubar, taskbar) */
+    --sw-l3:         #3d3e41;   /* raised sheets (titlebars, menus, popups, tooltips, chips) */
+    --sw-l4:         #47484c;   /* hover lift of a raised sheet */
+
+    /* Back-compat aliases — existing components reference these names. */
+    --sw-workspace:  var(--sw-l0);
+    --sw-chrome:     var(--sw-l2);
+    --sw-chrome2:    var(--sw-l1);
+
+    /* Edges are quiet now: depth is tone + shadow, not lines. */
+    --sw-border:     rgba(0,0,0,0.38);          /* a recessed seam where two sheets meet */
+    --sw-border2:    rgba(255,255,255,0.055);    /* a faint inner division within a sheet */
+    --sw-edge:       inset 0 1px 0 rgba(255,255,255,0.05);   /* top paper-edge catching the light */
+
+    /* Elevation shadows — a sheet casting softly onto whatever is beneath it. */
+    --sw-shadow-sm:  0 2px 5px rgba(0,0,0,0.35);
+    --sw-shadow-md:  0 4px 14px rgba(0,0,0,0.42);
+    --sw-shadow-lg:  0 14px 40px rgba(0,0,0,0.52);
+    --sw-sunk:       rgba(0,0,0,0.55);          /* inner shadow of a recessed tray (themeable) */
+
+    /* Text */
+    --sw-text:       #f1f1f0;
+    --sw-text-dim:   #a6a6a4;
+
+    /* Brand palette (spider-lily): reds lead, green is rare. */
+    --sw-accent:        #e56878;   /* soft red — the everyday accent: selection, focus, links */
+    --sw-accent-hov:    #ef7e8c;   /* a touch lighter on hover */
+    --sw-accent-strong: #e60012;   /* bright red — branding punch, primary, the "this matters" edge */
+    --sw-success:       #00783b;   /* green — used sparingly (run / success / connected) */
+
+    /* Interaction: hovering lifts a sheet (neutral); red is reserved for meaning, not motion. */
+    --sw-hover:      rgba(255,255,255,0.06);
+    --sw-active:     rgba(255,255,255,0.12);
+    --sw-select-bg:  rgba(229,104,120,0.18);    /* a red wash drawn onto the selected sheet */
+
+    --sw-close-hov:  #e60012;
+    --sw-close-act:  #ff495c;
+    --sw-input-bg:   #1f1f20;   /* inputs are pressed INTO the sheet → darker, with an inner shadow */
+    --sw-input-bdr:  rgba(0,0,0,0.5);
+    --sw-select-row: rgba(229,104,120,0.18);
+
     --sw-titlebar-h: 28px;
     --sw-menubar-h:  24px;
     --sw-toolbar-h:  30px;
@@ -43,10 +78,10 @@ html, body {
 }
 
 /* ── Scrollbars ── */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: var(--sw-chrome); }
-::-webkit-scrollbar-thumb { background: #666; }
-::-webkit-scrollbar-thumb:hover { background: #888; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.13); border-radius: 0; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.24); background-clip: padding-box; }
 
 /* ── Frame layout: menubar · toolbar · [dock | splitter | workspace] · taskbar ── */
 /* When the Start Page is up, it IS the page — hide the editor chrome so nothing overlaps it. */
@@ -56,8 +91,8 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     position: fixed;
     top: var(--sw-menubar-h); left: 0; right: 0;
     height: var(--sw-toolbar-h);
-    background: var(--sw-chrome);
-    border-bottom: 1px solid var(--sw-border);
+    background: var(--sw-l2);
+    box-shadow: var(--sw-shadow-sm), var(--sw-edge);   /* casts down onto the workspace below */
     display: flex;
     align-items: center;
     gap: 2px;
@@ -67,12 +102,12 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
 .sw-tb-btn {
     min-width: 26px; height: 22px;
     display: flex; align-items: center; justify-content: center;
-    background: none; border: 1px solid transparent;
+    background: none; border: 1px solid transparent; border-radius: 0;
     color: var(--sw-text); cursor: pointer;
     font-size: 13px; line-height: 1; padding: 0 4px;
 }
-.sw-tb-btn:hover  { background: var(--sw-accent); border-color: var(--sw-accent-hov); }
-.sw-tb-btn:active { background: var(--sw-accent-hov); }
+.sw-tb-btn:hover  { background: var(--sw-hover); }
+.sw-tb-btn:active { background: var(--sw-active); }
 .sw-tb-btn:disabled { opacity: .35; cursor: default; }
 .sw-tb-btn:disabled:hover { background: none; border-color: transparent; }
 .sw-tb-sep { width: 1px; height: 18px; background: var(--sw-border); margin: 0 5px; flex-shrink: 0; }
@@ -89,23 +124,22 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     width: 240px; min-width: 150px; max-width: 600px;
     flex-shrink: 0;
     overflow: auto;
-    background: var(--sw-chrome2);
+    background: var(--sw-l1);
+    box-shadow: inset -7px 0 9px -8px var(--sw-sunk);   /* a recessed tray sunk into the frame */
 }
 #sw-dock.sw-dock-hidden,
 #sw-dock.sw-dock-hidden + #sw-splitter { display: none; }
 #sw-splitter {
     width: 5px; flex-shrink: 0;
     cursor: col-resize;
-    background: var(--sw-chrome);
-    border-left: 1px solid var(--sw-border);
-    border-right: 1px solid var(--sw-border);
+    background: var(--sw-l0);
 }
 #sw-splitter:hover { background: var(--sw-accent); }
 #sw-workspace {
     flex: 1; min-width: 0;
     position: relative;
     overflow: hidden;
-    background: var(--sw-workspace);
+    background: var(--sw-l0);
 }
 
 /* ── Menubar ── */
@@ -113,8 +147,8 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     position: fixed;
     top: 0; left: 0; right: 0;
     height: var(--sw-menubar-h);
-    background: var(--sw-chrome2);
-    border-bottom: 1px solid var(--sw-border);
+    background: var(--sw-l2);
+    box-shadow: var(--sw-shadow-sm);
     display: flex;
     align-items: stretch;
     z-index: 9000;
@@ -129,34 +163,38 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     white-space: nowrap;
 }
 .sw-menu-item:hover, .sw-menu-item.open {
-    background: var(--sw-accent);
+    background: var(--sw-hover);
 }
+.sw-menu-item.open { background: var(--sw-active); }
 .sw-dropdown {
     display: none;
     position: absolute;
     top: 100%; left: 0;
     min-width: 160px;
-    background: var(--sw-chrome);
+    background: var(--sw-l3);
     border: 1px solid var(--sw-border);
+    border-radius: 0;
+    box-shadow: var(--sw-shadow-lg), var(--sw-edge);
     z-index: 9100;
-    padding: 2px 0;
+    padding: 4px;
 }
 .sw-menu-item.open .sw-dropdown { display: block; }
 .sw-dropdown-item {
     display: flex;
     align-items: center;
     height: 26px;
-    padding: 0 16px;
+    padding: 0 12px;
+    border-radius: 0;
     cursor: pointer;
     color: var(--sw-text);
     white-space: nowrap;
 }
-.sw-dropdown-item:hover { background: var(--sw-accent); }
+.sw-dropdown-item:hover { background: var(--sw-hover); }
 .sw-dropdown-item.disabled { color: var(--sw-text-dim); cursor: default; }
 .sw-dropdown-item.disabled:hover { background: none; }
 .sw-dropdown-sep {
-    height: 1px; background: var(--sw-border);
-    margin: 3px 0;
+    height: 1px; background: var(--sw-border2);
+    margin: 4px 6px;
 }
 .sw-dropdown-shortcut {
     margin-left: auto;
@@ -169,25 +207,27 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
 .sw-ctxmenu {
     position: fixed;
     z-index: 10000;
-    background: var(--sw-chrome);
+    background: var(--sw-l3);
     border: 1px solid var(--sw-border);
-    box-shadow: 0 3px 12px rgba(0,0,0,0.45);
-    padding: 3px 0;
+    border-radius: 0;
+    box-shadow: var(--sw-shadow-lg), var(--sw-edge);
+    padding: 4px;
     min-width: 168px;
     font-size: 12px;
 }
 .sw-ctxmenu-item {
     display: flex; align-items: center; gap: 8px;
     height: 25px; padding: 0 14px 0 8px;
+    border-radius: 0;
     cursor: pointer; color: var(--sw-text); white-space: nowrap;
 }
-.sw-ctxmenu-item:hover { background: var(--sw-accent); }
+.sw-ctxmenu-item:hover { background: var(--sw-hover); }
 .sw-ctxmenu-item.disabled { color: var(--sw-text-dim); cursor: default; }
 .sw-ctxmenu-item.disabled:hover { background: none; }
 .sw-ctxmenu-icon { width: 15px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--sw-text-dim); }
 .sw-ctxmenu-icon svg { width: 14px; height: 14px; }
-.sw-ctxmenu-item:hover .sw-ctxmenu-icon { color: #fff; }
-.sw-ctxmenu-sep { height: 1px; background: var(--sw-border); margin: 3px 0; }
+.sw-ctxmenu-item:hover .sw-ctxmenu-icon { color: var(--sw-text); }
+.sw-ctxmenu-sep { height: 1px; background: var(--sw-border2); margin: 4px 6px; }
 
 /* ── Resource-tree root (project) node ── */
 .sw-tree-root {
@@ -203,8 +243,8 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
 .sw-tree-filter {
     position: sticky; top: 0; z-index: 2;
     padding: 6px;
-    background: var(--sw-chrome2);
-    border-bottom: 1px solid var(--sw-border);
+    background: var(--sw-l1);
+    box-shadow: 0 4px 6px -4px rgba(0,0,0,0.5);
 }
 .sw-tree-filter .sw-input { height: 24px; font-size: 12px; }
 
@@ -213,8 +253,8 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     position: fixed;
     bottom: 0; left: 0; right: 0;
     height: var(--sw-taskbar-h);
-    background: var(--sw-chrome);
-    border-top: 1px solid var(--sw-border);
+    background: var(--sw-l2);
+    box-shadow: 0 -2px 6px rgba(0,0,0,0.35), var(--sw-edge);
     display: flex;
     align-items: center;
     gap: 3px;
@@ -228,16 +268,17 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     flex-shrink: 0;
     height: 22px; max-width: 190px;
     padding: 0 9px;
-    background: var(--sw-chrome2);
+    background: var(--sw-l3);
     border: 1px solid var(--sw-border);
-    border-radius: 3px;
+    border-radius: 0;
+    box-shadow: var(--sw-shadow-sm), var(--sw-edge);
     color: var(--sw-text);
     font-size: 11.5px; line-height: 1;
     cursor: pointer; user-select: none;
 }
-.sw-task-btn:hover     { background: var(--sw-border); }
-.sw-task-btn.active    { background: var(--sw-select-bg); border-color: var(--sw-accent); }
-.sw-task-btn.minimized { opacity: .55; font-style: italic; }
+.sw-task-btn:hover     { background: var(--sw-l4); }
+.sw-task-btn.active    { background: var(--sw-l3); box-shadow: var(--sw-shadow-sm), inset 0 -2px 0 var(--sw-accent-strong); }
+.sw-task-btn.minimized { opacity: .55; font-style: italic; box-shadow: none; }
 .sw-task-btn svg, .sw-task-btn img { width: 13px; height: 13px; flex-shrink: 0; }
 .sw-task-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sw-task-empty { color: var(--sw-text-dim); font-size: 11px; padding: 0 6px; user-select: none; }
@@ -245,8 +286,10 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
 /* ── Floating Windows ── */
 .sw-window {
     position: absolute;
-    background: var(--sw-chrome);
+    background: var(--sw-l2);
     border: 1px solid var(--sw-border);
+    border-radius: 0;
+    box-shadow: var(--sw-shadow-lg), var(--sw-edge);   /* the sheet hovers clearly above the table */
     display: flex;
     flex-direction: column;
     min-width: 120px;
@@ -257,8 +300,8 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
 .sw-window.minimized { min-height: 0 !important; overflow: hidden; }
 .sw-window-titlebar {
     height: var(--sw-titlebar-h);
-    background: var(--sw-chrome2);
-    border-bottom: 1px solid var(--sw-border);
+    background: var(--sw-l3);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.35);
     display: flex;
     align-items: center;
     gap: 5px;
@@ -291,9 +334,10 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     font-size: 13px;
     color: var(--sw-text);
     margin: -4px -2px;
+    border-radius: 0;
 }
 .sw-window-btn svg { width: 11px; height: 11px; }
-.sw-window-btn:hover { background: rgba(255,255,255,0.1); }
+.sw-window-btn:hover { background: var(--sw-hover); }
 .sw-window-btn.close:hover { background: var(--sw-close-hov); color: #fff; }
 .sw-window-btn.close:hover svg { stroke: #fff; }
 .sw-window-btn.close:active { background: var(--sw-close-act); }
@@ -308,7 +352,7 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     flex-shrink: 0;
     padding: 0;
     border: none;
-    border-radius: 3px;
+    border-radius: 0;
     background: none;
     color: var(--sw-text-dim);
     font-size: 12px;
@@ -344,25 +388,32 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
 .sw-input {
     background: var(--sw-input-bg);
     border: 1px solid var(--sw-input-bdr);
+    border-radius: 0;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.4);    /* pressed into the sheet */
     color: var(--sw-text);
     font-size: 12px;
     padding: 3px 6px;
     outline: none;
     width: 100%;
 }
-.sw-input:focus { border-color: var(--sw-accent); }
+.sw-input:focus { border-color: var(--sw-accent); box-shadow: inset 0 1px 2px rgba(0,0,0,0.4), 0 0 0 2px rgba(229,104,120,0.28); }
 .sw-select {
     background: var(--sw-input-bg);
     border: 1px solid var(--sw-input-bdr);
+    border-radius: 0;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.4);
     color: var(--sw-text);
     font-size: 12px;
     padding: 3px 6px;
     outline: none;
     cursor: pointer;
 }
+.sw-select:focus { border-color: var(--sw-accent); }
 .sw-btn {
-    background: var(--sw-chrome2);
+    background: var(--sw-l3);
     border: 1px solid var(--sw-border);
+    border-radius: 0;
+    box-shadow: var(--sw-shadow-sm), var(--sw-edge);   /* a chip raised off the sheet */
     color: var(--sw-text);
     font-size: 12px;
     padding: 4px 12px;
@@ -371,12 +422,14 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     align-items: center;
     gap: 4px;
 }
-.sw-btn:hover { background: var(--sw-accent); border-color: var(--sw-accent); }
-.sw-btn:active { background: var(--sw-accent-hov); }
+.sw-btn:hover  { background: var(--sw-l4); box-shadow: var(--sw-shadow-md), var(--sw-edge); }
+.sw-btn:active { background: #2c2c2e; box-shadow: inset 0 1px 3px rgba(0,0,0,0.45); }
+.sw-btn.primary { background: var(--sw-accent-strong); border-color: #b00010; color: #fff; }
+.sw-btn.primary:hover { background: #ff1a2c; }
 .sw-btn img { width: 14px; height: 14px; }
 .sw-btn svg { width: 14px; height: 14px; }
-.sw-btn:disabled { opacity: .4; cursor: default; }
-.sw-btn:disabled:hover { background: var(--sw-chrome2); border-color: var(--sw-border); }
+.sw-btn:disabled { opacity: .4; cursor: default; box-shadow: none; }
+.sw-btn:disabled:hover { background: var(--sw-l3); }
 .sw-checkbox { accent-color: var(--sw-accent); cursor: pointer; }
 
 /* ── Editor Toolbar (shared) ── */
@@ -384,11 +437,20 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 3px 6px;
-    background: var(--sw-chrome2);
-    border-bottom: 1px solid var(--sw-border);
+    padding: 4px 6px;
+    background: var(--sw-l2);
+    box-shadow: 0 3px 6px -4px rgba(0,0,0,0.5);   /* a lip casting onto the content below */
     flex-shrink: 0;
     flex-wrap: wrap;
+    position: relative;
+    z-index: 1;
+}
+
+/* Recessed side trays inside editor windows (props / lists). They sit a layer BELOW the window
+   body, so a tone drop + a soft inner shadow reads as "sunk in", not "lined off". */
+.sw-sprite-framelist, .sw-sprite-props, .sw-obj-props-panel, .sw-room-panel,
+.sw-bg-props, .sw-font-props, .sw-tl-list-panel {
+    background: var(--sw-l1);
 }
 
 /* ── Sprite Editor ── */
@@ -397,8 +459,7 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     min-width: 80px;
     flex-shrink: 0;
     overflow-y: auto;
-    border-right: 1px solid var(--sw-border);
-    background: var(--sw-chrome2);
+    box-shadow: inset -6px 0 8px -7px var(--sw-sunk);
     display: flex;
     flex-direction: column;
 }
@@ -410,13 +471,14 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     cursor: pointer;
     border-bottom: 1px solid var(--sw-border2);
 }
-.sw-sprite-frame-row:hover { background: var(--sw-select-bg); }
+.sw-sprite-frame-row:hover { background: var(--sw-hover); }
 .sw-sprite-preview-area {
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #1a1a1a;
+    background: #161616;
+    box-shadow: inset 0 0 24px var(--sw-sunk);
     overflow: hidden;
 }
 .sw-sprite-canvas {
@@ -429,8 +491,7 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     min-width: 180px;
     flex-shrink: 0;
     overflow-y: auto;
-    border-left: 1px solid var(--sw-border);
-    background: var(--sw-chrome2);
+    box-shadow: inset 6px 0 8px -7px var(--sw-sunk);
 }
 
 /* ── Object Editor ── */
@@ -439,8 +500,7 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     min-width: 220px;
     flex-shrink: 0;
     overflow-y: auto;
-    border-right: 1px solid var(--sw-border);
-    background: var(--sw-chrome2);
+    box-shadow: inset -6px 0 8px -7px var(--sw-sunk);
 }
 .sw-obj-events-panel {
     flex: 1;
@@ -456,7 +516,7 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     border-bottom: 1px solid var(--sw-border2);
     cursor: pointer;
 }
-.sw-obj-event-row:hover { background: var(--sw-select-bg); }
+.sw-obj-event-row:hover { background: var(--sw-hover); }
 
 /* ── Room Editor ── */
 .sw-room-panel {
@@ -465,29 +525,28 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    border-right: 1px solid var(--sw-border);
-    background: var(--sw-chrome2);
+    box-shadow: inset -6px 0 8px -7px var(--sw-sunk);
     overflow: hidden;
 }
 .sw-room-tabs {
     display: flex;
     flex-wrap: wrap;
-    border-bottom: 1px solid var(--sw-border);
+    background: var(--sw-l2);
+    box-shadow: 0 2px 5px -3px rgba(0,0,0,0.5);
     flex-shrink: 0;
 }
 .sw-room-tab {
     background: none;
     border: none;
-    border-right: 1px solid var(--sw-border2);
     color: var(--sw-text-dim);
     font-size: 10px;
-    padding: 4px 6px;
+    padding: 5px 6px;
     cursor: pointer;
     flex: 1;
     text-align: center;
 }
-.sw-room-tab:hover { background: rgba(255,255,255,0.05); color: var(--sw-text); }
-.sw-room-tab.active { background: var(--sw-chrome); color: var(--sw-text); border-bottom: 2px solid var(--sw-accent); }
+.sw-room-tab:hover { background: var(--sw-hover); color: var(--sw-text); }
+.sw-room-tab.active { background: var(--sw-l1); color: var(--sw-text); box-shadow: inset 0 -2px 0 var(--sw-accent-strong); }
 .sw-room-inst-row {
     display: flex;
     align-items: center;
@@ -497,16 +556,16 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     border-bottom: 1px solid var(--sw-border2);
     font-size: 11px;
 }
-.sw-room-inst-row:hover   { background: var(--sw-select-bg); }
-.sw-room-inst-row.selected { background: var(--sw-accent); }
+.sw-room-inst-row:hover    { background: var(--sw-hover); }
+.sw-room-inst-row.selected { background: var(--sw-select-row); box-shadow: inset 2px 0 0 var(--sw-accent-strong); }
 
 /* ── Sound Editor ── */
 .sw-snd-status {
     padding: 4px 8px;
     font-size: 11px;
     color: var(--sw-text-dim);
-    background: var(--sw-chrome2);
-    border-bottom: 1px solid var(--sw-border);
+    background: var(--sw-l2);
+    box-shadow: 0 2px 5px -3px rgba(0,0,0,0.5);
     flex-shrink: 0;
 }
 .sw-snd-form {
@@ -528,7 +587,8 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #1a1a1a;
+    background: #161616;
+    box-shadow: inset 0 0 24px var(--sw-sunk);
     overflow: hidden;
 }
 .sw-bg-props {
@@ -536,19 +596,17 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     min-width: 180px;
     flex-shrink: 0;
     overflow-y: auto;
-    border-left: 1px solid var(--sw-border);
-    background: var(--sw-chrome2);
+    box-shadow: inset 6px 0 8px -7px var(--sw-sunk);
 }
 .sw-bg-section {
-    border-bottom: 1px solid var(--sw-border);
+    border-bottom: 1px solid var(--sw-border2);
 }
 .sw-bg-section-title {
-    padding: 4px 8px;
+    padding: 5px 8px;
     font-size: 10px;
     font-weight: bold;
     color: var(--sw-text-dim);
-    background: var(--sw-chrome2);
-    border-bottom: 1px solid var(--sw-border2);
+    background: var(--sw-l2);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
@@ -563,8 +621,7 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     min-width: 220px;
     flex-shrink: 0;
     overflow-y: auto;
-    border-right: 1px solid var(--sw-border);
-    background: var(--sw-chrome2);
+    box-shadow: inset -6px 0 8px -7px var(--sw-sunk);
     display: flex;
     flex-direction: column;
 }
@@ -591,7 +648,7 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: var(--sw-chrome);
+    background: var(--sw-l2);
 }
 .sw-font-preview {
     flex: 1;
@@ -612,8 +669,7 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    border-right: 1px solid var(--sw-border);
-    background: var(--sw-chrome2);
+    box-shadow: inset -6px 0 8px -7px var(--sw-sunk);
     overflow: hidden;
 }
 .sw-tl-strip-panel {
@@ -621,7 +677,7 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: var(--sw-chrome);
+    background: var(--sw-l2);
 }
 .sw-tl-list {
     flex: 1;
@@ -636,8 +692,8 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     cursor: pointer;
     font-size: 11px;
 }
-.sw-tl-moment-row:hover    { background: var(--sw-select-bg); }
-.sw-tl-moment-row.selected { background: var(--sw-accent); }
+.sw-tl-moment-row:hover    { background: var(--sw-hover); }
+.sw-tl-moment-row.selected { background: var(--sw-select-row); box-shadow: inset 2px 0 0 var(--sw-accent-strong); }
 .sw-tl-step-lbl {
     min-width: 52px;
     color: var(--sw-text-dim);
@@ -650,7 +706,8 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     overflow-y: auto;
     font-family: 'Consolas', 'Cascadia Code', monospace;
     font-size: 11px;
-    background: #1a1a1a;
+    background: #161616;
+    box-shadow: inset 0 2px 8px rgba(0,0,0,0.5);
     user-select: text;            /* allow manual select + Ctrl+C */
     cursor: text;
 }
@@ -701,28 +758,28 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     border: none;
     color: var(--sw-text);
     padding: 5px 9px;
-    border-radius: 3px;
+    border-radius: 0;
     font-size: 12px;
     cursor: pointer;
     width: 100%;
 }
-.sw-pref-cat:hover         { background: var(--sw-border2); }
-.sw-pref-cat.active        { background: var(--sw-accent); color: #fff; }
-.sw-pref-cat.active:hover  { background: var(--sw-accent-hov); }
+.sw-pref-cat:hover         { background: var(--sw-hover); }
+.sw-pref-cat.active        { background: var(--sw-select-row); box-shadow: inset 2px 0 0 var(--sw-accent-strong); }
+.sw-pref-cat.active:hover  { background: var(--sw-select-row); }
 
 /* ── Hover help tooltip ── */
 .sw-tooltip {
     position: fixed;
     z-index: 99999;
     max-width: 280px;
-    background: var(--sw-chrome);
+    background: var(--sw-l3);
     color: var(--sw-text);
-    border: 1px solid var(--sw-border2);
-    border-radius: 4px;
+    border: 1px solid var(--sw-border);
+    border-radius: 0;
     padding: 6px 9px;
     font-size: 11px;
     line-height: 1.45;
-    box-shadow: 0 4px 16px #0008;
+    box-shadow: var(--sw-shadow-lg), var(--sw-edge);
     pointer-events: none;
 }
 /* Subtle affordance that an item has help on hover. */
@@ -732,8 +789,8 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
 .sw-dbg-status {
     padding: 4px 8px;
     font-size: 11px;
-    background: var(--sw-chrome2);
-    border-bottom: 1px solid var(--sw-border);
+    background: var(--sw-l2);
+    box-shadow: 0 2px 5px -3px rgba(0,0,0,0.5);
     color: var(--sw-text-dim);
     flex-shrink: 0;
 }
@@ -770,7 +827,7 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     cursor: pointer;
     user-select: none;
 }
-.sw-dbg-inst:hover { background: rgba(255,255,255,0.05); }
+.sw-dbg-inst:hover { background: var(--sw-hover); }
 .sw-dbg-inst:first-child { border-top: none; }
 .sw-dbg-caret { display: inline-block; width: 12px; color: var(--sw-text-dim); }
 .sw-dbg-count { color: var(--sw-text-dim); font-weight: 400; margin-left: 6px; }
@@ -823,13 +880,16 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     justify-content: center;
     width: 18px;
     height: 18px;
+    border-radius: 0;
 }
-.sw-tree-btn:hover { color: var(--sw-text); background: rgba(255,255,255,0.1); }
+.sw-tree-btn:hover { color: var(--sw-text); background: var(--sw-hover); }
 
 /* ── Profiler Panel ── */
 .sw-prof-section {
-    background: var(--sw-chrome2);
+    background: var(--sw-l3);
     border: 1px solid var(--sw-border);
+    border-radius: 0;
+    box-shadow: var(--sw-shadow-sm), var(--sw-edge);
     padding: 6px;
 }
 .sw-prof-title-row {

@@ -225,13 +225,19 @@ try {
         if (out !== src) { fs.writeFileSync(landing, out, 'utf8'); console.log(`[gen:docs] stamped landing page version → ${ver}`) }
     } catch (e) { console.warn('[gen:docs] could not stamp landing version:', e.message) }
 
-    // Keep the Pages favicon in lockstep with the IDE's app icon (the pages all link docs/favicon.ico).
-    try {
-        const iconSrc = path.join(ROOT, 'packages', 'build', 'assets', 'icon.ico')
-        const iconDst = path.join(ROOT, 'docs', 'favicon.ico')
-        const changed = !fs.existsSync(iconDst) || !fs.readFileSync(iconSrc).equals(fs.readFileSync(iconDst))
-        if (changed) { fs.copyFileSync(iconSrc, iconDst); console.log('[gen:docs] refreshed docs/favicon.ico from the IDE icon') }
-    } catch (e) { console.warn('[gen:docs] could not refresh favicon:', e.message) }
+    // Keep the Pages favicons in lockstep with the IDE's app icon (the single source in
+    // packages/build/assets). The Pages deploy runs gen:docs, so the favicon can't drift from the
+    // app icon — change the icon once and every surface follows.
+    for (const [src, dst] of [['icon.png', 'favicon.png'], ['icon.ico', 'favicon.ico']]) {
+        try {
+            const s = path.join(ROOT, 'packages', 'build', 'assets', src)
+            const d = path.join(ROOT, 'docs', dst)
+            if (fs.existsSync(s) && (!fs.existsSync(d) || !fs.readFileSync(s).equals(fs.readFileSync(d)))) {
+                fs.copyFileSync(s, d)
+                console.log(`[gen:docs] refreshed docs/${dst} from the IDE icon`)
+            }
+        } catch (e) { console.warn(`[gen:docs] could not refresh ${dst}:`, e.message) }
+    }
 } finally {
     fs.rmSync(tmp, { recursive: true, force: true })
 }
@@ -249,6 +255,7 @@ function render_html(data) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="../favicon.png">
 <link rel="icon" type="image/x-icon" href="../favicon.ico">
 <title>Silkweaver API Reference</title>
 <script>document.documentElement.dataset.theme = localStorage.getItem('sw-docs-theme') || 'dark'</script>

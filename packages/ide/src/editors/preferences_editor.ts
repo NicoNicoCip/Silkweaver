@@ -8,18 +8,28 @@
  */
 
 import { FloatingWindow } from '../window_manager.js'
-import { ui_scale_get, ui_scale_set, editor_font_get, editor_font_set } from '../ui_scale.js'
+import { ICON } from '../icons.js'
+import { ui_scale_get, ui_scale_set, ui_scale_reset, editor_font_get, editor_font_set, editor_font_reset } from '../ui_scale.js'
 import {
-    editor_prefs_get, editor_prefs_set, editor_prefs_reset,
+    editor_prefs_get, editor_prefs_set, editor_prefs_reset, editor_prefs_defaults,
     THEME_OPTIONS, FONT_OPTIONS, type editor_prefs,
 } from '../editor_prefs.js'
-import { ide_theme_get, ide_theme_set, ide_accent_effective, ide_accent_set, IDE_THEMES } from '../ide_prefs.js'
+import { ide_theme_get, ide_theme_set, IDE_THEMES } from '../ide_prefs.js'
 import { ext_image_editor_get, ext_image_editor_set } from '../external_tools.js'
 import { KEYBINDS } from '../keybinds.js'
 import { tooltip_attach } from '../services/tooltip.js'
 
+const IDE_THEME_DEFAULT = 'dark'
+const UI_SCALE_DEFAULT   = 100   // percent (ui_scale 1.0)
+const EDITOR_FONT_DEFAULT = 13   // px (FONT_DEFAULT in ui_scale.ts)
+
 let _win: FloatingWindow | null = null
 let _active_cat = 'interface'   // remembered across live rebuilds (e.g. after a theme change)
+
+/** Reset actions registered by the fields of the panel currently being built (for section/field reset). */
+let _panel_resets: { changed: boolean; apply: () => void }[] = []
+/** Re-renders the active category panel in place (set up in _rebuild). */
+let _rerender: () => void = () => {}
 
 /**
  * Opens (or focuses) the Preferences window.
@@ -67,9 +77,13 @@ function _rebuild(body: HTMLElement): void {
         _active_cat = id
         for (const [cid, b] of nav_btns) b.classList.toggle('active', cid === id)
         content.innerHTML = ''
-        content.appendChild((CATEGORIES.find(c => c.id === id) ?? CATEGORIES[0]!).build())
+        _panel_resets = []
+        const panel = (CATEGORIES.find(c => c.id === id) ?? CATEGORIES[0]!).build()   // fields register their resets
+        if (_panel_resets.length) content.appendChild(_section_reset_bar())
+        content.appendChild(panel)
         content.scrollTop = 0
     }
+    _rerender = () => select(_active_cat)
 
     for (const cat of CATEGORIES) {
         const b = document.createElement('button')
@@ -87,8 +101,16 @@ function _rebuild(body: HTMLElement): void {
     footer.style.cssText = 'border-top:1px solid var(--sw-border2); padding:8px 14px; display:flex;'
     const reset = document.createElement('button')
     reset.className = 'sw-btn'
-    reset.textContent = 'Reset editor preferences to defaults'
-    reset.addEventListener('click', () => { editor_prefs_reset(); _rebuild(body) })
+    reset.textContent = 'Reset all preferences to defaults'
+    reset.title = 'Restore every preference — interface, theme, editor, tools — to its default'
+    reset.addEventListener('click', () => {
+        editor_prefs_reset()
+        ui_scale_reset()
+        editor_font_reset()
+        ide_theme_set(IDE_THEME_DEFAULT)
+        ext_image_editor_set('')
+        _rebuild(body)
+    })
     footer.appendChild(reset)
 
     body.append(main, footer)
@@ -103,86 +125,87 @@ function _rebuild(body: HTMLElement): void {
 
 function _panel_interface(): HTMLElement {
     const p = editor_prefs_get()
+    const d = editor_prefs_defaults()
     const stack = _stack([
         _field_number('Interface scale (%)', Math.round(ui_scale_get() * 100), 60, 300, v => ui_scale_set(v / 100),
-            'Size of the entire IDE — all panels, menus, and text.'),
+            'Size of the entire IDE — all panels, menus, and text.', UI_SCALE_DEFAULT),
         _field_select('IDE theme', ide_theme_get(), IDE_THEMES.map(t => ({ value: t.id, label: t.label })),
-            v => { ide_theme_set(v); if (_win) _rebuild(_win.body) },   // rebuild so the accent swatch follows the theme
-            'Overall color scheme for the IDE chrome (panels, menus, toolbars).'),
-        _field_color('Accent color', ide_accent_effective(), v => ide_accent_set(v),
-            'Highlight color used for selections, the active item, and focus rings.'),
+            v => ide_theme_set(v),
+            'Overall color scheme for the IDE chrome (panels, menus, toolbars). The brand accent stays the same across themes.', IDE_THEME_DEFAULT),
     ])
     stack.appendChild(_subhead('Help tooltips'))
     stack.append(
         _field_checkbox('Show help tooltips', p.tooltips, v => editor_prefs_set({ tooltips: v }),
-            'Show these hover explanations on settings and preferences items. Turn off to hide them.'),
+            'Show these hover explanations on settings and preferences items. Turn off to hide them.', d.tooltips),
         _field_number('Tooltip delay (ms)', p.tooltipDelay, 0, 3000, v => editor_prefs_set({ tooltipDelay: v }),
-            'How long to rest the pointer on an item before its help tooltip appears.'),
+            'How long to rest the pointer on an item before its help tooltip appears.', d.tooltipDelay),
     )
     stack.appendChild(_subhead('Saving'))
     stack.append(
         _field_checkbox('Auto-save', p.autoSave, v => editor_prefs_set({ autoSave: v }),
             'On: the IDE saves automatically when you close a window and periodically in the background. ' +
-            'Off (default): edits are kept until you press Ctrl+S — a ● marks unsaved windows and you’re asked before closing.'),
+            'Off (default): edits are kept until you press Ctrl+S — a ● marks unsaved windows and you’re asked before closing.', d.autoSave),
     )
     return stack
 }
 
 function _panel_font(): HTMLElement {
     const p = editor_prefs_get()
+    const d = editor_prefs_defaults()
     return _stack([
         _field_number('Font size (px)', editor_font_get(), 8, 48, v => editor_font_set(v),
-            'Text size in the code editor.'),
+            'Text size in the code editor.', EDITOR_FONT_DEFAULT),
         _field_select('Font family', p.fontFamily, FONT_OPTIONS.map(f => ({ value: f, label: _font_label(f) })),
             v => editor_prefs_set({ fontFamily: v }),
-            'Typeface used for code.'),
+            'Typeface used for code.', d.fontFamily),
         _field_checkbox('Font ligatures', p.fontLigatures, v => editor_prefs_set({ fontLigatures: v }),
-            'Combine glyphs like => and != into a single symbol (when the font supports it).'),
+            'Combine glyphs like => and != into a single symbol (when the font supports it).', d.fontLigatures),
     ])
 }
 
 function _panel_code(): HTMLElement {
     const p = editor_prefs_get()
+    const d = editor_prefs_defaults()
     const stack = _stack([])
     stack.appendChild(_subhead('Editing'))
     stack.append(
         _field_select('Color theme', p.theme, THEME_OPTIONS.map(t => ({ value: t.id, label: t.label })),
             v => editor_prefs_set({ theme: v }),
-            'Syntax-highlighting colors for code.'),
+            'Syntax-highlighting colors for code.', d.theme),
         _field_select('Tab size', String(p.tabSize), [
             { value: '2', label: '2' }, { value: '4', label: '4' }, { value: '8', label: '8' },
         ], v => editor_prefs_set({ tabSize: Number(v) }),
-            'How many spaces one indentation level is.'),
+            'How many spaces one indentation level is.', String(d.tabSize)),
         _field_checkbox('Insert spaces (not tabs)', p.insertSpaces, v => editor_prefs_set({ insertSpaces: v }),
-            'Indent with spaces instead of tab characters.'),
+            'Indent with spaces instead of tab characters.', d.insertSpaces),
         _field_checkbox('Word wrap', p.wordWrap, v => editor_prefs_set({ wordWrap: v }),
-            'Wrap long lines instead of scrolling sideways.'),
+            'Wrap long lines instead of scrolling sideways.', d.wordWrap),
         _field_checkbox('Auto-organize object files', p.autoOrganizeObjects, v => editor_prefs_set({ autoOrganizeObjects: v }),
-            'On open, reorder an object class into metadata → variables → events.'),
+            'On open, reorder an object class into metadata → variables → events.', d.autoOrganizeObjects),
     )
     stack.appendChild(_subhead('Display'))
     stack.append(
         _field_checkbox('Minimap', p.minimap, v => editor_prefs_set({ minimap: v }),
-            'Show the zoomed-out code overview on the right edge.'),
+            'Show the zoomed-out code overview on the right edge.', d.minimap),
         _field_select('Line numbers', p.lineNumbers, [
             { value: 'on', label: 'On' }, { value: 'relative', label: 'Relative' }, { value: 'off', label: 'Off' },
         ], v => editor_prefs_set({ lineNumbers: v as editor_prefs['lineNumbers'] }),
-            'Gutter numbering — absolute, relative to the caret, or hidden.'),
+            'Gutter numbering — absolute, relative to the caret, or hidden.', d.lineNumbers),
         _field_select('Show whitespace', p.renderWhitespace, [
             { value: 'none', label: 'None' }, { value: 'boundary', label: 'Boundary' }, { value: 'all', label: 'All' },
         ], v => editor_prefs_set({ renderWhitespace: v as editor_prefs['renderWhitespace'] }),
-            'Render spaces and tabs as faint marks.'),
+            'Render spaces and tabs as faint marks.', d.renderWhitespace),
         _field_select('Cursor blinking', p.cursorBlinking, [
             { value: 'blink', label: 'Blink' }, { value: 'smooth', label: 'Smooth' },
             { value: 'phase', label: 'Phase' }, { value: 'expand', label: 'Expand' }, { value: 'solid', label: 'Solid' },
         ], v => editor_prefs_set({ cursorBlinking: v as editor_prefs['cursorBlinking'] }),
-            'Caret blink animation.'),
+            'Caret blink animation.', d.cursorBlinking),
         _field_checkbox('Bracket pair colors', p.bracketPairColorization, v => editor_prefs_set({ bracketPairColorization: v }),
-            'Tint matching brackets so nesting is easier to read.'),
+            'Tint matching brackets so nesting is easier to read.', d.bracketPairColorization),
         _field_checkbox('Indent guides', p.indentGuides, v => editor_prefs_set({ indentGuides: v }),
-            'Vertical lines marking each indentation level.'),
+            'Vertical lines marking each indentation level.', d.indentGuides),
         _field_checkbox('Sticky scroll', p.stickyScroll, v => editor_prefs_set({ stickyScroll: v }),
-            'Pin the enclosing scope (class/function header) to the top while scrolling.'),
+            'Pin the enclosing scope (class/function header) to the top while scrolling.', d.stickyScroll),
     )
     return stack
 }
@@ -191,7 +214,7 @@ function _panel_tools(): HTMLElement {
     return _stack([
         _field_text('Image editor', ext_image_editor_get(), 'C:\\…\\Aseprite.exe  (empty = OS default app)',
             v => ext_image_editor_set(v),
-            'External app used to open sprite/background images. Leave empty to use the OS default.'),
+            'External app used to open sprite/background images. Leave empty to use the OS default.', ''),
     ])
 }
 
@@ -292,7 +315,7 @@ function _font_label(stack: string): string {
 // Field rows (label + control + description)
 // =========================================================================
 
-function _row(label: string, control: HTMLElement, desc?: string): HTMLElement {
+function _row(label: string, control: HTMLElement, desc?: string, reset?: { changed: boolean; apply: () => void }): HTMLElement {
     const row = document.createElement('div')
     row.style.cssText = 'display:flex; align-items:center; gap:8px; min-height:24px;'
     const lbl = document.createElement('label')
@@ -300,11 +323,43 @@ function _row(label: string, control: HTMLElement, desc?: string): HTMLElement {
     lbl.textContent = label
     lbl.style.cssText += 'min-width:180px; flex-shrink:0; margin:0;'
     row.append(lbl, control)
+    if (reset) { _panel_resets.push(reset); row.appendChild(_field_reset_btn(reset.changed, reset.apply)) }
     if (desc) { lbl.classList.add('sw-has-help'); tooltip_attach(row, desc) }
     return row
 }
 
-function _field_number(label: string, value: number, min: number, max: number, on_change: (v: number) => void, desc?: string): HTMLElement {
+/** The small revert (↺) button shown beside a setting that differs from its default. */
+function _field_reset_btn(changed: boolean, apply: () => void): HTMLElement {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.title = 'Reset this setting to its default'
+    b.innerHTML = ICON.refresh
+    b.style.cssText = 'flex-shrink:0; width:22px; height:22px; display:flex; align-items:center; justify-content:center; background:none; border:none; cursor:pointer; color:var(--sw-text-dim); padding:0;'
+    const svg = b.querySelector('svg'); if (svg) { svg.setAttribute('width', '13'); svg.setAttribute('height', '13') }
+    if (!changed) b.style.visibility = 'hidden'   // keep the column width; only modified settings reveal it
+    b.addEventListener('mouseenter', () => { b.style.color = 'var(--sw-accent)' })
+    b.addEventListener('mouseleave', () => { b.style.color = 'var(--sw-text-dim)' })
+    b.addEventListener('click', () => { apply(); _rerender() })
+    return b
+}
+
+/** The "Reset section" bar shown atop a category whose fields registered resets. */
+function _section_reset_bar(): HTMLElement {
+    const snapshot = [..._panel_resets]
+    const bar = document.createElement('div')
+    bar.style.cssText = 'display:flex; justify-content:flex-end; margin-bottom:8px;'
+    const b = document.createElement('button')
+    b.className = 'sw-btn'
+    b.textContent = 'Reset section'
+    b.style.cssText += 'font-size:11px; padding:2px 9px;'
+    b.title = 'Reset every setting in this section to its default'
+    b.disabled = !snapshot.some(r => r.changed)
+    b.addEventListener('click', () => { snapshot.forEach(r => r.apply()); _rerender() })
+    bar.appendChild(b)
+    return bar
+}
+
+function _field_number(label: string, value: number, min: number, max: number, on_change: (v: number) => void, desc?: string, def?: number): HTMLElement {
     const inp = document.createElement('input')
     inp.className = 'sw-input'
     inp.type = 'number'; inp.min = String(min); inp.max = String(max); inp.value = String(value)
@@ -314,10 +369,10 @@ function _field_number(label: string, value: number, min: number, max: number, o
         inp.value = String(n)
         on_change(n)
     })
-    return _row(label, inp, desc)
+    return _row(label, inp, desc, def === undefined ? undefined : { changed: value !== def, apply: () => on_change(def) })
 }
 
-function _field_select(label: string, value: string, options: { value: string; label: string }[], on_change: (v: string) => void, desc?: string): HTMLElement {
+function _field_select(label: string, value: string, options: { value: string; label: string }[], on_change: (v: string) => void, desc?: string, def?: string): HTMLElement {
     const sel = document.createElement('select')
     sel.className = 'sw-select'
     sel.style.flex = '1'
@@ -328,42 +383,23 @@ function _field_select(label: string, value: string, options: { value: string; l
         sel.appendChild(opt)
     }
     sel.addEventListener('change', () => on_change(sel.value))
-    return _row(label, sel, desc)
+    return _row(label, sel, desc, def === undefined ? undefined : { changed: value !== def, apply: () => on_change(def) })
 }
 
-function _field_checkbox(label: string, value: boolean, on_change: (v: boolean) => void, desc?: string): HTMLElement {
+function _field_checkbox(label: string, value: boolean, on_change: (v: boolean) => void, desc?: string, def?: boolean): HTMLElement {
     const box = document.createElement('input')
     box.type = 'checkbox'
     box.checked = value
     box.style.cssText = 'width:16px; height:16px; cursor:pointer;'
     box.addEventListener('change', () => on_change(box.checked))
-    return _row(label, box, desc)
+    return _row(label, box, desc, def === undefined ? undefined : { changed: value !== def, apply: () => on_change(def) })
 }
 
-function _field_text(label: string, value: string, placeholder: string, on_change: (v: string) => void, desc?: string): HTMLElement {
+function _field_text(label: string, value: string, placeholder: string, on_change: (v: string) => void, desc?: string, def?: string): HTMLElement {
     const inp = document.createElement('input')
     inp.className = 'sw-input'; inp.type = 'text'; inp.value = value; inp.placeholder = placeholder
     inp.title = placeholder
     inp.style.cssText += 'flex:1; min-width:0; font-size:11px;'
     inp.addEventListener('change', () => on_change(inp.value))
-    return _row(label, inp, desc)
-}
-
-function _field_color(label: string, value: string, on_change: (v: string) => void, desc?: string): HTMLElement {
-    const wrap = document.createElement('div')
-    wrap.style.cssText = 'display:flex; align-items:center; gap:6px; flex:1;'
-    const picker = document.createElement('input')
-    picker.type = 'color'; picker.value = value
-    picker.style.cssText = 'width:32px; height:24px; border:none; cursor:pointer; background:none; padding:0;'
-    const hex = document.createElement('input')
-    hex.className = 'sw-input'; hex.type = 'text'; hex.value = value.toUpperCase(); hex.maxLength = 7
-    hex.style.cssText += 'flex:1; font-family:monospace; font-size:11px;'
-    picker.addEventListener('input', () => { hex.value = picker.value.toUpperCase(); on_change(picker.value) })
-    hex.addEventListener('change', () => {
-        const v = hex.value.startsWith('#') ? hex.value : '#' + hex.value
-        if (/^#[0-9a-fA-F]{6}$/.test(v)) { picker.value = v.toLowerCase(); hex.value = v.toUpperCase(); on_change(v.toLowerCase()) }
-        else hex.value = picker.value.toUpperCase()
-    })
-    wrap.append(picker, hex)
-    return _row(label, wrap, desc)
+    return _row(label, inp, desc, def === undefined ? undefined : { changed: value !== def, apply: () => on_change(def) })
 }

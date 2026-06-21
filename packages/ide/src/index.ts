@@ -291,7 +291,9 @@ function _setup_splitter(dock: HTMLElement, splitter: HTMLElement): void {
 
 /** Shows the Start Page launcher (recent projects / new-from-template / open). */
 function _show_start_page(): void {
-    start_page_show({ load_project: (state) => _set_project(state, null) })
+    // The launcher is a required gate until a real project is open; once one is, it can be dismissed
+    // (re-opened via File → Start Page) to return to it.
+    start_page_show({ load_project: (state) => _set_project(state, null) }, project_has_folder())
 }
 
 async function on_file_new(): Promise<void> {
