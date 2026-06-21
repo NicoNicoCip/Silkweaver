@@ -71,24 +71,43 @@ function resolve_engine(project_folder: string): string {
 }
 
 /**
- * Vendors the toolchain's current engine into a project as one self-contained bundle
- * (`.engine/engine.mjs`, matter-js inlined) and records its version (`.engine/version.json` +
- * project.json `engineVersion`). Called at project creation; safe to re-run to upgrade the pin.
+ * Vendors an engine into a project as one self-contained bundle (`.engine/engine.mjs`, matter-js
+ * inlined) and records its version (`.engine/version.json` + project.json `engineVersion`). Called at
+ * project creation; safe to re-run to change the pin.
+ *
+ * By default it vendors the toolchain's OWN engine (esbuilds it). Pass `opts.sourcePath` to vendor a
+ * specific prebuilt bundle instead — a cached `engine-<ver>.mjs` from the IDE's engine version manager
+ * — which is byte-for-byte the same recipe, just built ahead of time for that version.
  * @param project_folder - Absolute path to the project folder
+ * @param opts.sourcePath - A prebuilt engine bundle to copy in (skips esbuild)
+ * @param opts.version    - The version that `sourcePath` corresponds to (required with sourcePath)
  * @returns The vendored engine version.
  */
-export async function vendor_engine(project_folder: string): Promise<string> {
-    const version = engine_version()
+export async function vendor_engine(
+    project_folder: string,
+    opts?: { sourcePath?: string; version?: string },
+): Promise<string> {
     const dir = path.join(project_folder, '.engine')
     await fs.promises.mkdir(dir, { recursive: true })
-    const esbuild_api = require('esbuild')
-    await esbuild_api.build({
-        entryPoints: [engine_entry()],
-        bundle:      true,
-        format:      'esm',
-        outfile:     path.join(dir, 'engine.mjs'),
-        keepNames:   true,   // the engine reads constructor.name at runtime
-    })
+
+    let version: string
+    if (opts?.sourcePath) {
+        // Vendor a specific prebuilt engine bundle (from the version manager's cache).
+        version = opts.version ?? '0.0.0'
+        await fs.promises.copyFile(opts.sourcePath, path.join(dir, 'engine.mjs'))
+    } else {
+        // Vendor the toolchain's own engine (esbuild it self-contained).
+        version = engine_version()
+        const esbuild_api = require('esbuild')
+        await esbuild_api.build({
+            entryPoints: [engine_entry()],
+            bundle:      true,
+            format:      'esm',
+            outfile:     path.join(dir, 'engine.mjs'),
+            keepNames:   true,   // the engine reads constructor.name at runtime
+        })
+    }
+
     await fs.promises.writeFile(path.join(dir, 'version.json'),
         JSON.stringify({ version, vendoredAt: new Date().toISOString() }, null, 2) + '\n', 'utf8')
 

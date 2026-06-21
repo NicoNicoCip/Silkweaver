@@ -137,9 +137,26 @@ contextBridge.exposeInMainWorld('swfs', {
     /** The engine version this toolchain ships (what "Update engine" pins a project to). */
     engine_version: (): Promise<string> => ipcRenderer.invoke('sw:engine-version'),
 
-    /** Vendors (pins) the current engine into a project folder; returns the vendored version. */
-    vendor_engine: (project_folder: string): Promise<{ ok: boolean; error?: string; version?: string }> =>
-        ipcRenderer.invoke('sw:vendor-engine', project_folder),
+    /**
+     * Vendors (pins) an engine into a project folder; returns the vendored version. With no `version`
+     * it vendors the bundled engine; otherwise it vendors that version's cached bundle.
+     */
+    vendor_engine: (project_folder: string, version?: string): Promise<{ ok: boolean; error?: string; version?: string }> =>
+        ipcRenderer.invoke('sw:vendor-engine', project_folder, version),
+
+    // ── Engine version cache (global; shared across projects) ─────────────
+    /** Versions currently in the global engine cache. */
+    engine_cache_list: (): Promise<string[]> => ipcRenderer.invoke('sw:engine-cache-list'),
+    /** The cached engine.mjs path for a version, or null if not cached. */
+    engine_cache_path: (version: string): Promise<string | null> => ipcRenderer.invoke('sw:engine-cache-path', version),
+    /** Remove a version from the global engine cache. */
+    engine_cache_remove: (version: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('sw:engine-cache-remove', version),
+    /** Versions downloadable from GitHub releases (those with an engine asset). */
+    engine_remote_list: (): Promise<{ ok: boolean; error?: string; versions: { version: string; url: string }[] }> =>
+        ipcRenderer.invoke('sw:engine-remote-list'),
+    /** Download an engine bundle into the global cache. */
+    engine_download: (version: string, url: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('sw:engine-download', version, url),
 
     /**
      * Parse/patch a class-per-object file. `action` is one of: parse_object,
@@ -163,15 +180,19 @@ contextBridge.exposeInMainWorld('swfs', {
         ipcRenderer.on('sw:file-changed', (_e, rel_path: string) => cb(rel_path))
     },
 
-    // ── Auto-update (electron-updater; packaged builds only) ──────────────
-    /** Asks the main process to check GitHub Releases for a newer version (background). */
-    check_for_updates: (): Promise<void> => ipcRenderer.invoke('sw:update-check'),
+    // ── App update (electron-updater; packaged builds only — manual check) ─
+    /** Checks GitHub Releases for a newer app version. Returns false if updates aren't supported (dev). */
+    check_for_updates: (): Promise<boolean> => ipcRenderer.invoke('sw:update-check'),
     /** Starts downloading the available update (progress arrives via on_update_progress). */
     download_update:   (): Promise<void> => ipcRenderer.invoke('sw:update-download'),
     /** Quits and installs a downloaded update now. */
     install_update:    (): Promise<void> => ipcRenderer.invoke('sw:update-install'),
     /** Fires with the new version string when an update is available. */
     on_update_available:  (cb: (version: string) => void): void => { ipcRenderer.on('sw:update-available',  (_e, v: string) => cb(v)) },
+    /** Fires when a manual check found no newer version. */
+    on_update_none:       (cb: () => void): void => { ipcRenderer.on('sw:update-none', () => cb()) },
+    /** Fires with an error message when an update check/download fails. */
+    on_update_error:      (cb: (msg: string) => void): void => { ipcRenderer.on('sw:update-error', (_e, m: string) => cb(m)) },
     /** Fires with download percent (0–100) while an update downloads. */
     on_update_progress:   (cb: (percent: number) => void): void => { ipcRenderer.on('sw:update-progress',   (_e, p: number) => cb(p)) },
     /** Fires with the version string once an update has finished downloading. */

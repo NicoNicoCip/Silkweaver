@@ -3,6 +3,8 @@
  * Async replacements for native alert/prompt/confirm that work in Electron.
  */
 
+import { updater_check_now } from '../updater.js'
+
 function _modal(content_html: string): { overlay: HTMLElement, close: () => void } {
     const overlay = document.createElement('div')
     overlay.style.cssText = `
@@ -84,8 +86,9 @@ export function show_about(version: string): Promise<void> {
                 <div style="color:var(--sw-text-dim);font-size:11.5px;">GPL-3.0 · © FinnWillow</div>
                 <div style="color:var(--sw-text-dim);font-size:11.5px;user-select:text;">github.com/FinnWillow/Silkweaver</div>
             </div>
-            <div style="display:flex;justify-content:flex-end;">
-                <button id="_sw_ok" class="sw-btn" style="padding:4px 20px;">OK</button>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                <button id="_sw_upd" class="sw-btn" style="padding:4px 14px;">Check for updates</button>
+                <button id="_sw_ok"  class="sw-btn" style="padding:4px 20px;">OK</button>
             </div>
         `)
         const done = () => { document.removeEventListener('keydown', onkey); close(); resolve() }
@@ -93,6 +96,7 @@ export function show_about(version: string): Promise<void> {
         document.addEventListener('keydown', onkey)
         overlay.addEventListener('click', e => { if (e.target === overlay) done() })  // backdrop click
         document.getElementById('_sw_ok')!.addEventListener('click', done)
+        document.getElementById('_sw_upd')!.addEventListener('click', () => { void updater_check_now() })
     })
 }
 

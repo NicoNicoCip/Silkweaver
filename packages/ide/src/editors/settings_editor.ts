@@ -9,9 +9,10 @@ import { FloatingWindow } from '../window_manager.js'
 import { tooltip_attach } from '../services/tooltip.js'
 import type { project_state } from '../services/project.js'
 import {
-    project_is_desktop, project_get_folder_path, project_vendor_engine,
+    project_is_desktop,
     project_toolchain_engine_version, version_compare,
 } from '../services/project.js'
+import { engine_manager_open } from '../panels/engine_manager.js'
 
 // =========================================================================
 // Module state
@@ -106,47 +107,31 @@ function _build_ui(
  * toolchain's engine, and an action to (re-)vendor it. The pinned engine is what the project always
  * builds against — updating the IDE never changes it; this is the one place to move it forward.
  */
-function _engine_section(state: project_state, on_change: () => void): HTMLElement {
+function _engine_section(state: project_state, _on_change: () => void): HTMLElement {
     const ver = document.createElement('span')
     ver.textContent = state.engineVersion || '—'
     ver.style.cssText = 'font-family:Consolas,monospace; font-size:12px; color:var(--sw-text); flex:1;'
-
-    const status = document.createElement('span')
-    status.style.cssText = 'font-size:11.5px; color:var(--sw-text-dim);'
+    // Reflect a re-pin done in the Engine Versions manager without reopening Settings.
+    document.addEventListener('sw:engine-pinned', (e) => {
+        const v = (e as CustomEvent<{ version?: string }>).detail?.version
+        if (v) { state.engineVersion = v; ver.textContent = v }
+    })
 
     const action = document.createElement('div')
     action.style.cssText = 'display:flex; align-items:center; gap:8px; flex:1;'
+    const status = document.createElement('span')
+    status.style.cssText = 'font-size:11.5px; color:var(--sw-text-dim);'
     action.appendChild(status)
 
-    const update = async (): Promise<void> => {
-        const folder = project_get_folder_path()
-        if (!folder) { status.textContent = 'Save the project to a folder first.'; return }
-        action.querySelectorAll('button').forEach(b => b.remove())
-        status.textContent = 'Updating engine…'
-        const v = await project_vendor_engine(folder)
-        if (v) {
-            state.engineVersion = v; on_change()
-            ver.textContent = v
-            status.textContent = `✓ Engine pinned at ${v}`
-        } else {
-            status.textContent = 'Engine update failed.'
-        }
-    }
-
     if (project_is_desktop()) {
-        status.textContent = 'Checking…'
+        action.appendChild(_action_btn('Manage engine versions…', () => engine_manager_open()))
         void project_toolchain_engine_version().then(toolchain => {
-            if (!toolchain) { status.textContent = ''; return }
+            if (!toolchain) return
             const pinned = state.engineVersion || '0.0.0'
-            if (version_compare(pinned, toolchain) >= 0) {
-                status.textContent = `Up to date (toolchain ${toolchain})`
-                action.appendChild(_action_btn('Re-vendor', () => void update()))
-            } else {
-                status.textContent = `Update available → ${toolchain}`
-                status.style.color = 'var(--sw-text)'
-                action.appendChild(_action_btn(`Update to ${toolchain}`, () => void update()))
-            }
-        }).catch(() => { status.textContent = '' })
+            status.textContent = version_compare(pinned, toolchain) >= 0
+                ? `Bundled engine: ${toolchain}`
+                : `Newer engine available (bundled ${toolchain})`
+        }).catch(() => { /* offline — leave blank */ })
     } else {
         status.textContent = 'Pinned with the project.'
     }

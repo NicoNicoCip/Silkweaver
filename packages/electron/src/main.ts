@@ -132,15 +132,21 @@ function _init_updater(): void {
     autoUpdater.autoDownload         = false   // wait for the user to choose to download
     autoUpdater.autoInstallOnAppQuit = true    // once downloaded, apply on the next quit if not sooner
 
-    autoUpdater.on('update-available',  info => _win?.webContents.send('sw:update-available',  info.version))
-    autoUpdater.on('download-progress', p    => _win?.webContents.send('sw:update-progress',   Math.round(p.percent)))
-    autoUpdater.on('update-downloaded', info => _win?.webContents.send('sw:update-downloaded',  info.version))
-    autoUpdater.on('error',             err  => console.warn('[updater]', err?.message ?? err))
+    autoUpdater.on('update-available',     info => _win?.webContents.send('sw:update-available',  info.version))
+    autoUpdater.on('update-not-available', ()   => _win?.webContents.send('sw:update-none'))
+    autoUpdater.on('download-progress',    p    => _win?.webContents.send('sw:update-progress',   Math.round(p.percent)))
+    autoUpdater.on('update-downloaded',    info => _win?.webContents.send('sw:update-downloaded',  info.version))
+    autoUpdater.on('error',                err  => { console.warn('[updater]', err?.message ?? err); _win?.webContents.send('sw:update-error', String(err?.message ?? err)) })
 
-    autoUpdater.checkForUpdates().catch(() => { /* offline or no published release yet — ignore */ })
+    // No on-launch check — updates are checked only when the user asks (Help → About → Check for updates).
 }
 
-ipcMain.handle('sw:update-check',    () => { if (app.isPackaged) autoUpdater.checkForUpdates().catch(() => {}) })
+/** Manual update check. Returns whether updates are supported (only in a packaged build). */
+ipcMain.handle('sw:update-check', () => {
+    if (!app.isPackaged) return false
+    autoUpdater.checkForUpdates().catch(() => {})
+    return true
+})
 ipcMain.handle('sw:update-download', () => { autoUpdater.downloadUpdate().catch(e => console.warn('[updater]', e?.message ?? e)) })
 ipcMain.handle('sw:update-install',  () => { autoUpdater.quitAndInstall() })
 
@@ -303,11 +309,100 @@ ipcMain.handle('sw:create-from-template', async (_e, template_id: string, dest_f
 /** Returns the engine version this toolchain ships (what "Update engine" would pin to). */
 ipcMain.handle('sw:engine-version', () => build.toolchain_engine_version())
 
-/** Vendors (or re-vendors / upgrades) the current engine into a project, pinning its version. */
-ipcMain.handle('sw:vendor-engine', async (_e, project_folder: string) => {
+/**
+ * Vendors an engine into a project, pinning its version. With no `version` (or the toolchain's own
+ * version) it esbuilds the bundled engine; otherwise it vendors that version's cached bundle (which
+ * must already be downloaded — see the engine cache below).
+ */
+ipcMain.handle('sw:vendor-engine', async (_e, project_folder: string, version?: string) => {
     try {
-        const version = await build.vendor_engine(project_folder)
-        return { ok: true, version }
+        const bundled = build.toolchain_engine_version()
+        if (version && version !== bundled) {
+            const sourcePath = _engine_cache_path(version)
+            if (!fs.existsSync(sourcePath))
+                return { ok: false, error: `Engine ${version} isn't downloaded yet — add it to the cache first.` }
+            const v = await build.vendor_engine(project_folder, { sourcePath, version })
+            return { ok: true, version: v }
+        }
+        const v = await build.vendor_engine(project_folder)
+        return { ok: true, version: v }
+    } catch (e: any) {
+        return { ok: false, error: String(e?.message ?? e) }
+    }
+})
+
+// =========================================================================
+// Engine version cache (the engine version manager)
+// =========================================================================
+//
+// Prebuilt engine bundles (`engine-<ver>.mjs`) downloaded from GitHub releases live in one global
+// per-user cache. Picking a version for a project copies its cached bundle into the project's
+// `.engine/` (see sw:vendor-engine). The cache is shared across all projects.
+
+/** Root of the global engine cache: <userData>/engines/<version>/engine.mjs */
+function _engines_dir(): string { return path.join(app.getPath('userData'), 'engines') }
+function _engine_cache_path(version: string): string { return path.join(_engines_dir(), version, 'engine.mjs') }
+
+/** owner/repo parsed from package.json (so an account rename doesn't strand the updater). */
+function _repo_slug(): string {
+    try {
+        const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'))
+        const m = String(pkg.repository?.url ?? '').match(/github\.com[/:]([^/]+\/[^/.]+)/)
+        if (m && m[1]) return m[1]
+    } catch { /* fall through */ }
+    return 'FinnWillow/Silkweaver'
+}
+
+/** Versions currently in the cache (have an engine.mjs), newest-first. */
+ipcMain.handle('sw:engine-cache-list', () => {
+    try {
+        return fs.readdirSync(_engines_dir(), { withFileTypes: true })
+            .filter(d => d.isDirectory() && fs.existsSync(path.join(_engines_dir(), d.name, 'engine.mjs')))
+            .map(d => d.name)
+    } catch { return [] }
+})
+
+/** The cached engine.mjs path for a version, or null if it isn't cached. */
+ipcMain.handle('sw:engine-cache-path', (_e, version: string) => {
+    const p = _engine_cache_path(version)
+    return fs.existsSync(p) ? p : null
+})
+
+/** Remove a cached version from the global cache. */
+ipcMain.handle('sw:engine-cache-remove', (_e, version: string) => {
+    try { fs.rmSync(path.join(_engines_dir(), version), { recursive: true, force: true }); return { ok: true } }
+    catch (e: any) { return { ok: false, error: String(e?.message ?? e) } }
+})
+
+/** Versions downloadable from GitHub releases — those whose release carries an engine-<ver>.mjs asset. */
+ipcMain.handle('sw:engine-remote-list', async () => {
+    try {
+        const res = await fetch(`https://api.github.com/repos/${_repo_slug()}/releases?per_page=100`, {
+            headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Silkweaver-IDE' },
+        })
+        if (!res.ok) return { ok: false, error: `GitHub API ${res.status}`, versions: [] as { version: string; url: string }[] }
+        const releases = await res.json() as Array<{ assets?: Array<{ name?: string; browser_download_url?: string }> }>
+        const versions: { version: string; url: string }[] = []
+        for (const r of releases) for (const a of (r.assets ?? [])) {
+            const m = /^engine-(\d+\.\d+\.\d+)\.mjs$/.exec(a.name ?? '')
+            if (m && m[1] && a.browser_download_url) versions.push({ version: m[1], url: a.browser_download_url })
+        }
+        return { ok: true, versions }
+    } catch (e: any) {
+        return { ok: false, error: String(e?.message ?? e), versions: [] as { version: string; url: string }[] }
+    }
+})
+
+/** Download an engine bundle into the cache. */
+ipcMain.handle('sw:engine-download', async (_e, version: string, url: string) => {
+    try {
+        const res = await fetch(url, { headers: { 'User-Agent': 'Silkweaver-IDE' } })
+        if (!res.ok) return { ok: false, error: `Download failed: HTTP ${res.status}` }
+        const buf = Buffer.from(await res.arrayBuffer())
+        const dir = path.join(_engines_dir(), version)
+        await fs.promises.mkdir(dir, { recursive: true })
+        await fs.promises.writeFile(path.join(dir, 'engine.mjs'), buf)
+        return { ok: true }
     } catch (e: any) {
         return { ok: false, error: String(e?.message ?? e) }
     }

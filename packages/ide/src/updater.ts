@@ -1,17 +1,19 @@
 /**
- * In-app auto-update notice (desktop only).
+ * In-app update notice (desktop only) — MANUAL by design (1.4.1).
  *
- * Non-intrusive by design: nothing happens until an update actually exists, at which point a small
- * dismissible chip appears bottom-right. The user opts in to download, watches progress, then
- * restarts to apply (or "Later" — it installs on the next quit). Driven by the electron-updater
- * bridge on `window.swfs`; a no-op in the browser backend.
+ * Nothing is checked on launch; the user triggers a check from Help → About → "Check for updates".
+ * Results surface as a small dismissible chip bottom-right: up-to-date, an available version (opt in
+ * to download), progress, then restart-to-apply (or "Later" — installs on next quit). Driven by the
+ * electron-updater bridge on `window.swfs`; a no-op in the browser backend.
  */
 
 interface updater_bridge {
-    check_for_updates:    () => Promise<void>
+    check_for_updates:    () => Promise<boolean>
     download_update:      () => Promise<void>
     install_update:       () => Promise<void>
     on_update_available:  (cb: (version: string) => void) => void
+    on_update_none?:      (cb: () => void) => void
+    on_update_error?:     (cb: (msg: string) => void) => void
     on_update_progress:   (cb: (percent: number) => void) => void
     on_update_downloaded: (cb: (version: string) => void) => void
 }
@@ -20,15 +22,28 @@ interface updater_bridge {
 const _bridge = (): updater_bridge | undefined => (window as any).swfs
 
 let _chip: HTMLElement | null = null
+let _checking = false   // a manual check is in flight (so we know to report "up to date" / errors)
 
-/** Wires the update chip to the host's updater events. Call once at boot. */
+/** Wires the update chip to the host's updater events. Call once at boot. No check is run here. */
 export function updater_init(): void {
     const b = _bridge()
     if (!b || typeof b.on_update_available !== 'function') return   // browser backend / older host
-    b.on_update_available(v => _render_available(v))
+    b.on_update_available(v => { _checking = false; _render_available(v) })
     b.on_update_progress(p => _render_progress(p))
     b.on_update_downloaded(v => _render_downloaded(v))
-    void b.check_for_updates()   // background check (main also checks; this covers a renderer reload)
+    b.on_update_none?.(() => { if (_checking) { _checking = false; _render_message("You're on the latest version.", true, 4000) } })
+    b.on_update_error?.(() => { if (_checking) { _checking = false; _render_message('Update check failed (offline?).') } })
+}
+
+/** Manually check for an app update (Help → About). Surfaces the result as a chip. */
+export async function updater_check_now(): Promise<void> {
+    const b = _bridge()
+    if (!b || typeof b.check_for_updates !== 'function') { _render_message('Updates are available in the desktop app.'); return }
+    _checking = true
+    _render_message('Checking for updates…', false)
+    const supported = await b.check_for_updates()
+    if (!supported) { _checking = false; _render_message('Updates apply to the installed app only.') }
+    // otherwise the update-available / none / error events drive the rest
 }
 
 // =========================================================================
@@ -64,6 +79,14 @@ function _render_available(version: string): void {
 function _render_progress(percent: number): void {
     const c = _ensure_chip()
     c.append(_label(`Downloading update… ${percent}%`))
+}
+
+/** A plain status chip (checking / up-to-date / error). Auto-dismisses after `autoCloseMs` if given. */
+function _render_message(text: string, dismissable = true, autoCloseMs = 0): void {
+    const c = _ensure_chip()
+    c.append(_label(text))
+    if (dismissable) c.append(_xbtn())
+    if (autoCloseMs) setTimeout(() => _close(), autoCloseMs)
 }
 
 function _render_downloaded(version: string): void {

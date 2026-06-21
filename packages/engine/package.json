@@ -1,6 +1,6 @@
 {
     "name": "@silkweaver/engine",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "description": "Silkweaver game engine — a GMS 1.4-inspired WebGL2 runtime library (usable standalone, no editor required)",
     "type": "module",
     "license": "GPL-3.0",

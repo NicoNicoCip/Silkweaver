@@ -1,10 +1,15 @@
 /**
  * Project management service.
  *
- * Three backends, detected at runtime:
- *   1. Electron  — window.swfs is injected by the preload script
- *   2. FSAPI     — Chromium's showDirectoryPicker (Chrome / Edge)
- *   3. Fallback  — file download + <input> upload (Firefox / Safari)
+ * The IDE ships as a **desktop app (Electron)** — that is the only supported, published backend.
+ * The browser backends below are PARKED, dormant scaffolding for a future in-browser IDE, which
+ * needs proper separation before it can ship. GitHub Pages serves the landing page + docs only;
+ * the IDE is not published to the web, so these paths are not reachable from any shipping entry.
+ *
+ * Backends, detected at runtime:
+ *   1. Electron  — window.swfs is injected by the preload script (the supported backend)
+ *   2. FSAPI     — Chromium's showDirectoryPicker (Chrome / Edge)  — parked / not shipped
+ *   3. Fallback  — file download + <input> upload (Firefox / Safari) — parked / not shipped
  */
 
 // =========================================================================
@@ -37,8 +42,13 @@ const _el = () => (window as any).swfs as {
     join:             (...parts: string[]) => string
     open_external:    (cmd: string, abs_path: string) => Promise<{ ok: boolean; error?: string }>
     create_from_template: (template_id: string, dest_folder: string, name?: string) => Promise<{ ok: boolean; error?: string }>
-    vendor_engine:        (project_folder: string) => Promise<{ ok: boolean; error?: string; version?: string }>
+    vendor_engine:        (project_folder: string, version?: string) => Promise<{ ok: boolean; error?: string; version?: string }>
     engine_version:       () => Promise<string>
+    engine_cache_list:    () => Promise<string[]>
+    engine_cache_path:    (version: string) => Promise<string | null>
+    engine_cache_remove:  (version: string) => Promise<{ ok: boolean; error?: string }>
+    engine_remote_list:   () => Promise<{ ok: boolean; error?: string; versions: { version: string; url: string }[] }>
+    engine_download:      (version: string, url: string) => Promise<{ ok: boolean; error?: string }>
 } | undefined
 
 const _has_electron = () => !!_el()
@@ -442,11 +452,37 @@ export async function project_create_from_template(template_id: string, dest_fol
  * @param project_folder - Absolute path of the project
  * @returns The vendored engine version, or null if unavailable / it failed.
  */
-export async function project_vendor_engine(project_folder: string): Promise<string | null> {
+export async function project_vendor_engine(project_folder: string, version?: string): Promise<{ ok: boolean; version?: string; error?: string }> {
     const fs = _el()
-    if (!fs) return null
-    const res = await fs.vendor_engine(project_folder)
-    return res.ok ? (res.version ?? null) : null
+    if (!fs) return { ok: false, error: 'Vendoring requires the desktop app.' }
+    return fs.vendor_engine(project_folder, version)
+}
+
+// ── Engine version manager (global cache; desktop only) ───────────────────────
+
+/** Versions currently downloaded into the global engine cache. */
+export async function project_engine_cache_list(): Promise<string[]> {
+    const fs = _el(); return fs ? fs.engine_cache_list() : []
+}
+
+/** Versions available to download from GitHub releases (those carrying an engine asset). */
+export async function project_engine_remote_list(): Promise<{ ok: boolean; error?: string; versions: { version: string; url: string }[] }> {
+    const fs = _el(); return fs ? fs.engine_remote_list() : { ok: false, error: 'desktop only', versions: [] }
+}
+
+/** Download an engine version's bundle into the global cache. */
+export async function project_engine_download(version: string, url: string): Promise<{ ok: boolean; error?: string }> {
+    const fs = _el(); return fs ? fs.engine_download(version, url) : { ok: false, error: 'desktop only' }
+}
+
+/** Remove a version from the global engine cache. */
+export async function project_engine_cache_remove(version: string): Promise<{ ok: boolean; error?: string }> {
+    const fs = _el(); return fs ? fs.engine_cache_remove(version) : { ok: false, error: 'desktop only' }
+}
+
+/** True if a version is present in the global engine cache. */
+export async function project_engine_cached(version: string): Promise<boolean> {
+    const fs = _el(); return fs ? !!(await fs.engine_cache_path(version)) : false
 }
 
 /**

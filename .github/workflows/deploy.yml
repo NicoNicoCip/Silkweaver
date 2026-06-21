@@ -30,13 +30,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build all bundles
-        run: npm run build
+      # GitHub Pages serves the landing page + documentation only. The IDE ships as a desktop
+      # app (Electron); the in-browser IDE is a parked feature and is intentionally NOT published.
+      - name: Regenerate API reference from engine source
+        run: npm run gen:docs
 
-      - name: Upload Pages artifact
+      - name: Upload Pages artifact (landing + docs)
         uses: actions/upload-pages-artifact@v3
         with:
-          path: exports/
+          path: docs/
 
   deploy:
     needs: build

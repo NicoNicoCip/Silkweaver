@@ -12,7 +12,7 @@ import { updater_init } from './updater.js'
 import { taskbar_create }                                            from './taskbar.js'
 import { ResourceTree }                                              from './resource_tree.js'
 import type { open_resource_event, resource_category }               from './resource_tree.js'
-import { project_new, project_open, project_save, project_set_dir, project_set_folder, project_get_dir, project_has_folder, project_get_folder_path, project_get_last_folder, project_read_file, project_write_file, project_file_exists, project_rename, project_copy, project_delete, project_read_binary_url, project_write_binary, project_list_dir }  from './services/project.js'
+import { project_new, project_open, project_save, project_set_dir, project_set_folder, project_get_dir, project_has_folder, project_get_folder_path, project_get_last_folder, project_read_file, project_write_file, project_file_exists, project_rename, project_copy, project_delete, project_read_binary_url, project_write_binary, project_list_dir, project_toolchain_engine_version, version_compare, project_engine_cached }  from './services/project.js'
 import type { project_state }                                         from './services/project.js'
 import { start_page_show, recent_add }                               from './start_page.js'
 import { UndoStack }                                                 from './services/undo.js'
@@ -32,6 +32,7 @@ import { console_open, console_write, console_toggle }               from './pan
 import { debugger_open }                                             from './panels/debugger_panel.js'
 import { profiler_open }                                             from './panels/profiler_panel.js'
 import { docs_open }                                                 from './panels/docs_window.js'
+import { engine_manager_open }                                      from './panels/engine_manager.js'
 import { show_alert, show_prompt, show_confirm, show_about, show_save_prompt } from './services/dialogs.js'
 import { SW_VERSION }                                               from './generated/version.js'
 import { ICON }                                                     from './icons.js'
@@ -94,6 +95,7 @@ function boot(): void {
         res_add_room:          () => on_add_resource('rooms'),
         edit_game_settings:    on_edit_game_settings,
         edit_preferences:      () => preferences_editor_open(_workspace),
+        edit_engine_versions:  () => engine_manager_open(_workspace),
         view_resources:        () => _tree.show(),
         view_console:          () => console_open(_workspace),
         view_debugger:         () => debugger_open(_workspace),
@@ -152,6 +154,13 @@ function boot(): void {
     document.addEventListener('sw:open_resource', (e) => {
         const { category, name } = (e as CustomEvent<open_resource_event>).detail
         on_open_resource(category, name)
+    })
+
+    // The Engine Versions manager re-pins a project's engine (and writes project.json on disk);
+    // mirror that into the in-memory project so a later save keeps it.
+    document.addEventListener('sw:engine-pinned', (e) => {
+        const v = (e as CustomEvent<{ version?: string }>).detail?.version
+        if (v && _project) _project.engineVersion = v
     })
 
     // 7. Global keyboard shortcuts
@@ -898,6 +907,28 @@ function _set_project(state: project_state, _dir: FileSystemDirectoryHandle | nu
 
     // (Re)watch the active project folder so external edits propagate to open windows.
     file_watch_set_folder(project_get_folder_path())
+
+    // Flag when a project's pinned engine isn't actually present locally (cloned without its
+    // vendored .engine/, or an old project) — the build falls back to the bundled engine.
+    void _check_pinned_engine()
+}
+
+/**
+ * Warns (in the output console) when the active project pins an engine version that isn't vendored
+ * into it. The build safely falls back to the bundled engine; this nudges the user to restore the
+ * exact pinned version via the Engine Versions manager (downloading it if needed).
+ */
+async function _check_pinned_engine(): Promise<void> {
+    if (!project_has_folder()) return
+    const pinned = _project?.engineVersion
+    if (!pinned) return
+    if (await project_file_exists('.engine/engine.mjs')) return     // already vendored — build uses it
+    const bundled = await project_toolchain_engine_version()
+    if (bundled && version_compare(pinned, bundled) === 0) return   // pinned == bundled → fallback is exact
+    const where = (await project_engine_cached(pinned))
+        ? `It's in your engine cache — open Edit → Engine Versions… and pick ${pinned} to restore it.`
+        : `Open Edit → Engine Versions… to download and restore ${pinned} (needs a connection the first time).`
+    console_write('system', `[IDE] This project pins engine ${pinned}, which isn't vendored here — building against the bundled engine ${bundled ?? '?'}. ${where}`)
 }
 
 function _mark_unsaved(): void {

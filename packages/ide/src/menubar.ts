@@ -142,6 +142,7 @@ export interface menubar_actions {
     file_save_as:() => void
     edit_game_settings: () => void
     edit_preferences:   () => void
+    edit_engine_versions: () => void
     res_add_sprite:   () => void
     res_add_sound:    () => void
     res_add_background:() => void
@@ -204,6 +205,7 @@ export function menubar_default(actions: menubar_actions): HTMLElement {
                 { separator: true },
                 { label: 'Preferences…',   shortcut: 'Ctrl+,',       action: actions.edit_preferences },
                 { label: 'Game Settings…', shortcut: 'Ctrl+Shift+P', action: actions.edit_game_settings },
+                { label: 'Engine Versions…',                         action: actions.edit_engine_versions },
             ],
         },
         {

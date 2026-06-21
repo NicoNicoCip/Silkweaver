@@ -38,3 +38,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # No code-signing certs configured — build unsigned rather than fail looking for one.
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # The engine bundle is platform-independent, so publish it once (from the Linux leg) onto the
+      # same draft Release electron-builder just created. This is the asset the IDE's engine version
+      # manager downloads to vendor a specific engine version into a project.
+      - name: Publish engine asset (engine-<version>.mjs)
+        if: matrix.os == 'ubuntu-latest'
+        run: node scripts/backport-engine.cjs --upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
