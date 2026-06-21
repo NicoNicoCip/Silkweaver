@@ -67,6 +67,20 @@ for (const rel of FILES) {
     changed++
 }
 
+// The landing page (docs/index.html) isn't a package.json — bump its version badge too, via the
+// stable <b data-sw-version> marker, so it never falls behind the packages again.
+{
+    const rel = 'docs/index.html'
+    const file = path.join(root, rel)
+    try {
+        const src = fs.readFileSync(file, 'utf8')
+        const next = src.replace(/(<b data-sw-version>)[^<]*(<\/b>)/, `$1${version}$2`)
+        if (!/(<b data-sw-version>)[^<]*(<\/b>)/.test(src)) errors.push(`${rel}: no <b data-sw-version> marker`)
+        else if (next === src) console.log(`  =  ${rel.padEnd(34)} already ${version}`)
+        else { fs.writeFileSync(file, next); console.log(`  ✓  ${rel.padEnd(34)} → ${version}`); changed++ }
+    } catch (e) { errors.push(`${rel}: ${e.message}`) }
+}
+
 if (errors.length) {
     console.error('\n✗ Problems (no lockfile sync run):')
     for (const e of errors) console.error('  - ' + e)

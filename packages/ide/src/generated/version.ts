@@ -4,4 +4,4 @@
  * About dialog and Start Page can never drift from the released version.
  */
 /* eslint-disable */
-export const SW_VERSION: string = "1.4.0"
+export const SW_VERSION: string = "1.4.1"

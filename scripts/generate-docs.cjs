@@ -213,6 +213,25 @@ try {
     for (const e of all) byCat[e.category] = (byCat[e.category] ?? 0) + 1
     const guideCount = all.filter(e => e.kind === 'guide').length
     console.log(`[gen:docs] wrote ${path.relative(ROOT, OUT_FILE)} — ${all.length} entries (${guideCount} guides) across ${Object.keys(byCat).length} categories`)
+
+    // Keep the landing page's version badge in lockstep with package.json (single source of truth).
+    // The Pages deploy runs gen:docs, so the live site self-corrects on every push regardless of how
+    // the version was bumped.
+    try {
+        const landing = path.join(ROOT, 'docs', 'index.html')
+        const ver = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version
+        const src = fs.readFileSync(landing, 'utf8')
+        const out = src.replace(/(<b data-sw-version>)[^<]*(<\/b>)/, `$1${ver}$2`)
+        if (out !== src) { fs.writeFileSync(landing, out, 'utf8'); console.log(`[gen:docs] stamped landing page version → ${ver}`) }
+    } catch (e) { console.warn('[gen:docs] could not stamp landing version:', e.message) }
+
+    // Keep the Pages favicon in lockstep with the IDE's app icon (the pages all link docs/favicon.ico).
+    try {
+        const iconSrc = path.join(ROOT, 'packages', 'build', 'assets', 'icon.ico')
+        const iconDst = path.join(ROOT, 'docs', 'favicon.ico')
+        const changed = !fs.existsSync(iconDst) || !fs.readFileSync(iconSrc).equals(fs.readFileSync(iconDst))
+        if (changed) { fs.copyFileSync(iconSrc, iconDst); console.log('[gen:docs] refreshed docs/favicon.ico from the IDE icon') }
+    } catch (e) { console.warn('[gen:docs] could not refresh favicon:', e.message) }
 } finally {
     fs.rmSync(tmp, { recursive: true, force: true })
 }
@@ -230,6 +249,7 @@ function render_html(data) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/x-icon" href="../favicon.ico">
 <title>Silkweaver API Reference</title>
 <script>document.documentElement.dataset.theme = localStorage.getItem('sw-docs-theme') || 'dark'</script>
 <style>
