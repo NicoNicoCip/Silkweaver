@@ -67,21 +67,23 @@ are the object's settings, instance fields are its variables, and `on_*` methods
 export class obj_player extends gm_object {
     static sprite = 'spr_player'    // object settings
     static solid  = true
-    hp = 100                        // instance variables
+    spd = 4                         // your own instance variable
 
     on_step() {                     // events
-        if (keyboard_check(vk_right)) this.x += 4
-        if (keyboard_check(vk_left))  this.x -= 4
+        if (keyboard_check(vk_right)) sw.x += inst.spd
+        if (keyboard_check(vk_left))  sw.x -= inst.spd
     }
 
     on_draw() {
-        this.draw_self()
+        sw.draw_self()
     }
 }
 ```
 
 Engine functions (`keyboard_check`, `draw_text`, …) are available without imports — the build wires
-them in for you. Anything that acts on *this* instance (`this.x`, `this.draw_self()`) uses `this.`.
+them in for you. The current instance's built-ins live on `sw.` (`sw.x`, `sw.draw_self()`), your own
+variables on `inst.` (`inst.hp`), and game-wide state on `global.` (`global.score`). `this.` stays
+plain JavaScript.
 
 ---
 
@@ -147,7 +149,7 @@ Silkweaver is an npm-workspaces monorepo, split into pieces you can use independ
 
 ## Status
 
-**1.0.0 — feature-complete.** The GameMaker 1.4 surface (everything except drag-and-drop) is
+**1.3.3 — feature-complete.** The GameMaker 1.4 surface (everything except drag-and-drop) is
 implemented across the engine, the toolchain, and the IDE, and the whole monorepo type-checks and
 builds cleanly. It's a labour of love; if something's rough or missing, issues and PRs are welcome.
 

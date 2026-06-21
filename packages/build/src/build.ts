@@ -272,18 +272,6 @@ ${tile_lines}
 }`)
         }
 
-        // ── Fonts ────────────────────────────────────────────────────────────
-        // CSS-family fonts (family/size/style) read from fonts/<n>/meta.json and
-        // registered by name so `draw_set_font('fnt_x')` resolves at runtime.
-        const font_setups: string[] = []
-        for (const fn of font_names) {
-            let fd: any = {}
-            try { fd = JSON.parse(await fs.promises.readFile(path.join(project_folder, 'fonts', fn, 'meta.json'), 'utf8')) } catch { /* default */ }
-            const family = typeof fd.font_name === 'string' && fd.font_name.trim() ? fd.font_name : 'Arial'
-            const size   = Number(fd.size) || 16
-            font_setups.push(`    font_register_name('${fn}', new font_resource(${JSON.stringify(family)}, ${size}, ${!!fd.bold}, ${!!fd.italic}))`)
-        }
-
         // ── Paths ────────────────────────────────────────────────────────────
         // Read paths/<n>/path.json and rebuild the path resource inline (point speed
         // is stored 0–100 in the editor; the engine uses a 1 = normal factor).
@@ -340,6 +328,30 @@ ${tile_lines}
                 ? `assets/${kind}/${name}`
                 : 'file://' + path.join(project_folder, kind, name).replace(/\\/g, '/')
         const asset_meta_url = (kind: string, name: string): string => `${asset_dir_url(kind, name)}/meta.json`
+
+        // ── Fonts ────────────────────────────────────────────────────────────
+        // Register each font by name (family/size/style from fonts/<n>/meta.json). If a resource
+        // bundles a font file (.ttf/.otf/.woff/.woff2) AND its family is that bundled font — i.e. the
+        // editor set font_name to the resource name — load it via font_load_file so the custom font
+        // renders; otherwise the family is a plain CSS family available on the player's system.
+        const FONT_EXTS = ['.ttf', '.otf', '.woff', '.woff2']
+        const font_setups: string[] = []
+        for (const fn of font_names) {
+            let fd: any = {}
+            try { fd = JSON.parse(await fs.promises.readFile(path.join(project_folder, 'fonts', fn, 'meta.json'), 'utf8')) } catch { /* default */ }
+            const family = typeof fd.font_name === 'string' && fd.font_name.trim() ? fd.font_name : 'sans-serif'
+            const size   = Number(fd.size) || 16
+            // A bundled font file sits next to meta.json and is registered under the resource name.
+            let font_file = ''
+            if (family === fn) {
+                try {
+                    const entries = await fs.promises.readdir(path.join(project_folder, 'fonts', fn))
+                    font_file = entries.find(f => FONT_EXTS.includes(path.extname(f).toLowerCase())) ?? ''
+                } catch { /* none */ }
+            }
+            if (font_file) font_setups.push(`    await font_load_file('${fn}', '${asset_dir_url('fonts', fn)}/${font_file}')`)
+            font_setups.push(`    font_register_name('${fn}', new font_resource(${JSON.stringify(family)}, ${size}, ${!!fd.bold}, ${!!fd.italic}))`)
+        }
 
         // Sprite loading code
         const sprite_loads = sprite_names.map(spr_name =>
@@ -635,7 +647,7 @@ export async function export_html5(project_folder: string, out_dir: string): Pro
 
     // 2. Copy only the *registered* sprite/background/sound assets next to game.js
     //    (matching what generate_entry_code loads — avoids shipping orphaned files).
-    for (const kind of ['sprites', 'backgrounds', 'sounds'] as const) {
+    for (const kind of ['sprites', 'backgrounds', 'sounds', 'fonts'] as const) {
         for (const name of Object.keys(proj.resources[kind] ?? {})) {
             const src = path.join(project_folder, kind, name)
             if (await _path_exists(src)) await _copy_dir(src, path.join(out_dir, 'assets', kind, name))

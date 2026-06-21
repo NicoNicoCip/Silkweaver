@@ -149,6 +149,18 @@ ipcMain.handle('sw:pick-folder', async (_e, mode: 'open' | 'save', defaultPath?:
     return result.filePaths[0]!
 })
 
+/** Pick a single existing file (optionally filtered). Returns its absolute path, or null if cancelled. */
+ipcMain.handle('sw:pick-file', async (_e, opts?: { title?: string; defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => {
+    const result = await dialog.showOpenDialog({
+        title:      opts?.title ?? 'Open File',
+        properties: ['openFile'],
+        ...(opts?.defaultPath && { defaultPath: opts.defaultPath }),
+        ...(opts?.filters     && { filters: opts.filters }),
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]!
+})
+
 /** Read a text file */
 ipcMain.handle('sw:read-file', async (_e, abs_path: string) => {
     return fs.promises.readFile(abs_path, 'utf8')
@@ -158,6 +170,14 @@ ipcMain.handle('sw:read-file', async (_e, abs_path: string) => {
 ipcMain.handle('sw:read-file-base64', async (_e, abs_path: string) => {
     const buf = await fs.promises.readFile(abs_path)
     return buf.toString('base64')
+})
+
+/** Lists the file names directly inside a directory (non-recursive). Returns [] if it doesn't exist. */
+ipcMain.handle('sw:list-dir', async (_e, abs_path: string) => {
+    try {
+        const entries = await fs.promises.readdir(abs_path, { withFileTypes: true })
+        return entries.filter(d => d.isFile()).map(d => d.name)
+    } catch { return [] }
 })
 
 /** Write a text file (creates intermediate directories) */

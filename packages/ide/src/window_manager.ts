@@ -4,6 +4,8 @@
  * resizable floating window styled after Windows 10 / GMS 1.4.
  */
 
+import { ICON } from './icons.js'
+
 // =========================================================================
 // Types
 // =========================================================================
@@ -58,6 +60,11 @@ function _save_layout(id: string, state: window_state): void {
 export class FloatingWindow {
     /** Registry of every currently-open (mounted) window, for MDI management. */
     private static _open: Set<FloatingWindow> = new Set()
+    /** The window most recently brought to the front (drives the taskbar's active highlight). */
+    private static _active: FloatingWindow | null = null
+    /** Subscribers notified (coalesced) when the open set, active window, or any title changes. */
+    private static _listeners: Set<() => void> = new Set()
+    private static _notify_scheduled = false
 
     readonly id:          string
     readonly el:          HTMLElement        // outer .sw-window div
@@ -83,9 +90,11 @@ export class FloatingWindow {
     private _resize_start  = { mx: 0, my: 0, x: 0, y: 0, w: 0, h: 0 }
 
     private _on_close_cb: (() => void) | null = null
+    private _icon_src:    string | null = null   // original icon (SVG string or URL), for the taskbar
 
     constructor(id: string, title: string, icon_src: string | null, default_rect: { x: number; y: number; w: number; h: number }) {
         this.id = id
+        this._icon_src = icon_src
 
         // ── Outer window element ──────────────────────────────────────────
         this.el = document.createElement('div')
@@ -109,9 +118,9 @@ export class FloatingWindow {
         const btns = document.createElement('div')
         btns.className = 'sw-window-btns'
 
-        this._min_btn   = _make_btn('_', 'min',   () => this.toggle_minimize())
-        this._max_btn   = _make_btn('□', 'max',   () => this.toggle_maximize())
-        this._close_btn = _make_btn('✕', 'close', () => this.close())
+        this._min_btn   = _make_btn(ICON.win_min, 'min',   () => this.toggle_minimize())
+        this._max_btn   = _make_btn(ICON.win_max, 'max',   () => this.toggle_maximize())
+        this._close_btn = _make_btn(ICON.close,   'close', () => this.close())
 
         btns.append(this._min_btn, this._max_btn, this._close_btn)
         titlebar.append(this._icon_el, this._title_el, btns)
@@ -173,12 +182,15 @@ export class FloatingWindow {
     mount(parent: HTMLElement): this {
         parent.appendChild(this.el)
         FloatingWindow._open.add(this)
+        FloatingWindow._active = this   // newest window is on top
+        FloatingWindow._emit()
         return this
     }
 
     /** Set the window title text. */
     set_title(title: string): void {
         this._title_el.textContent = title
+        FloatingWindow._emit()
     }
 
     /** Set the title bar icon (accepts an inline SVG string or an image URL). */
@@ -186,16 +198,30 @@ export class FloatingWindow {
         const next = _make_window_icon(src)
         this._icon_el.replaceWith(next)
         this._icon_el = next
+        this._icon_src = src
+        FloatingWindow._emit()
     }
 
     /** Bring this window to the top of the z stack. */
     bring_to_front(): void {
         this.el.style.zIndex = String(_next_z())
+        FloatingWindow._active = this
+        FloatingWindow._emit()
     }
 
     /** Returns the window's current title text. */
     get_title(): string {
         return this._title_el.textContent ?? ''
+    }
+
+    /** Returns the window's icon (inline SVG string or image URL), or null. */
+    get_icon(): string | null {
+        return this._icon_src
+    }
+
+    /** True while collapsed to its title bar. */
+    is_minimized(): boolean {
+        return this.el.classList.contains('minimized')
     }
 
     /** Restore (if minimized) and bring this window to the front. */
@@ -207,7 +233,7 @@ export class FloatingWindow {
     /** Clears the maximized flag (cascade/tile set an explicit rect instead). */
     private _unmaximize(): void {
         this._maximized = false
-        this._max_btn.textContent = '□'   // □
+        this._max_btn.innerHTML = ICON.win_max
     }
 
     // ── MDI management (static, across all open windows) ────────────────────
@@ -215,6 +241,30 @@ export class FloatingWindow {
     /** Every currently-open window. */
     static list(): FloatingWindow[] {
         return [...FloatingWindow._open]
+    }
+
+    /** The window currently at the front (or null). */
+    static active(): FloatingWindow | null {
+        return FloatingWindow._active
+    }
+
+    /**
+     * Subscribe to open-set / active / title changes (for the taskbar). Notifications are
+     * coalesced to one per microtask so a cascade/tile loop fires a single re-render.
+     * @returns an unsubscribe function
+     */
+    static on_change(cb: () => void): () => void {
+        FloatingWindow._listeners.add(cb)
+        return () => { FloatingWindow._listeners.delete(cb) }
+    }
+
+    private static _emit(): void {
+        if (FloatingWindow._notify_scheduled) return
+        FloatingWindow._notify_scheduled = true
+        queueMicrotask(() => {
+            FloatingWindow._notify_scheduled = false
+            for (const cb of FloatingWindow._listeners) cb()
+        })
     }
 
     /** Cascade all open windows from the top-left of the workspace. */
@@ -281,6 +331,7 @@ export class FloatingWindow {
             this.el.style.height = this.el.dataset.prevH ?? this.el.style.height
         }
         this._persist()
+        FloatingWindow._emit()
     }
 
     /** Toggle maximized state (fill workspace). */
@@ -298,7 +349,7 @@ export class FloatingWindow {
             this.el.style.width  = workspace.offsetWidth + 'px'
             this.el.style.height = workspace.offsetHeight + 'px'
             this._maximized = true
-            this._max_btn.textContent = '❐'
+            this._max_btn.innerHTML = ICON.win_restore
         } else {
             if (this._saved_rect) {
                 this.el.style.left   = this._saved_rect.x + 'px'
@@ -307,10 +358,11 @@ export class FloatingWindow {
                 this.el.style.height = this._saved_rect.h + 'px'
             }
             this._maximized = false
-            this._max_btn.textContent = '□'
+            this._max_btn.innerHTML = ICON.win_max
         }
         this.el.classList.remove('minimized')
         this._persist()
+        FloatingWindow._emit()
     }
 
     /** Close (remove) the window. Calls the optional on_close callback. */
@@ -318,6 +370,8 @@ export class FloatingWindow {
         this._on_close_cb?.()
         this.el.remove()
         FloatingWindow._open.delete(this)
+        if (FloatingWindow._active === this) FloatingWindow._active = null
+        FloatingWindow._emit()
     }
 
     /** Register a callback invoked when the window is closed. */
@@ -413,10 +467,10 @@ export class FloatingWindow {
 // Helpers
 // =========================================================================
 
-function _make_btn(label: string, cls: string, cb: () => void): HTMLElement {
+function _make_btn(icon: string, cls: string, cb: () => void): HTMLElement {
     const btn = document.createElement('div')
     btn.className = `sw-window-btn ${cls}`
-    btn.textContent = label
+    btn.innerHTML = icon
     btn.addEventListener('click', (e) => { e.stopPropagation(); cb() })
     return btn
 }

@@ -9,7 +9,7 @@ import { ui_scale_init, ui_scale_in, ui_scale_out, ui_scale_reset, editor_font_i
 import { file_watch_init, file_watch_set_folder } from './services/file_watch.js'
 import { ide_theme_init } from './ide_prefs.js'
 import { updater_init } from './updater.js'
-import { status_bar_create, status_set_project, status_set_unsaved } from './status_bar.js'
+import { taskbar_create }                                            from './taskbar.js'
 import { ResourceTree }                                              from './resource_tree.js'
 import type { open_resource_event, resource_category }               from './resource_tree.js'
 import { project_new, project_open, project_save, project_set_dir, project_set_folder, project_get_dir, project_has_folder, project_get_folder_path, project_get_last_folder, project_read_file, project_write_file, project_file_exists, project_rename, project_copy, project_delete }  from './services/project.js'
@@ -29,11 +29,11 @@ import { settings_editor_open }   from './editors/settings_editor.js'
 import { preferences_editor_open } from './editors/preferences_editor.js'
 import { preview_open, preview_play, preview_stop, preview_reload }  from './panels/game_preview.js'
 import { console_open, console_write, console_toggle }               from './panels/console_panel.js'
-import { debugger_open, debugger_show_hit }                          from './panels/debugger_panel.js'
+import { debugger_open }                                             from './panels/debugger_panel.js'
 import { profiler_open }                                             from './panels/profiler_panel.js'
 import { docs_open }                                                 from './panels/docs_window.js'
-import { bp_resume, bp_on_hit }                                      from './panels/breakpoint_manager.js'
-import { show_alert, show_prompt, show_confirm }                     from './services/dialogs.js'
+import { show_alert, show_prompt, show_confirm, show_about }         from './services/dialogs.js'
+import { SW_VERSION }                                               from './generated/version.js'
 import { ICON }                                                     from './icons.js'
 import { show_context_menu }                                       from './services/context_menu.js'
 
@@ -125,8 +125,8 @@ function boot(): void {
     document.body.appendChild(main)
     _setup_splitter(dock, splitter)
 
-    // 5. Status bar (fixed, bottom)
-    document.body.appendChild(status_bar_create())
+    // 5. Taskbar (fixed, bottom) — open-window switcher
+    document.body.appendChild(taskbar_create())
 
     // 6. Resource tree (docked, left)
     _tree = new ResourceTree()
@@ -153,7 +153,6 @@ function boot(): void {
         if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); _on_redo() }
         if (e.key === 'F5' && !e.ctrlKey) { e.preventDefault(); on_run_play() }
         if (e.key === 'F5' &&  e.ctrlKey) { e.preventDefault(); on_run_build() }
-        if (e.key === 'F8')               { e.preventDefault(); bp_resume(); console_write('system', '[IDE] Resumed.') }
         if (e.key === 'F9')               { e.preventDefault(); debugger_open(_workspace) }
         if (e.key === 'F10')              { e.preventDefault(); profiler_open(_workspace) }
         if (e.key === 'F1')               { e.preventDefault(); docs_open(_workspace) }
@@ -167,13 +166,7 @@ function boot(): void {
         if (e.ctrlKey && e.key === '0')                    { e.preventDefault(); ui_scale_reset() }
     })
 
-    // 8. Register global breakpoint-hit handler
-    bp_on_hit((file, line, vars) => {
-        debugger_show_hit(_workspace, file, line, vars)
-        console_write('warn', `[Debugger] Break at ${file}:${line}`)
-    })
-
-    // 9. Land on the Start Page (recent projects / new / open) instead of auto-opening.
+    // 8. Land on the Start Page (recent projects / new / open) instead of auto-opening.
     _set_project(project_new(), null)   // a blank project sits behind the launcher until one is chosen
     _show_start_page()
 
@@ -199,41 +192,55 @@ function boot(): void {
 // Shell: toolbar + dock splitter
 // =========================================================================
 
-/** Builds the GMS-style icon toolbar (file · add-resource · run · settings). */
+/** Toolbar buttons that only make sense with a project open (greyed out otherwise). */
+let _tb_project_btns: HTMLButtonElement[] = []
+
+/** Builds the GMS-style icon toolbar (project · add-resource · run · settings). */
 function _build_toolbar(): HTMLElement {
     const tb = document.createElement('div')
     tb.id = 'sw-toolbar'
-    const btn = (label: string, title: string, fn: () => void): void => {
+    _tb_project_btns = []
+    const btn = (label: string, title: string, fn: () => void, needs_project = false): HTMLButtonElement => {
         const b = document.createElement('button')
         b.className = 'sw-tb-btn'
         b.innerHTML = label
         b.title = title
         b.addEventListener('click', fn)
         tb.appendChild(b)
+        if (needs_project) _tb_project_btns.push(b)
+        return b
     }
     const sep = (): void => {
         const s = document.createElement('div'); s.className = 'sw-tb-sep'; tb.appendChild(s)
     }
-    btn(ICON.new_file, 'New Project (Ctrl+N)',  on_file_new)
-    btn(ICON.open,     'Open Project (Ctrl+O)', on_file_open)
-    btn(ICON.save,     'Save Project (Ctrl+S)', on_file_save)
+    // Project group: Home opens the Start Page (recent / new / open); Import opens an existing
+    // project folder directly. Both stay enabled with no project open — that's how you get one.
+    btn(ICON.home,   'Start Page — recent projects, new, open',           _show_start_page)
+    btn(ICON.save,   'Save Project (Ctrl+S)',                             on_file_save, true)
+    btn(ICON.import, 'Open Project — pick an existing project.json file', on_file_open)
     sep()
-    btn(ICON.sprite,     'Add Sprite',     () => on_add_resource('sprites'))
-    btn(ICON.sound,      'Add Sound',      () => on_add_resource('sounds'))
-    btn(ICON.background, 'Add Background', () => on_add_resource('backgrounds'))
-    btn(ICON.path,       'Add Path',       () => on_add_resource('paths'))
-    btn(ICON.script,     'Add Script',     () => on_add_resource('scripts'))
-    btn(ICON.font,       'Add Font',       () => on_add_resource('fonts'))
-    btn(ICON.timeline,   'Add Timeline',   () => on_add_resource('timelines'))
-    btn(ICON.object,     'Add Object',     () => on_add_resource('objects'))
-    btn(ICON.room,       'Add Room',       () => on_add_resource('rooms'))
+    btn(ICON.sprite,     'Add Sprite',     () => on_add_resource('sprites'),     true)
+    btn(ICON.sound,      'Add Sound',      () => on_add_resource('sounds'),      true)
+    btn(ICON.background, 'Add Background', () => on_add_resource('backgrounds'), true)
+    btn(ICON.path,       'Add Path',       () => on_add_resource('paths'),       true)
+    btn(ICON.script,     'Add Script',     () => on_add_resource('scripts'),     true)
+    btn(ICON.font,       'Add Font',       () => on_add_resource('fonts'),       true)
+    btn(ICON.timeline,   'Add Timeline',   () => on_add_resource('timelines'),   true)
+    btn(ICON.object,     'Add Object',     () => on_add_resource('objects'),     true)
+    btn(ICON.room,       'Add Room',       () => on_add_resource('rooms'),       true)
     sep()
-    btn(ICON.play,  'Play (F5)',       on_run_play)
-    btn(ICON.stop,  'Stop',            on_run_stop)
-    btn(ICON.build, 'Build (Ctrl+F5)', on_run_build)
+    btn(ICON.play,  'Play (F5)',       on_run_play,  true)
+    btn(ICON.stop,  'Stop',            on_run_stop,  true)
+    btn(ICON.build, 'Build (Ctrl+F5)', on_run_build, true)
     sep()
-    btn(ICON.settings, 'Game Settings (Ctrl+Shift+P)', on_edit_game_settings)
+    btn(ICON.settings, 'Game Settings (Ctrl+Shift+P)', on_edit_game_settings, true)
+    _update_toolbar_enabled(!!_project)
     return tb
+}
+
+/** Enable/disable the project-dependent toolbar buttons. */
+function _update_toolbar_enabled(has_project: boolean): void {
+    for (const b of _tb_project_btns) b.disabled = !has_project
 }
 
 /** Wires the dock splitter for resizing the docked resource-tree panel. */
@@ -268,10 +275,14 @@ async function on_file_new(): Promise<void> {
 }
 
 async function on_file_open(): Promise<void> {
-    const result = await project_open()
-    if (!result) return
-    _set_project(result.state, result.dir)
-    recent_add(result.state.name, project_get_folder_path() ?? '')
+    try {
+        const result = await project_open()
+        if (!result) return
+        _set_project(result.state, result.dir)
+        recent_add(result.state.name, project_get_folder_path() ?? '')
+    } catch (err) {
+        await _alert(err instanceof Error ? err.message : String(err))
+    }
 }
 
 async function on_file_save(): Promise<void> {
@@ -708,7 +719,7 @@ function on_edit_game_settings(): void {
 // =========================================================================
 
 async function on_help_about(): Promise<void> {
-    await _alert('Silkweaver Game Engine IDE\nVersion 0.2.0\nGPL-3.0')
+    await show_about(SW_VERSION)
 }
 
 // =========================================================================
@@ -742,8 +753,7 @@ export function get_project_resource_names(category: resource_category): string[
 function _set_project(state: project_state, _dir: FileSystemDirectoryHandle | null): void {
     _project = state
     room_editor_set_default_speed(state.settings.roomSpeed ?? 60)   // new rooms inherit the project default
-    status_set_project(state.name)
-    status_set_unsaved(false)
+    _update_toolbar_enabled(true)
     _tree.load(state)
     document.title = `${state.name} — Silkweaver IDE`
     undo_clear()
@@ -756,12 +766,10 @@ function _set_project(state: project_state, _dir: FileSystemDirectoryHandle | nu
 }
 
 function _mark_unsaved(): void {
-    status_set_unsaved(true)
     if (_project) document.title = `● ${_project.name} — Silkweaver IDE`
 }
 
 function _mark_saved(): void {
-    status_set_unsaved(false)
     if (_project) document.title = `${_project.name} — Silkweaver IDE`
 }
 

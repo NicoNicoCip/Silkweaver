@@ -14,6 +14,8 @@ import { ICON } from '../icons.js'
 let _win:    FloatingWindow | null = null
 let _iframe: HTMLIFrameElement | null = null
 let _running = false
+let _btn_stop:   HTMLButtonElement | null = null   // disabled while stopped
+let _btn_reload: HTMLButtonElement | null = null   // disabled while stopped
 
 // =========================================================================
 // Public API
@@ -33,6 +35,7 @@ export function preview_open(workspace: HTMLElement): void {
         _iframe = null
         _win    = null
         _running = false
+        _btn_stop = _btn_reload = null
     })
     _build_ui(workspace)
     _win.mount(workspace)
@@ -54,6 +57,7 @@ export function preview_stop(): void {
     if (!_iframe) return
     _iframe.src = 'about:blank'
     _running = false
+    _sync_buttons()
 }
 
 /**
@@ -77,23 +81,15 @@ function _build_ui(workspace: HTMLElement): void {
     const toolbar = document.createElement('div')
     toolbar.className = 'sw-editor-toolbar'
 
-    const play_btn = document.createElement('button')
-    play_btn.className = 'sw-btn'
-    play_btn.textContent = '▶ Play'
-    play_btn.addEventListener('click', () => preview_play(workspace))
-
-    const stop_btn = document.createElement('button')
-    stop_btn.className = 'sw-btn'
-    stop_btn.textContent = '■ Stop'
-    stop_btn.addEventListener('click', () => preview_stop())
-
-    const reload_btn = document.createElement('button')
-    reload_btn.className = 'sw-btn'
-    reload_btn.textContent = '↺ Reload'
-    reload_btn.addEventListener('click', () => preview_reload())
+    const play_btn = _btn(ICON.play, 'Play', () => preview_play(workspace))
+    const stop_btn = _btn(ICON.stop, 'Stop', () => preview_stop())
+    const reload_btn = _btn(ICON.refresh, 'Reload', () => preview_reload())
+    _btn_stop   = stop_btn
+    _btn_reload = reload_btn
 
     toolbar.append(play_btn, stop_btn, reload_btn)
     body.appendChild(toolbar)
+    _sync_buttons()
 
     // Iframe container
     const container = document.createElement('div')
@@ -118,4 +114,20 @@ function _load_game(): void {
     // Use a cache-busting timestamp so hot reload always fetches fresh JS
     _iframe.src = `game_preview.html?t=${Date.now()}`
     _running = true
+    _sync_buttons()
+}
+
+/** Builds a toolbar button with an inline icon + label. */
+function _btn(icon: string, label: string, on_click: () => void): HTMLButtonElement {
+    const b = document.createElement('button')
+    b.className = 'sw-btn'
+    b.innerHTML = `${icon}<span>${label}</span>`
+    b.addEventListener('click', on_click)
+    return b
+}
+
+/** Stop/Reload only make sense while the game is running. */
+function _sync_buttons(): void {
+    if (_btn_stop)   _btn_stop.disabled   = !_running
+    if (_btn_reload) _btn_reload.disabled = !_running
 }

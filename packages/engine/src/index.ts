@@ -92,7 +92,7 @@ export { renderer } from './drawing/renderer.js'
 export type { surface } from './drawing/renderer.js'
 export { sprite, sprite_get_width, sprite_get_height, sprite_get_xoffset, sprite_get_yoffset, sprite_get_number, sprite_register_name, sprite_get_index, sprite_exists, sprite_set_offset, sprite_duplicate, sprite_add } from './drawing/sprite.js'
 export { background, background_get_width, background_get_height } from './drawing/background.js'
-export { font_resource, font_register_name, font_get, font_exists } from './drawing/font.js'
+export { font_resource, font_register_name, font_get, font_exists, font_load_file } from './drawing/font.js'
 export { texture_manager } from './drawing/texture_manager.js'
 export type { texture_entry } from './drawing/texture_manager.js'
 

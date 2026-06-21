@@ -15,7 +15,6 @@
 
 import { FloatingWindow }                           from '../window_manager.js'
 import { ICON } from "../icons.js"
-import { bp_register_editor, bp_unregister_editor, bp_toggle } from '../panels/breakpoint_manager.js'
 import { project_read_file, project_write_file, project_has_folder } from '../services/project.js'
 import { ENGINE_DTS }                               from '../generated/engine_types.js'
 import { editor_monaco_options, editor_register_themes, editor_apply_all, editor_prefs_get } from '../editor_prefs.js'
@@ -179,9 +178,7 @@ function _setup_monaco(monaco: Monaco): void {
 interface EditorConfig {
     win_id:       string                             // stable window id (per file/event → restores its layout)
     title:        string
-    file_key:     string                             // key for breakpoint tracking + the open-editors registry
-    breakpoints:  boolean
-    glyph_margin: boolean
+    file_key:     string                             // key for the open-editors registry
     watch_path?:  string                             // project-relative file to reload on external change
     get_object_vars?: () => Promise<string[]>        // event buffers: object var names for `inst.` completion
     load:         () => Promise<string>              // how to read the initial content
@@ -242,7 +239,6 @@ export class ScriptEditor {
             ...editor_monaco_options(),
             automaticLayout:      true,
             scrollBeyondLastLine: false,
-            glyphMargin:          this._cfg.glyph_margin,
             fixedOverflowWidgets: true,
         })
 
@@ -259,18 +255,6 @@ export class ScriptEditor {
         if (this._cfg.get_object_vars) {
             _register_object_vars(this._editor.getModel(), [])   // empty until fetched
             this._refresh_object_vars()                          // object vars (async)
-        }
-
-        // Breakpoints: glyph-margin toggle + decoration registration.
-        if (this._cfg.breakpoints) {
-            bp_register_editor(this._cfg.file_key, this._editor)
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            this._editor.onMouseDown((e: any) => {
-                if (e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
-                    const line: number = e.target.position?.lineNumber
-                    if (line) bp_toggle(this._cfg.file_key, line)
-                }
-            })
         }
 
         // Ctrl+S → flush immediately.
@@ -367,7 +351,6 @@ export class ScriptEditor {
         try { this._unsub?.() } catch { /* ignore */ }
         this._unsub = null
         void this._flush()                         // persist any pending edit (captures content first)
-        if (this._cfg.breakpoints) { try { bp_unregister_editor(this._cfg.file_key) } catch { /* ignore */ } }
         const m = this._editor?.getModel(); if (m) _object_var_models.delete(m)
         try { this._editor?.getModel()?.dispose() } catch { /* ignore */ }
         try { this._editor?.dispose() } catch { /* ignore */ }
@@ -405,7 +388,7 @@ async function _open(parent: HTMLElement, key: string, cfg: EditorConfig): Promi
 export async function script_editor_open(parent: HTMLElement, file_handle: FileSystemFileHandle, key: string): Promise<ScriptEditor> {
     return _open(parent, key, {
         win_id: `script-editor:${key}`, title: file_handle.name, file_key: key,
-        breakpoints: true, glyph_margin: true, watch_path: key,
+        watch_path: key,
         load: async () => { try { return await (await file_handle.getFile()).text() } catch { return '// New script\n' } },
         save: async (content) => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -421,7 +404,7 @@ export async function script_editor_open_path(parent: HTMLElement, rel_path: str
     const filename = rel_path.split('/').pop() ?? rel_path
     return _open(parent, rel_path, {
         win_id: `script-editor:${rel_path}`, title: filename, file_key: rel_path,
-        breakpoints: true, glyph_margin: true, watch_path: rel_path,
+        watch_path: rel_path,
         load: async () => { try { return await project_read_file(rel_path) } catch { return '// New script\n' } },
         save: (content) => project_write_file(rel_path, content),
     })
@@ -437,7 +420,6 @@ export async function script_editor_open_event(parent: HTMLElement, rel_path: st
     const key = `${rel_path}#${method}`
     return _open(parent, key, {
         win_id: `script-editor:${key}`, title, file_key: key,
-        breakpoints: false, glyph_margin: false,   // body-buffer lines ≠ file lines → no breakpoints here
         watch_path: rel_path,                      // reload this event's body if the class file changes
         get_object_vars: async () => {
             try {
@@ -467,7 +449,7 @@ export async function script_editor_open_full(parent: HTMLElement, rel_path: str
     const key = `${rel_path}#__full`
     return _open(parent, key, {
         win_id: `script-editor:${key}`, title, file_key: key,
-        breakpoints: true, glyph_margin: true, watch_path: rel_path,
+        watch_path: rel_path,
         load: async () => {
             let src = ''
             try { src = await project_read_file(rel_path) } catch { return '' }
@@ -495,7 +477,6 @@ export async function script_editor_open_text(
 ): Promise<ScriptEditor> {
     return _open(parent, key, {
         win_id: `script-editor:${key}`, title, file_key: key,
-        breakpoints: false, glyph_margin: false,
         load: async () => initial,
         save: (content) => on_save(content),
     })

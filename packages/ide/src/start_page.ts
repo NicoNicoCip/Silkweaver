@@ -11,6 +11,7 @@ import { project_new, project_create_from_template,
          project_open, project_is_desktop, project_get_last_folder } from './services/project.js'
 import type { project_state } from './services/project.js'
 import { TEMPLATES } from './project_templates.js'
+import { SW_VERSION } from './generated/version.js'
 
 // =========================================================================
 // Recent-projects store (localStorage)
@@ -86,7 +87,8 @@ function _build(): HTMLElement {
     head.style.cssText = 'padding:26px 34px 14px; flex-shrink:0; display:flex; align-items:flex-start;'
     const title = document.createElement('div')
     title.style.cssText = 'flex:1;'
-    title.innerHTML = '<div style="font-size:26px;font-weight:700;">Silk<span style="color:var(--sw-accent,#4cc2ff)">weaver</span></div>' +
+    title.innerHTML = '<div style="font-size:26px;font-weight:700;">Silk<span style="color:var(--sw-accent,#4cc2ff)">weaver</span>' +
+        `<span style="font-size:12px;font-weight:600;color:var(--sw-text-dim,#9a9a9a);margin-left:8px;vertical-align:middle;">v${SW_VERSION}</span></div>` +
         '<div style="color:var(--sw-text-dim,#9a9a9a);font-size:13px;margin-top:2px;">Open a recent project, start a new one, or open from a folder.</div>'
     const close = document.createElement('button')
     close.className = 'sw-x-btn'; close.textContent = '✕'; close.title = 'Close (Esc)'
@@ -131,12 +133,16 @@ function _recent_column(): HTMLElement {
     }
     render()
 
-    // Open-from-folder
-    const open_btn = _btn('Open a folder…', 'ghost', async () => {
-        const result = await project_open()
-        if (!result) return
-        recent_add(result.state.name, _current_folder())
-        _finish(result.state)
+    // Open an existing project by picking its project.json (never a bare folder).
+    const open_btn = _btn('Open project…', 'ghost', async () => {
+        try {
+            const result = await project_open()
+            if (!result) return
+            recent_add(result.state.name, _current_folder())
+            _finish(result.state)
+        } catch (err) {
+            await _alert(err instanceof Error ? err.message : String(err))
+        }
     })
     open_btn.style.marginTop = '14px'
     col.appendChild(open_btn)
@@ -314,7 +320,7 @@ function _btn(label: string, kind: 'primary' | 'ghost', cb: () => void): HTMLBut
     b.textContent = label
     b.style.cssText = 'padding:9px 16px; border-radius:8px; font-weight:600; font-size:14px; cursor:pointer; border:1px solid var(--sw-border,#363636); ' +
         (kind === 'primary'
-            ? 'background:var(--sw-accent,#2b88d8); border-color:var(--sw-accent,#2b88d8); color:#fff;'
+            ? 'background:var(--sw-accent,#4cc2ff); border-color:var(--sw-accent,#4cc2ff); color:#fff;'
             : 'background:transparent; color:var(--sw-text,#e6e6e6);')
     b.addEventListener('click', cb)
     return b

@@ -12,6 +12,8 @@ const _svg = (body: string, filled = false): string =>
 export const ICON = {
     new_file:   _svg('<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/>'),
     open:       _svg('<path d="M3 6h6l2 2h10v10H3z"/>'),
+    home:       _svg('<path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/>'),
+    import:     _svg('<path d="M12 4v9"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/>'),
     save:       _svg('<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4"/><rect x="8" y="13" width="8" height="7"/>'),
     sprite:     _svg('<rect x="3" y="4" width="18" height="16" rx="1"/><circle cx="8.5" cy="9" r="1.6"/><path d="M21 16l-5-5-4 4-2-2-4 4"/>'),
     sound:      _svg('<path d="M9 17V4l11-2v13"/><circle cx="6" cy="17" r="2.6"/><circle cx="17" cy="15" r="2.6"/>'),
@@ -24,6 +26,7 @@ export const ICON = {
     room:       _svg('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>'),
     play:       _svg('<path d="M8 5v14l11-7z"/>', true),
     stop:       _svg('<rect x="6" y="6" width="12" height="12" rx="1"/>', true),
+    refresh:    _svg('<path d="M4 12a8 8 0 0 1 13.7-5.7L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.7L4 16"/><path d="M4 20v-4h4"/>'),
     build:      _svg('<path d="M13 4l7 7-2.5 2.5-7-7z"/><path d="M11.5 5.5l-8 8 3 3 8-8"/>'),
     settings:   _svg('<circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>'),
     delete:     _svg('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>'),
@@ -31,6 +34,9 @@ export const ICON = {
     help:       _svg('<path d="M4 4h7a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H4z"/><path d="M20 4h-7a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H20z"/>'),
     pause:      _svg('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>', true),
     close:      _svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+    win_min:     _svg('<path d="M5 12h14"/>'),
+    win_max:     _svg('<rect x="5" y="5" width="14" height="14"/>'),
+    win_restore: _svg('<rect x="6" y="9" width="10" height="10"/><path d="M9 9V6h10v10h-3"/>'),
 
     // ── Pixel-editor tools + toolbar (inline SVG so they render identically everywhere) ──
     pencil:       _svg('<path d="M4 20l1-4L15 6l3 3L8 19z"/><path d="M13 8l3 3"/>'),

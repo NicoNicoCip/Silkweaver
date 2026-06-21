@@ -58,7 +58,6 @@ export const KEYBINDS: keybind_group[] = [
             { keys: 'F5',       label: 'Play', desc: 'Builds and runs the game in the preview.' },
             { keys: 'Ctrl+F5',  label: 'Build' },
             { keys: 'Shift+F5', label: 'Stop' },
-            { keys: 'F8',       label: 'Resume', desc: 'Continues a game paused at a breakpoint.' },
         ],
     },
     {

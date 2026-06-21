@@ -39,7 +39,7 @@ html, body {
     --sw-titlebar-h: 28px;
     --sw-menubar-h:  24px;
     --sw-toolbar-h:  30px;
-    --sw-statusbar-h:20px;
+    --sw-taskbar-h:  28px;
 }
 
 /* ── Scrollbars ── */
@@ -48,7 +48,7 @@ html, body {
 ::-webkit-scrollbar-thumb { background: #666; }
 ::-webkit-scrollbar-thumb:hover { background: #888; }
 
-/* ── Frame layout: menubar · toolbar · [dock | splitter | workspace] · statusbar ── */
+/* ── Frame layout: menubar · toolbar · [dock | splitter | workspace] · taskbar ── */
 /* When the Start Page is up, it IS the page — hide the editor chrome so nothing overlaps it. */
 body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
 
@@ -73,13 +73,15 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
 }
 .sw-tb-btn:hover  { background: var(--sw-accent); border-color: var(--sw-accent-hov); }
 .sw-tb-btn:active { background: var(--sw-accent-hov); }
+.sw-tb-btn:disabled { opacity: .35; cursor: default; }
+.sw-tb-btn:disabled:hover { background: none; border-color: transparent; }
 .sw-tb-sep { width: 1px; height: 18px; background: var(--sw-border); margin: 0 5px; flex-shrink: 0; }
 
 #sw-main {
     position: fixed;
     top: calc(var(--sw-menubar-h) + var(--sw-toolbar-h));
     left: 0; right: 0;
-    bottom: var(--sw-statusbar-h);
+    bottom: var(--sw-taskbar-h);
     display: flex;
     overflow: hidden;
 }
@@ -206,21 +208,39 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
 }
 .sw-tree-filter .sw-input { height: 24px; font-size: 12px; }
 
-/* ── Status Bar ── */
-#sw-statusbar {
+/* ── Taskbar (open-window switcher) ── */
+#sw-taskbar {
     position: fixed;
     bottom: 0; left: 0; right: 0;
-    height: var(--sw-statusbar-h);
-    background: var(--sw-accent);
+    height: var(--sw-taskbar-h);
+    background: var(--sw-chrome);
+    border-top: 1px solid var(--sw-border);
     display: flex;
     align-items: center;
-    padding: 0 8px;
-    gap: 16px;
+    gap: 3px;
+    padding: 0 4px;
     z-index: 9000;
-    font-size: 11px;
-    color: #fff;
+    overflow-x: auto;
+    overflow-y: hidden;
 }
-.sw-statusbar-sep { color: rgba(255,255,255,0.4); }
+.sw-task-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    flex-shrink: 0;
+    height: 22px; max-width: 190px;
+    padding: 0 9px;
+    background: var(--sw-chrome2);
+    border: 1px solid var(--sw-border);
+    border-radius: 3px;
+    color: var(--sw-text);
+    font-size: 11.5px; line-height: 1;
+    cursor: pointer; user-select: none;
+}
+.sw-task-btn:hover     { background: var(--sw-border); }
+.sw-task-btn.active    { background: var(--sw-select-bg); border-color: var(--sw-accent); }
+.sw-task-btn.minimized { opacity: .55; font-style: italic; }
+.sw-task-btn svg, .sw-task-btn img { width: 13px; height: 13px; flex-shrink: 0; }
+.sw-task-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sw-task-empty { color: var(--sw-text-dim); font-size: 11px; padding: 0 6px; user-select: none; }
 
 /* ── Floating Windows ── */
 .sw-window {
@@ -272,8 +292,10 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
     color: var(--sw-text);
     margin: -4px -2px;
 }
+.sw-window-btn svg { width: 11px; height: 11px; }
 .sw-window-btn:hover { background: rgba(255,255,255,0.1); }
 .sw-window-btn.close:hover { background: var(--sw-close-hov); color: #fff; }
+.sw-window-btn.close:hover svg { stroke: #fff; }
 .sw-window-btn.close:active { background: var(--sw-close-act); }
 
 /* Small inline delete / clear button (✕) — used by list rows in the editors.
@@ -352,6 +374,9 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
 .sw-btn:hover { background: var(--sw-accent); border-color: var(--sw-accent); }
 .sw-btn:active { background: var(--sw-accent-hov); }
 .sw-btn img { width: 14px; height: 14px; }
+.sw-btn svg { width: 14px; height: 14px; }
+.sw-btn:disabled { opacity: .4; cursor: default; }
+.sw-btn:disabled:hover { background: var(--sw-chrome2); border-color: var(--sw-border); }
 .sw-checkbox { accent-color: var(--sw-accent); cursor: pointer; }
 
 /* ── Editor Toolbar (shared) ── */
@@ -703,17 +728,6 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
 /* Subtle affordance that an item has help on hover. */
 .sw-has-help { cursor: help; }
 
-/* ── Breakpoint glyphs ── */
-.sw-bp-glyph {
-    background: #e53935;
-    border-radius: 50%;
-    width: 10px !important;
-    height: 10px !important;
-    margin-top: 4px;
-    margin-left: 2px;
-}
-.sw-bp-line { background: rgba(229,57,53,0.15); }
-
 /* ── Debugger Panel ── */
 .sw-dbg-status {
     padding: 4px 8px;
@@ -746,6 +760,21 @@ body.sw-startpage-open > :not(#sw-startpage) { display: none !important; }
 .sw-dbg-null { color: var(--sw-text-dim); }
 .sw-dbg-obj  { color: #dcdcaa; }
 .sw-dbg-empty { padding: 8px 12px; color: var(--sw-text-dim); font-style: italic; font-size: 11px; }
+.sw-dbg-inst {
+    padding: 4px 8px 3px;
+    font-family: Consolas, monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--sw-accent);
+    border-top: 1px solid var(--sw-border2);
+    cursor: pointer;
+    user-select: none;
+}
+.sw-dbg-inst:hover { background: rgba(255,255,255,0.05); }
+.sw-dbg-inst:first-child { border-top: none; }
+.sw-dbg-caret { display: inline-block; width: 12px; color: var(--sw-text-dim); }
+.sw-dbg-count { color: var(--sw-text-dim); font-weight: 400; margin-left: 6px; }
+.sw-dbg-vars .sw-dbg-row { padding-left: 22px; }   /* indent vars under their instance header */
 
 /* ── Resource Tree ── */
 .sw-tree-arrow {

@@ -24,8 +24,10 @@ export type project_state = project_file
 /** Electron preload bridge */
 const _el = () => (window as any).swfs as {
     pick_folder:      (mode: 'open' | 'save', defaultPath?: string) => Promise<string | null>
+    pick_file:        (opts?: { title?: string; defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string | null>
     read_file:        (abs_path: string) => Promise<string>
     read_file_base64: (abs_path: string) => Promise<string>
+    list_dir:         (abs_path: string) => Promise<string[]>
     write_file:       (abs_path: string, content: string) => Promise<void>
     write_binary:     (abs_path: string, buffer: ArrayBuffer) => Promise<void>
     exists:           (abs_path: string) => Promise<boolean>
@@ -88,7 +90,20 @@ export function project_new(): project_state {
 }
 
 /**
- * Opens a project folder / file.
+ * Structural guard: true only when a parsed value has the shape of a Silkweaver project manifest —
+ * a `name` plus `settings` and `resources` objects. Rejects empty/`{}`/arbitrary JSON, so a stray
+ * `project.json` can't masquerade as a project (and we never adopt + pollute its folder).
+ */
+function _looks_like_project(o: unknown): o is project_state {
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return false
+    const p = o as Record<string, unknown>
+    return typeof p.name === 'string'
+        && !!p.settings  && typeof p.settings  === 'object'
+        && !!p.resources && typeof p.resources === 'object'
+}
+
+/**
+ * Opens an existing project by its `project.json` file.
  * @returns Parsed project state, or null if cancelled.
  */
 export async function project_open(): Promise<{ state: project_state; dir: FileSystemDirectoryHandle | null } | null> {
@@ -147,10 +162,10 @@ export async function project_open_last(): Promise<{ state: project_state; dir: 
     try {
         const exists = await fs.exists(proj_path)
         if (!exists) return null
-        const text = await fs.read_file(proj_path)
-        const state = JSON.parse(text) as project_state
+        const parsed = JSON.parse(await fs.read_file(proj_path)) as unknown
+        if (!_looks_like_project(parsed)) return null
         _folder_path = folder
-        return { state, dir: null }
+        return { state: parsed, dir: null }
     } catch {
         return null
     }
@@ -168,7 +183,11 @@ export async function project_read_binary_url(rel_path: string): Promise<string>
         const base64 = await fs.read_file_base64(fs.join(_folder_path, ...rel_path.split('/')))
         const ext = rel_path.split('.').pop()?.toLowerCase() ?? 'png'
         const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
-                   : ext === 'gif' ? 'image/gif'
+                   : ext === 'gif'   ? 'image/gif'
+                   : ext === 'ttf'   ? 'font/ttf'
+                   : ext === 'otf'   ? 'font/otf'
+                   : ext === 'woff'  ? 'font/woff'
+                   : ext === 'woff2' ? 'font/woff2'
                    : 'image/png'
         return `data:${mime};base64,${base64}`
     }
@@ -187,6 +206,33 @@ export async function project_read_binary_url(rel_path: string): Promise<string>
         reader.onerror = reject
         reader.readAsDataURL(file)
     })
+}
+
+/**
+ * Lists the file names directly inside a project-relative directory (non-recursive). Returns [] if
+ * the directory doesn't exist or no project is open.
+ * @param rel_dir - e.g. 'fonts/fnt_title'
+ */
+export async function project_list_dir(rel_dir: string): Promise<string[]> {
+    if (_has_electron()) {
+        const fs = _el()!
+        if (!_folder_path) return []
+        try { return await fs.list_dir(fs.join(_folder_path, ...rel_dir.split('/'))) } catch { return [] }
+    }
+    const dir = _dir_handle
+    if (!dir) return []
+    try {
+        let current: FileSystemDirectoryHandle = dir
+        for (const part of rel_dir.split('/').filter(Boolean)) {
+            current = await current.getDirectoryHandle(part, { create: false })
+        }
+        const names: string[] = []
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for await (const [name, handle] of (current as any).entries()) {
+            if (handle.kind === 'file') names.push(name)
+        }
+        return names
+    } catch { return [] }
 }
 
 /**
@@ -366,10 +412,11 @@ export async function project_open_path(folder: string): Promise<project_state |
     try {
         const proj_path = fs.join(folder, 'project.json')
         if (!(await fs.exists(proj_path))) return null
-        const state = JSON.parse(await fs.read_file(proj_path)) as project_state
+        const parsed = JSON.parse(await fs.read_file(proj_path)) as unknown
+        if (!_looks_like_project(parsed)) return null
         _folder_path = folder
         localStorage.setItem(LAST_FOLDER_KEY, folder)
-        return state
+        return parsed
     } catch {
         return null
     }
@@ -465,22 +512,35 @@ export async function project_rename_at(folder: string, new_name: string): Promi
 async function _open_electron(): Promise<{ state: project_state; dir: null } | null> {
     const fs = _el()!
     const last = localStorage.getItem(LAST_FOLDER_KEY) ?? undefined
-    const folder = await fs.pick_folder('open', last)
-    if (!folder) return null
+    // Pick the project.json itself, not a folder — so you can only open something that already IS a
+    // Silkweaver project (no risk of "adopting" an arbitrary folder and polluting it on the next save).
+    const file = await fs.pick_file({
+        title: 'Open Silkweaver Project (project.json)',
+        ...(last && { defaultPath: fs.join(last, 'project.json') }),
+        filters: [{ name: 'Silkweaver Project', extensions: ['json'] }],
+    })
+    if (!file) return null
+
+    const sep   = Math.max(file.lastIndexOf('\\'), file.lastIndexOf('/'))
+    const base  = file.slice(sep + 1)
+    if (base.toLowerCase() !== 'project.json') {
+        throw new Error('That isn’t a Silkweaver project.\nPick the project.json at the root of a project folder.')
+    }
+    const folder = file.slice(0, sep)
+
+    let parsed: unknown
+    try {
+        parsed = JSON.parse(await fs.read_file(file))
+    } catch {
+        throw new Error('This project.json is empty, corrupt, or unreadable.')
+    }
+    if (!_looks_like_project(parsed)) {
+        throw new Error('That project.json isn’t a Silkweaver project — it’s missing the expected name / settings / resources.')
+    }
+
     _folder_path = folder
     localStorage.setItem(LAST_FOLDER_KEY, folder)
-
-    const proj_path = fs.join(folder, 'project.json')
-    let state: project_state
-    try {
-        const text = await fs.read_file(proj_path)
-        state = JSON.parse(text) as project_state
-    } catch {
-        state = project_new()
-        // Use the folder name as default project name
-        state.name = folder.split(/[\\/]/).pop() ?? 'My Game'
-    }
-    return { state, dir: null }
+    return { state: parsed, dir: null }
 }
 
 async function _save_electron(state: project_state): Promise<void> {

@@ -8,6 +8,7 @@ import { touch_manager } from "../input/touch.js"
 import { physics_world_get_engine, physics_world_step } from "../physics/physics_world.js"
 import { _consume_no_more_lives, _consume_no_more_health, _reset_game_state } from "./game_state.js"
 import { run_as } from "./active_instance.js"
+import { debug_agent_init, debug_set_snapshot, debug_perf } from "./debug_agent.js"
 
 /** Injected by renderer.init() — called at the start of every draw frame. */
 let _begin_frame: (() => void) | null = null
@@ -98,7 +99,22 @@ export abstract class game_loop {
 
         this.last_delta = performance.now()
 
+        // Debug agent (IDE preview only): feed the Profiler + serve the Debugger's instance inspector.
+        debug_agent_init()
+        debug_set_snapshot(() => this._snapshot_instances())
+
         requestAnimationFrame(this.tick.bind(this));
+    }
+
+    /** Snapshots every active instance and its public variables for the IDE's instance inspector. */
+    private static _snapshot_instances(): unknown[] {
+        if (!this.room) return []
+        const out: { id: number; object_name: string; vars: Record<string, unknown> }[] = []
+        for (const inst of this.room.instance_get_all()) {
+            if (!inst.active) continue
+            out.push({ id: inst.id, object_name: inst.constructor.name, vars: _serialize_inst_vars(inst) })
+        }
+        return out
     }
 
     /**
@@ -128,12 +144,16 @@ export abstract class game_loop {
 
         const frameTime = 1000 / this.room_speed
 
+        const work_start = performance.now()
         while (this.accumulator >= frameTime) {
             this.update()
             this.accumulator -= frameTime
         }
 
         this.draw()
+
+        // Per-frame profiler telemetry (no-op outside the IDE preview).
+        debug_perf(this.fps, performance.now() - work_start)
 
         requestAnimationFrame(this.tick.bind(this))
     }
@@ -350,4 +370,22 @@ export function game_end(): void {
 /** Restarts the game from the first room. */
 export function game_restart(): void {
     game_loop.restart()
+}
+
+/**
+ * Serializes an instance's public variables for the inspector: own, non-underscore properties whose
+ * value is a primitive (or an array of primitives, e.g. `alarm`). Skips functions and object refs
+ * (room, physics bodies, …) — so it can't loop or send anything unserializable.
+ */
+function _serialize_inst_vars(inst: object): Record<string, unknown> {
+    const vars: Record<string, unknown> = {}
+    for (const key of Object.keys(inst)) {
+        if (key.startsWith('_')) continue
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const v = (inst as any)[key]
+        const t = typeof v
+        if (t === 'number' || t === 'boolean' || t === 'string' || v === null) vars[key] = v
+        else if (Array.isArray(v) && v.every(x => { const tx = typeof x; return tx === 'number' || tx === 'string' || tx === 'boolean' })) vars[key] = v
+    }
+    return vars
 }

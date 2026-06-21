@@ -5,7 +5,19 @@
 
 import { FloatingWindow }                                from '../window_manager.js'
 import { ICON } from "../icons.js"
-import { project_read_file, project_write_file, project_has_folder } from '../services/project.js'
+import { project_read_file, project_write_file, project_has_folder, project_list_dir, project_read_binary_url } from '../services/project.js'
+import { tooltip_attach }                                from '../services/tooltip.js'
+
+/**
+ * Family options that render the same for every player. There is deliberately NO list of installed
+ * system fonts (Arial, Georgia, …): a named family the player doesn't have would silently fall back,
+ * so it's a trap. To use a specific font, bundle a font file (see the bundled-font scan). These
+ * generics are the only non-bundled options — every OS provides them — and serve as the default.
+ */
+const FONT_FAMILIES: string[] = ['sans-serif', 'serif', 'monospace']
+
+/** Font-file extensions detected as a bundled font in a font resource's folder. */
+const FONT_FILE_RE = /\.(ttf|otf|woff2?)$/i
 
 // =========================================================================
 // Types
@@ -58,11 +70,12 @@ class font_editor_window {
     private _data:       font_data
     private _preview_el!: HTMLElement
     private _range_list!: HTMLElement
+    private _bundled:    string | null = null   // a font file in fonts/<name>/, registered under <name>
 
     constructor(workspace: HTMLElement, name: string) {
         this._name = name
         this._data = {
-            font_name: 'Arial',
+            font_name: 'sans-serif',
             size:      12,
             bold:      false,
             italic:    false,
@@ -105,8 +118,7 @@ class font_editor_window {
 
         // Font family
         panel.appendChild(this._make_section_title('Font'))
-        panel.appendChild(this._make_text_field('Family', this._data.font_name,
-            (v) => { this._data.font_name = v; this._update_preview(); this._save() }))
+        panel.appendChild(this._make_family_field())
         panel.appendChild(this._make_number_field('Size (pt)', this._data.size, 4, 256,
             (v) => { this._data.size = v; this._update_preview(); this._save() }))
         panel.appendChild(this._make_checkbox('Bold', this._data.bold,
@@ -230,18 +242,49 @@ class font_editor_window {
         return el
     }
 
-    private _make_text_field(label: string, val: string, cb: (v: string) => void): HTMLElement {
+    /**
+     * The font Family picker. Every option renders the same for every player: a bundled font file
+     * (top, if one was dropped in this font's folder) and the generic families. There is no
+     * installed-system-font picking — to use a specific font, bundle it as a file.
+     */
+    private _make_family_field(): HTMLElement {
         const row = document.createElement('div')
         row.className = 'sw-font-row'
         const lbl = document.createElement('label')
         lbl.className = 'sw-label'
-        lbl.textContent = label
-        const inp = document.createElement('input')
-        inp.type = 'text'
-        inp.className = 'sw-input'
-        inp.value = val
-        inp.addEventListener('change', () => cb(inp.value))
-        row.append(lbl, inp)
+        lbl.textContent = 'Family'
+        lbl.classList.add('sw-has-help')
+
+        const sel = document.createElement('select')
+        sel.className = 'sw-select'
+
+        // A bundled font file (dropped in this font's folder) is the first option, registered under
+        // the resource name — same as the build does, so the preview and the shipped game match.
+        if (this._bundled) {
+            const o = document.createElement('option')
+            o.value = this._name; o.textContent = `📄 ${this._bundled}`; o.style.fontFamily = this._name
+            if (this._data.font_name === this._name) o.selected = true
+            sel.appendChild(o)
+        }
+
+        // Generic families + the saved value if it's something else (so old settings still round-trip).
+        const cur = this._data.font_name
+        const families = [...FONT_FAMILIES]
+        if (cur && !(this._bundled && cur === this._name) && !families.includes(cur)) families.unshift(cur)
+        for (const fam of families) {
+            const o = document.createElement('option')
+            o.value = fam; o.textContent = fam; o.style.fontFamily = fam
+            if (fam === cur) o.selected = true
+            sel.appendChild(o)
+        }
+
+        sel.addEventListener('change', () => {
+            this._data.font_name = sel.value
+            this._update_preview(); this._save()
+        })
+
+        row.append(lbl, sel)
+        tooltip_attach(row, 'The text font. To use a specific font, drop a font file (.ttf/.otf/.woff) into this font’s folder — it bundles with the game and shows at the top here. The generics render with whatever the player’s OS provides.')
         return row
     }
 
@@ -281,15 +324,34 @@ class font_editor_window {
     // -----------------------------------------------------------------------
 
     private async _load_data(): Promise<void> {
+        // Load saved settings (if any).
         try {
             const raw = await project_read_file(`fonts/${this._name}/meta.json`)
-            if (!raw) return
-            const parsed = JSON.parse(raw) as Partial<font_data>
-            Object.assign(this._data, parsed)
-            // Rebuild UI so form controls reflect the loaded values
-            this._win.body.innerHTML = ''
-            this._build_ui()
+            if (raw) Object.assign(this._data, JSON.parse(raw) as Partial<font_data>)
         } catch { /* no saved data yet */ }
+        // Detect a bundled font file dropped into this font's folder — it's offered in the dropdown
+        // and registered under the resource name (matching what the build does for the shipped game).
+        try {
+            const files = await project_list_dir(`fonts/${this._name}`)
+            this._bundled = files.find(f => FONT_FILE_RE.test(f)) ?? null
+        } catch { this._bundled = null }
+        // Rebuild UI so controls + the bundled option reflect the loaded state.
+        this._win.body.innerHTML = ''
+        this._build_ui()
+        // Load the bundled face so the preview can render it (async — refreshes the preview when ready).
+        if (this._bundled) void this._load_bundled_face(this._bundled)
+    }
+
+    /** Loads a bundled font file under the resource-name family so the preview renders it. */
+    private async _load_bundled_face(file: string): Promise<void> {
+        try {
+            const url = await project_read_binary_url(`fonts/${this._name}/${file}`)
+            const face = new FontFace(this._name, `url("${url}")`)
+            await face.load()
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ;(document as any).fonts.add(face)
+            this._update_preview()
+        } catch (e) { console.warn('[font editor] failed to load bundled font:', e) }
     }
 
     private async _save(): Promise<void> {

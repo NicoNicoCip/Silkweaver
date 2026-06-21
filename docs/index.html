@@ -343,7 +343,7 @@
                 <a class="btn primary" href="https://github.com/NicoNicoCip/Silkweaver/releases">Download the IDE</a>
                 <a class="btn ghost" href="api/index.html">Read the docs</a>
             </div>
-            <div class="tag"><b>1.0.0</b> · WebGL 2 · Web Audio · matter.js physics · GPL-3.0</div>
+            <div class="tag"><b>1.3.3</b> · WebGL 2 · Web Audio · matter.js physics · GPL-3.0</div>
         </div>
 
         <section id="make">
@@ -373,20 +373,22 @@
             <pre><span class="k">export class</span> obj_player <span class="k">extends</span> gm_object {
     <span class="k">static</span> sprite = <span style="color:#ce9178">'spr_player'</span>    <span class="c">// object settings</span>
     <span class="k">static</span> solid  = <span class="k">true</span>
-    hp = <span style="color:#b5cea8">100</span>                        <span class="c">// instance variables</span>
+    spd = <span style="color:#b5cea8">4</span>                          <span class="c">// your own instance variable</span>
 
     on_step() {                     <span class="c">// events</span>
-        <span class="k">if</span> (keyboard_check(vk_right)) <span class="k">this</span>.x += <span style="color:#b5cea8">4</span>
-        <span class="k">if</span> (keyboard_check(vk_left))  <span class="k">this</span>.x -= <span style="color:#b5cea8">4</span>
+        <span class="k">if</span> (keyboard_check(vk_right)) sw.x += inst.spd
+        <span class="k">if</span> (keyboard_check(vk_left))  sw.x -= inst.spd
     }
 
     on_draw() {
-        <span class="k">this</span>.draw_self()
+        sw.draw_self()
     }
 }</pre>
             <p class="sub" style="margin-top:14px">Engine functions like <code>keyboard_check</code> and
-                <code>draw_text</code> are available without imports — the build wires them in. Anything that acts
-                on <em>this</em> instance uses <code>this.</code>
+                <code>draw_text</code> are available without imports — the build wires them in. The current
+                instance's built-ins live on <code>sw.</code> (<code>sw.x</code>), your own variables on
+                <code>inst.</code> (<code>inst.hp</code>), and game-wide state on <code>global.</code>
+                (<code>global.score</code>).
             </p>
         </section>
 

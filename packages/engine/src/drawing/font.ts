@@ -16,7 +16,7 @@ export class font_resource {
     public bold: boolean      // Bold weight
     public italic: boolean    // Italic style
 
-    constructor(family: string = 'Arial', size: number = 16, bold: boolean = false, italic: boolean = false) {
+    constructor(family: string = 'sans-serif', size: number = 16, bold: boolean = false, italic: boolean = false) {
         this.family = family
         this.size = size
         this.bold = bold
@@ -42,6 +42,27 @@ const _font_names: Map<string, font_resource> = new Map()
 /** Registers a font resource under a name so `draw_set_font('fnt_x')` resolves. */
 export function font_register_name(name: string, fnt: font_resource): void {
     _font_names.set(name, fnt)
+}
+
+/**
+ * Loads a font file (e.g. a project-bundled .ttf) and registers it under a CSS family name, so text
+ * drawn with that family renders the custom font. Resolves once the font is ready — or, on failure or
+ * outside a browser document, resolves quietly so the game never hangs on a missing font. Called by
+ * the generated bootstrap for fonts that ship a font file.
+ * @param family - CSS family name to register the font under (Silkweaver uses the font resource name)
+ * @param url    - URL to the font file (relative 'assets/…' in an export, file:// in the IDE preview)
+ */
+export async function font_load_file(family: string, url: string): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const doc: any = typeof document !== 'undefined' ? document : null
+    if (!doc || !doc.fonts || typeof FontFace === 'undefined') return
+    try {
+        const face = new FontFace(family, `url("${url}")`)
+        await face.load()
+        doc.fonts.add(face)
+    } catch (e) {
+        console.warn(`[font] failed to load '${family}' from ${url}:`, e)
+    }
 }
 
 /**

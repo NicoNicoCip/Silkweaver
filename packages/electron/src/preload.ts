@@ -17,6 +17,14 @@ contextBridge.exposeInMainWorld('swfs', {
         ipcRenderer.invoke('sw:pick-folder', mode, defaultPath),
 
     /**
+     * Open a file picker dialog.
+     * @param opts - Optional title, defaultPath, and extension filters.
+     * @returns Absolute path of the chosen file, or null if cancelled.
+     */
+    pick_file: (opts?: { title?: string; defaultPath?: string; filters?: { name: string; extensions: string[] }[] }): Promise<string | null> =>
+        ipcRenderer.invoke('sw:pick-file', opts),
+
+    /**
      * Read a text file.
      * @param abs_path - Absolute path
      */
@@ -103,6 +111,10 @@ contextBridge.exposeInMainWorld('swfs', {
      */
     export_exe: (project_folder: string, out_dir: string, platform?: string, arch?: string): Promise<{ ok: boolean; error?: string; out_dir?: string }> =>
         ipcRenderer.invoke('sw:export-exe', project_folder, out_dir, platform, arch),
+
+    /** Lists the file names directly inside a project directory (non-recursive); [] if missing. */
+    list_dir: (abs_path: string): Promise<string[]> =>
+        ipcRenderer.invoke('sw:list-dir', abs_path),
 
     /** Lists the bundled starter templates (id / label / description / display color). */
     list_templates: (): Promise<{ id: string; label: string; description: string; display_color: string }[]> =>
