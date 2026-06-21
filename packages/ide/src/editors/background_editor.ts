@@ -6,6 +6,7 @@
 import { FloatingWindow }                                              from '../window_manager.js'
 import { ICON }                                                        from '../icons.js'
 import { project_write_binary, project_read_file, project_write_file, project_has_folder, project_read_binary_url, project_file_exists } from '../services/project.js'
+import { doc_register, doc_confirm_close, type doc_handle } from '../services/documents.js'
 import { pixel_editor_open }                                           from './pixel_editor.js'
 import { show_alert, show_prompt }                                     from '../services/dialogs.js'
 
@@ -54,6 +55,7 @@ class background_editor_window {
     private _win:     FloatingWindow
     private _name:    string
     private _data:    background_data
+    private _doc:     doc_handle | null = null
     private _canvas!: HTMLCanvasElement
 
     constructor(workspace: HTMLElement, name: string) {
@@ -73,11 +75,16 @@ class background_editor_window {
         )
         this._build_ui()
         this._win.mount(workspace)
+        this._doc = doc_register({
+            id: `backgrounds/${name}`, label: `Background: ${name}`, window: this._win,
+            flush: () => this._flush_to_disk(),
+        })
+        this._win.on_before_close(() => this._doc ? doc_confirm_close(this._doc, `Background: ${this._name}`) : true)
         this._load_data()
     }
 
     public bring_to_front(): void { this._win.bring_to_front() }
-    public on_closed(cb: () => void): void { this._win.on_close(cb) }
+    public on_closed(cb: () => void): void { this._win.on_close(() => { this._doc?.dispose(); cb() }) }
 
     // -----------------------------------------------------------------------
     // Build UI
@@ -391,7 +398,9 @@ class background_editor_window {
         } catch { /* parsing error or other issue */ }
     }
 
-    private async _save(): Promise<void> {
+    private async _save(): Promise<void> { this._doc?.mark_dirty() }
+
+    private async _flush_to_disk(): Promise<void> {
         if (!project_has_folder()) return
         await project_write_file(
             `backgrounds/${this._name}/meta.json`,

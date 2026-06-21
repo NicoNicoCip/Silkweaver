@@ -34,7 +34,7 @@ export const KEYBINDS: keybind_group[] = [
         group: 'Edit',
         binds: [
             { keys: 'Ctrl+Z',       label: 'Undo' },
-            { keys: 'Ctrl+Y',       label: 'Redo', desc: 'Ctrl+Shift+Z also works.' },
+            { keys: 'Ctrl+Shift+Z', label: 'Redo', desc: 'Ctrl+Y also works.' },
             { keys: 'Ctrl+,',       label: 'Preferences' },
             { keys: 'Ctrl+Shift+P', label: 'Game Settings' },
         ],

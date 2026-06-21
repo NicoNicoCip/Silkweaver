@@ -9,6 +9,8 @@
 
 import { FloatingWindow } from '../window_manager.js'
 import { ICON } from '../icons.js'
+import { show_save_prompt } from '../services/dialogs.js'
+import { editor_prefs_get } from '../editor_prefs.js'
 
 /**
  * Opens the pixel editor to create a new frame or edit an existing one.
@@ -89,6 +91,7 @@ class PixelEditor {
 
     private _undo:           ImageData[] = []
     private _redo:           ImageData[] = []
+    private _dirty           = false        // unsaved pixel edits (not yet committed to the frame)
 
     // Grid overlay: a configurable coarse grid (spacing + colour) plus an optional fine pixel grid.
     private _grid_size       = 16            // overlay grid spacing in pixels (0 = off)
@@ -119,6 +122,17 @@ class PixelEditor {
         this._build_ui()
         this._init_canvas(initial)
         this._win.mount(workspace)
+
+        // Closing with unsaved pixels prompts (like every other editor). "Save" commits the image
+        // back to the frame; the sprite/background then persists it on its own Ctrl+S.
+        this._win.on_before_close(async () => {
+            if (!this._dirty) return true
+            if (editor_prefs_get().autoSave) { this._on_save(this._canvas.toDataURL('image/png')); return true }
+            const choice = await show_save_prompt('Pixel Editor')
+            if (choice === 'cancel') return false
+            if (choice === 'save') this._on_save(this._canvas.toDataURL('image/png'))
+            return true   // 'discard' → close without committing
+        })
     }
 
     // ── UI ───────────────────────────────────────────────────────────────────
@@ -152,7 +166,7 @@ class PixelEditor {
             _tbtn(ICON.zoom_in,  'Zoom in',  () => this._set_zoom(this._zoom + 2)),
             _sep(),
             _tbtn(ICON.undo, 'Undo (Ctrl+Z)', () => this._undo_op()),
-            _tbtn(ICON.redo, 'Redo (Ctrl+Y)', () => this._redo_op()),
+            _tbtn(ICON.redo, 'Redo (Ctrl+Shift+Z)', () => this._redo_op()),
             _sep(),
         )
 
@@ -229,6 +243,8 @@ class PixelEditor {
         this._set_tool('pencil')
         window.addEventListener('keydown', this._on_key)
         this._win.on_close(() => window.removeEventListener('keydown', this._on_key))
+        // Route global Ctrl+Z / Ctrl+Y to this window's image-undo while it holds focus.
+        this._win.set_undo_handler({ undo: () => this._undo_op(), redo: () => this._redo_op() })
     }
 
     private _init_canvas(initial: string | null): void {
@@ -304,11 +320,9 @@ class PixelEditor {
     }
 
     private _on_key = (e: KeyboardEvent): void => {
-        if (e.ctrlKey || e.metaKey) {
-            if (e.key === 'z') { e.preventDefault(); this._undo_op() }
-            else if (e.key === 'y') { e.preventDefault(); this._redo_op() }
-            return
-        }
+        // Ctrl+Z / Ctrl+Y are handled by the global router via this window's undo handler
+        // (registered in the constructor) so they only fire while the pixel window holds focus.
+        if (e.ctrlKey || e.metaKey) return
         const map: Record<string, Tool> = { p: 'pencil', e: 'eraser', f: 'fill', i: 'eyedropper', l: 'line', r: 'rect', o: 'ellipse' }
         const t = map[e.key.toLowerCase()]
         if (t) this._set_tool(t)
@@ -429,20 +443,33 @@ class PixelEditor {
 
     // ── Undo / redo ────────────────────────────────────────────────────────────
 
+    private _mark_dirty(): void {
+        if (this._dirty) return
+        this._dirty = true
+        this._win.set_dirty(true)
+    }
+
     private _snapshot(): void {
+        this._mark_dirty()
         this._undo.push(this._ctx.getImageData(0, 0, this._w, this._h))
         if (this._undo.length > MAX_UNDO) this._undo.shift()
         this._redo = []
     }
-    private _undo_op(): void {
-        const prev = this._undo.pop(); if (!prev) return
+    /** @returns true if a step was undone (false when there's nothing to undo). */
+    private _undo_op(): boolean {
+        const prev = this._undo.pop(); if (!prev) return false
+        this._mark_dirty()
         this._redo.push(this._ctx.getImageData(0, 0, this._w, this._h))
         this._ctx.putImageData(prev, 0, 0); this._redraw()
+        return true
     }
-    private _redo_op(): void {
-        const next = this._redo.pop(); if (!next) return
+    /** @returns true if a step was redone (false when there's nothing to redo). */
+    private _redo_op(): boolean {
+        const next = this._redo.pop(); if (!next) return false
+        this._mark_dirty()
         this._undo.push(this._ctx.getImageData(0, 0, this._w, this._h))
         this._ctx.putImageData(next, 0, 0); this._redraw()
+        return true
     }
 
     // ── Effects ────────────────────────────────────────────────────────────────
@@ -521,6 +548,7 @@ class PixelEditor {
 
     private _save(): void {
         this._on_save(this._canvas.toDataURL('image/png'))
+        this._dirty = false   // committed — don't re-prompt on the close below
         this._win.close()
     }
 }

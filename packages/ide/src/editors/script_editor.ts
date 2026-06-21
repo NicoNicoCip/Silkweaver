@@ -8,8 +8,9 @@
  * (set_event_body). So Ctrl+A, auto-indent, selection, and undo all behave normally, and an orphan
  * brace can't soft-lock the view. The whole-class file is still available via Full view / scripts.
  *
- * Lifecycle is unified: content loads through `cfg.load`, persists through `cfg.save` (debounced +
- * flushed on close so edits are never lost), and the Monaco editor + model are disposed on close.
+ * Lifecycle is unified: content loads through `cfg.load` and persists through `cfg.save` on save
+ * (Ctrl+S / save-all) — nothing is written while you type. Unsaved edits show a ● on the titlebar
+ * and prompt to Save / Don't save / Cancel on close. The Monaco editor + model are disposed on close.
  * Monaco itself loads once from CDN via its AMD loader to keep ide.js small.
  */
 
@@ -19,13 +20,12 @@ import { project_read_file, project_write_file, project_has_folder } from '../se
 import { ENGINE_DTS }                               from '../generated/engine_types.js'
 import { editor_monaco_options, editor_register_themes, editor_apply_all, editor_prefs_get } from '../editor_prefs.js'
 import { file_watch_subscribe }                     from '../services/file_watch.js'
+import { doc_register, doc_confirm_close, documents_save_all, type doc_handle } from '../services/documents.js'
 
 // Monaco is loaded from CDN at runtime via AMD — type it as `any` to avoid
 // requiring the 'monaco-editor' npm package in the IDE workspace.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Monaco = any
-
-const SAVE_DEBOUNCE_MS = 500
 
 /** The Electron object-format bridge (parse/patch ops run in the host). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -194,8 +194,7 @@ export class ScriptEditor {
     private _win:        FloatingWindow
     private _cfg:        EditorConfig
     private _editor:     Monaco | null = null
-    private _save_timer: ReturnType<typeof setTimeout> | null = null
-    private _dirty       = false
+    private _doc:        doc_handle | null = null   // save-manager handle (dirty state + flush)
     private _disposed    = false
     private _reloading   = false                  // suppresses the change handler during an external reload
     private _unsub:      (() => void) | null = null   // file-watch unsubscribe
@@ -242,10 +241,18 @@ export class ScriptEditor {
             fixedOverflowWidgets: true,
         })
 
-        // Mark dirty + (debounced) save on every edit (ignore programmatic reloads).
+        // Register with the save manager; mark dirty on every edit (nothing is written until save).
+        this._doc = doc_register({
+            id:     this._cfg.file_key,
+            label:  this._cfg.title,
+            window: this._win,
+            flush:  () => this._cfg.save(this.get_value()),
+        })
+        this._win.on_before_close(() => this._doc ? doc_confirm_close(this._doc, this._cfg.title) : true)
+
         this._editor.onDidChangeModelContent(() => {
             if (this._reloading) return
-            this._mark_dirty(); this._schedule_save()
+            this._mark_dirty()
         })
 
         // Reload when the underlying file is changed by another window / outside the IDE.
@@ -257,8 +264,8 @@ export class ScriptEditor {
             this._refresh_object_vars()                          // object vars (async)
         }
 
-        // Ctrl+S → flush immediately.
-        this._editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void this._flush())
+        // Ctrl+S inside the editor → full IDE save (every dirty document + the manifest).
+        this._editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void documents_save_all())
 
         this._editor.focus()
         this._win.bring_to_front()
@@ -276,7 +283,7 @@ export class ScriptEditor {
     focus(): void { if (this._editor) this._editor.focus(); else this._win.bring_to_front() }
 
     /** Persists any pending edits immediately. */
-    flush(): void { void this._flush() }
+    flush(): void { void this._doc?.flush() }
 
     // ── External reload (parallel editing) ────────────────────────────────────
 
@@ -296,7 +303,7 @@ export class ScriptEditor {
     private async _external_reload(): Promise<void> {
         if (this._disposed || !this._editor) return
         this._refresh_object_vars()   // a sibling edit may have changed the object's variables
-        if (this._dirty) {
+        if (this._doc?.is_dirty()) {
             // Don't clobber in-progress edits — just flag that the file diverged on disk.
             this._win.set_title('⚠ ' + this._cfg.title)
             return
@@ -318,29 +325,7 @@ export class ScriptEditor {
     // ── Save pipeline ────────────────────────────────────────────────────────
 
     private _mark_dirty(): void {
-        this._dirty = true
-        this._win.set_title('● ' + this._cfg.title)
-    }
-
-    private _schedule_save(): void {
-        if (this._save_timer !== null) clearTimeout(this._save_timer)
-        this._save_timer = setTimeout(() => void this._flush(), SAVE_DEBOUNCE_MS)
-    }
-
-    /** Writes pending edits now (clears the debounce). Safe to call repeatedly / when not dirty. */
-    private async _flush(): Promise<void> {
-        if (this._save_timer !== null) { clearTimeout(this._save_timer); this._save_timer = null }
-        if (!this._dirty || !this._editor) return
-        const content = this._editor.getValue()   // capture synchronously (before any await / dispose)
-        this._dirty = false
-        try {
-            await this._cfg.save(content)
-        } catch (err) {
-            this._dirty = true   // let a later flush retry
-            console.error('[ScriptEditor] Save failed:', err)
-            return
-        }
-        if (!this._disposed) this._win.set_title(this._cfg.title)
+        this._doc?.mark_dirty()
     }
 
     // ── Teardown ──────────────────────────────────────────────────────────────
@@ -350,7 +335,8 @@ export class ScriptEditor {
         this._disposed = true
         try { this._unsub?.() } catch { /* ignore */ }
         this._unsub = null
-        void this._flush()                         // persist any pending edit (captures content first)
+        this._doc?.dispose()                       // unregister from the save manager (close guard already ran)
+        this._doc = null
         const m = this._editor?.getModel(); if (m) _object_var_models.delete(m)
         try { this._editor?.getModel()?.dispose() } catch { /* ignore */ }
         try { this._editor?.dispose() } catch { /* ignore */ }

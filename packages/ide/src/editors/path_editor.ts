@@ -6,6 +6,8 @@
 import { FloatingWindow }                                from '../window_manager.js'
 import { ICON } from "../icons.js"
 import { project_read_file, project_write_file, project_has_folder } from '../services/project.js'
+import { doc_register, doc_confirm_close, type doc_handle } from '../services/documents.js'
+import { snapshot_history }                                 from '../services/undo.js'
 
 // =========================================================================
 // Types
@@ -95,6 +97,13 @@ class path_editor_window {
 
     // ResizeObserver
     private _ro!: ResizeObserver
+    private _doc: doc_handle | null = null
+
+    // Undo/redo (per-window snapshot history of _data)
+    private _hist!:       snapshot_history<path_data>
+    private _restoring    = false              // true while applying an undo/redo (suppresses re-commit)
+    private _kind_sel!:   HTMLSelectElement     // toolbar controls synced on restore
+    private _closed_chk!: HTMLInputElement
 
     constructor(workspace: HTMLElement, name: string) {
         this._name = name
@@ -106,12 +115,19 @@ class path_editor_window {
         )
         this._build_ui()
         this._win.mount(workspace)
+        this._doc = doc_register({
+            id: `paths/${name}`, label: `Path: ${name}`, window: this._win,
+            flush: () => this._flush_to_disk(),
+        })
+        this._win.on_before_close(() => this._doc ? doc_confirm_close(this._doc, `Path: ${this._name}`) : true)
+        this._hist = new snapshot_history<path_data>((s) => structuredClone(s), (s) => this._restore(s))
+        this._win.set_undo_handler({ undo: () => this._hist.undo(), redo: () => this._hist.redo() })
         this._load_data()
     }
 
     public bring_to_front(): void { this._win.bring_to_front() }
     public on_closed(cb: () => void): void {
-        this._win.on_close(() => { this._ro.disconnect(); cb() })
+        this._win.on_close(() => { this._ro.disconnect(); this._doc?.dispose(); cb() })
     }
 
     // -----------------------------------------------------------------------
@@ -130,10 +146,13 @@ class path_editor_window {
             ['linear', 'smooth'], this._data.kind,
             (v) => { this._data.kind = v as path_kind; this._draw(); this._save() }
         )
+        this._kind_sel = kind_sel
         toolbar.appendChild(this._make_label_wrap('Kind:', kind_sel))
 
-        toolbar.appendChild(this._make_checkbox_inline('Closed', this._data.closed,
-            (v) => { this._data.closed = v; this._draw(); this._save() }))
+        const closed_wrap = this._make_checkbox_inline('Closed', this._data.closed,
+            (v) => { this._data.closed = v; this._draw(); this._save() })
+        this._closed_chk = closed_wrap.querySelector('input')!
+        toolbar.appendChild(closed_wrap)
 
         // Reference-room backdrop picker (so spatial routes can be traced over a level).
         this._room_sel = document.createElement('select')
@@ -528,9 +547,30 @@ class path_editor_window {
         await this._populate_room_options()
         if (this._data.ref_room) await this._load_ref_room_data(this._data.ref_room)
         this._draw()
+        this._hist.init(this._data)
     }
 
     private async _save(): Promise<void> {
+        this._doc?.mark_dirty()
+        if (!this._restoring) this._hist?.commit(this._data)
+    }
+
+    /** Installs an undo/redo snapshot: swap in the state, sync the toolbar, redraw. */
+    private _restore(s: path_data): void {
+        this._restoring = true
+        this._data            = s
+        this._kind_sel.value  = s.kind
+        this._closed_chk.checked = s.closed
+        this._room_sel.value  = s.ref_room ?? ''
+        this._sel_idx         = -1
+        if (s.ref_room) void this._load_ref_room_data(s.ref_room).then(() => this._draw())
+        else            this._ref_room_data = null
+        this._draw()
+        this._doc?.mark_dirty()
+        this._restoring = false
+    }
+
+    private async _flush_to_disk(): Promise<void> {
         if (!project_has_folder()) return
         await project_write_file(
             `paths/${this._name}/path.json`,

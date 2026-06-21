@@ -1,6 +1,6 @@
 {
     "name": "silkweaver",
-    "version": "1.3.4",
+    "version": "1.4.0",
     "description": "A GMS 1.4 inspired web game engine and IDE using modern TypeScript, along with some other cool stuff :3",
     "main": "./exports/electron/main.js",
     "scripts": {
@@ -28,7 +28,7 @@
     },
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/NicoNicoCip/Silkweaver"
+        "url": "git+https://github.com/FinnWillow/Silkweaver"
     },
     "keywords": [
         "game-engine",
@@ -41,9 +41,9 @@
     "author": "FinnWillow cir.ciprian.nicolae@gmail.com",
     "license": "GPL-3.0",
     "bugs": {
-        "url": "https://github.com/NicoNicoCip/Silkweaver/issues"
+        "url": "https://github.com/FinnWillow/Silkweaver/issues"
     },
-    "homepage": "https://github.com/NicoNicoCip/Silkweaver#readme",
+    "homepage": "https://github.com/FinnWillow/Silkweaver#readme",
     "build": {
         "appId": "com.silkweaver.ide",
         "productName": "Silkweaver",
@@ -51,7 +51,7 @@
         "electronVersion": "40.4.1",
         "publish": {
             "provider": "github",
-            "owner": "NicoNicoCip",
+            "owner": "FinnWillow",
             "repo": "Silkweaver"
         },
         "asar": false,

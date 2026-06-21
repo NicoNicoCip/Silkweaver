@@ -1,6 +1,6 @@
 # @silkweaver/engine
 
-The runtime engine behind [Silkweaver](https://github.com/NicoNicoCip/Silkweaver) — a 2D game engine
+The runtime engine behind [Silkweaver](https://github.com/FinnWillow/Silkweaver) — a 2D game engine
 inspired by GameMaker Studio 1.4, written in TypeScript and rendering with WebGL 2.
 
 You can use it entirely on its own: no editor, no project format, no build step you don't control.
@@ -31,7 +31,7 @@ data structures, networking, and the maths/string/random helpers.
 
 - **Rendering:** WebGL 2 · **Audio:** Web Audio · **Physics:** matter.js
 - **Docs:** the full, source-generated API reference lives in the
-  [main repository](https://github.com/NicoNicoCip/Silkweaver).
+  [main repository](https://github.com/FinnWillow/Silkweaver).
 - **License:** GPL-3.0
 
 Want sprites/objects/rooms and a visual editor instead of wiring the loop yourself? That's the rest

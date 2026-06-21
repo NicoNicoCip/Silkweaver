@@ -9,6 +9,11 @@
   "mask_y": 0,
   "mask_w": 32,
   "mask_h": 32,
+  "scale_mode": "stretch",
+  "slice_left": 0,
+  "slice_top": 0,
+  "slice_right": 0,
+  "slice_bottom": 0,
   "frames": [
     {
       "name": "0.png"

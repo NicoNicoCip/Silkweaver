@@ -38,6 +38,9 @@
     "rooms": {
       "room_main": {
         "name": "room_main"
+      },
+      "room1": {
+        "name": "room1"
       }
     }
   }

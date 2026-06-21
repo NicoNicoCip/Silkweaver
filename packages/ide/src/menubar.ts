@@ -200,7 +200,7 @@ export function menubar_default(actions: menubar_actions): HTMLElement {
             label: 'Edit',
             items: [
                 { label: 'Undo',           shortcut: 'Ctrl+Z',       disabled: true },
-                { label: 'Redo',           shortcut: 'Ctrl+Y',       disabled: true },
+                { label: 'Redo',           shortcut: 'Ctrl+Shift+Z', disabled: true },
                 { separator: true },
                 { label: 'Preferences…',   shortcut: 'Ctrl+,',       action: actions.edit_preferences },
                 { label: 'Game Settings…', shortcut: 'Ctrl+Shift+P', action: actions.edit_game_settings },

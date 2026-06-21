@@ -1,6 +1,6 @@
 export class obj_player extends gm_object {
     spd = 5;
-    jump_force = 15;
+    jump_force = 16;
     weight = 1;
 
     on_create(): void {
@@ -59,7 +59,7 @@ export class obj_player extends gm_object {
             inst.vertical_acc = inst.jump_force;
         }
 
-        // apply acceleration, then move — snapping flush against anything in the way
+        // apply acceleration
         inst.vertical_vel += inst.vertical_acc;
         if (sw.place_meeting(sw.x, sw.y - inst.vertical_vel, _col)) {
             while (!sw.place_meeting(sw.x, sw.y - sign(inst.vertical_vel), _col)) {

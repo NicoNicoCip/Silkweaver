@@ -119,6 +119,12 @@ function _panel_interface(): HTMLElement {
         _field_number('Tooltip delay (ms)', p.tooltipDelay, 0, 3000, v => editor_prefs_set({ tooltipDelay: v }),
             'How long to rest the pointer on an item before its help tooltip appears.'),
     )
+    stack.appendChild(_subhead('Saving'))
+    stack.append(
+        _field_checkbox('Auto-save', p.autoSave, v => editor_prefs_set({ autoSave: v }),
+            'On: the IDE saves automatically when you close a window and periodically in the background. ' +
+            'Off (default): edits are kept until you press Ctrl+S — a ● marks unsaved windows and you’re asked before closing.'),
+    )
     return stack
 }
 

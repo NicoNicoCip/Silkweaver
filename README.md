@@ -38,7 +38,7 @@ like.
 ### With the IDE
 
 The friendliest way in — no terminal required. Grab the installer for your OS from the
-[Releases](https://github.com/NicoNicoCip/Silkweaver/releases) page, install it, and open it. You get
+[Releases](https://github.com/FinnWillow/Silkweaver/releases) page, install it, and open it. You get
 a GameMaker-style window: a resource tree on the side, editors for sprites/objects/rooms/etc., and
 **Play** / **Export** buttons.
 

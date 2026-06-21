@@ -20,6 +20,15 @@ interface window_state {
 
 type resize_dir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
+/**
+ * A window's undo/redo delegate. Editors that own an undo stack register one so the global
+ * Ctrl+Z / Ctrl+Y shortcuts route to whichever window currently holds keyboard focus.
+ */
+export interface window_undo {
+    undo(): boolean   // returns false if there was nothing to undo
+    redo(): boolean   // returns false if there was nothing to redo
+}
+
 // =========================================================================
 // Z-index counter
 // =========================================================================
@@ -91,6 +100,10 @@ export class FloatingWindow {
 
     private _on_close_cb: (() => void) | null = null
     private _icon_src:    string | null = null   // original icon (SVG string or URL), for the taskbar
+    private _base_title:  string = ''            // title text without the unsaved dot
+    private _dirty_dot:   boolean = false        // whether a leading ● is shown
+    private _before_close: (() => boolean | Promise<boolean>) | null = null
+    private _undo_handler: window_undo | null = null   // window-scoped Ctrl+Z/Y delegate (or native)
 
     constructor(id: string, title: string, icon_src: string | null, default_rect: { x: number; y: number; w: number; h: number }) {
         this.id = id
@@ -99,6 +112,7 @@ export class FloatingWindow {
         // ── Outer window element ──────────────────────────────────────────
         this.el = document.createElement('div')
         this.el.className = 'sw-window'
+        this.el.tabIndex = -1                 // programmatically focusable, so window-scoped undo can target it
         this.el.style.left   = default_rect.x + 'px'
         this.el.style.top    = default_rect.y + 'px'
         this.el.style.width  = default_rect.w + 'px'
@@ -113,6 +127,7 @@ export class FloatingWindow {
 
         this._title_el = document.createElement('span')
         this._title_el.className = 'sw-window-title'
+        this._base_title = title
         this._title_el.textContent = title
 
         const btns = document.createElement('div')
@@ -120,7 +135,7 @@ export class FloatingWindow {
 
         this._min_btn   = _make_btn(ICON.win_min, 'min',   () => this.toggle_minimize())
         this._max_btn   = _make_btn(ICON.win_max, 'max',   () => this.toggle_maximize())
-        this._close_btn = _make_btn(ICON.close,   'close', () => this.close())
+        this._close_btn = _make_btn(ICON.close,   'close', () => void this.close())
 
         btns.append(this._min_btn, this._max_btn, this._close_btn)
         titlebar.append(this._icon_el, this._title_el, btns)
@@ -157,8 +172,15 @@ export class FloatingWindow {
             this.toggle_maximize()
         })
 
-        // Bring to front on click
-        this.el.addEventListener('mousedown', () => this.bring_to_front())
+        // Bring to front on click. Also pull keyboard focus into the window (unless a focusable
+        // control was clicked, which should keep its own focus) so window-scoped Ctrl+Z/Y target it.
+        this.el.addEventListener('mousedown', (e) => {
+            this.bring_to_front()
+            const t = e.target as HTMLElement
+            if (!t.closest('input, textarea, select, button, a, [contenteditable], .monaco-editor, [tabindex]:not(.sw-window)')) {
+                this.el.focus({ preventScroll: true })
+            }
+        })
 
         // ── Restore saved layout ─────────────────────────────────────────
         const saved = _load_layouts()[id]
@@ -187,10 +209,22 @@ export class FloatingWindow {
         return this
     }
 
-    /** Set the window title text. */
+    /** Set the window title text (the unsaved ● dot, if shown, is preserved). */
     set_title(title: string): void {
-        this._title_el.textContent = title
+        this._base_title = title
+        this._render_title()
         FloatingWindow._emit()
+    }
+
+    /** Show or hide the leading unsaved ● dot on the titlebar. */
+    set_dirty(dirty: boolean): void {
+        if (this._dirty_dot === dirty) return
+        this._dirty_dot = dirty
+        this._render_title()
+    }
+
+    private _render_title(): void {
+        this._title_el.textContent = (this._dirty_dot ? '● ' : '') + this._base_title
     }
 
     /** Set the title bar icon (accepts an inline SVG string or an image URL). */
@@ -209,9 +243,9 @@ export class FloatingWindow {
         FloatingWindow._emit()
     }
 
-    /** Returns the window's current title text. */
+    /** Returns the window's title text (without the unsaved dot). */
     get_title(): string {
-        return this._title_el.textContent ?? ''
+        return this._base_title
     }
 
     /** Returns the window's icon (inline SVG string or image URL), or null. */
@@ -316,7 +350,7 @@ export class FloatingWindow {
 
     /** Close every open window. */
     static close_all(): void {
-        for (const w of [...FloatingWindow._open]) w.close()
+        for (const w of [...FloatingWindow._open]) void w.close()
     }
 
     /** Toggle minimized state (collapse to title bar). */
@@ -365,8 +399,13 @@ export class FloatingWindow {
         FloatingWindow._emit()
     }
 
-    /** Close (remove) the window. Calls the optional on_close callback. */
-    close(): void {
+    /** Close (remove) the window. Runs the before-close guard (may veto), then the on_close callback. */
+    async close(): Promise<void> {
+        if (this._before_close) {
+            let ok = false
+            try { ok = await this._before_close() } catch { ok = true }   // never trap the user in a window
+            if (!ok) return
+        }
         this._on_close_cb?.()
         this.el.remove()
         FloatingWindow._open.delete(this)
@@ -378,6 +417,29 @@ export class FloatingWindow {
     on_close(cb: () => void): this {
         this._on_close_cb = cb
         return this
+    }
+
+    /**
+     * Register an async guard run before the window closes. Return false to veto the close (e.g. the
+     * user chose Cancel in an unsaved-changes prompt). Used by editors to confirm dirty content.
+     */
+    on_before_close(guard: () => boolean | Promise<boolean>): this {
+        this._before_close = guard
+        return this
+    }
+
+    /**
+     * Register this window's undo/redo delegate so global Ctrl+Z / Ctrl+Y route here while it holds
+     * keyboard focus. Windows backed by Monaco or native inputs leave this null and use native undo.
+     */
+    set_undo_handler(h: window_undo | null): this {
+        this._undo_handler = h
+        return this
+    }
+
+    /** This window's undo/redo delegate, or null if it has none (native / no undo). */
+    undo_handler(): window_undo | null {
+        return this._undo_handler
     }
 
     // ── Drag ─────────────────────────────────────────────────────────────

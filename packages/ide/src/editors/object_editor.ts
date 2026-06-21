@@ -13,6 +13,8 @@ import { project_read_file, project_write_file, project_file_exists, project_get
 import { script_editor_open_event, script_editor_open_full }     from './script_editor.js'
 import { get_project_resource_names }                            from '../index.js'
 import { file_watch_subscribe }                                  from '../services/file_watch.js'
+import { doc_register, doc_confirm_close, type doc_handle }      from '../services/documents.js'
+import { snapshot_history }                                      from '../services/undo.js'
 import { show_context_menu }                                     from '../services/context_menu.js'
 import { tooltip_attach }                                        from '../services/tooltip.js'
 
@@ -126,6 +128,9 @@ class object_editor_window {
     private _vars_list_el:  HTMLElement = document.createElement('div')
     private _on_closed_cb: (() => void) | null = null
     private _unsub_watch:  (() => void) | null = null
+    private _doc:          doc_handle | null = null
+    private _hist:         snapshot_history<string>   // per-window undo of the class source (form edits)
+    private _restoring     = false                     // true while applying an undo/redo
 
     constructor(workspace: HTMLElement, object_name: string) {
         this._object_name = object_name
@@ -138,14 +143,22 @@ class object_editor_window {
             ICON.object,
             { x: 260 + off, y: 50 + off, w: 560, h: 480 },
         )
-        this._win.on_close(() => { this._unsub_watch?.(); this._on_closed_cb?.() })
+        this._win.on_close(() => { this._unsub_watch?.(); this._doc?.dispose(); this._on_closed_cb?.() })
 
+        this._hist = new snapshot_history<string>((s) => s, (s) => void this._restore(s))   // strings are immutable
         this._build_ui()
         this._load()
         this._win.mount(workspace)
+        this._doc = doc_register({
+            id: this._rel, label: `Object: ${object_name}`, window: this._win,
+            flush: () => this._flush_to_disk(),
+        })
+        this._win.on_before_close(() => this._doc ? doc_confirm_close(this._doc, `Object: ${this._object_name}`) : true)
+        this._win.set_undo_handler({ undo: () => this._hist.undo(), redo: () => this._hist.redo() })
 
-        // Refresh the form when the class file is edited elsewhere (another window / outside the IDE).
-        this._unsub_watch = file_watch_subscribe(this._rel, () => void this._load())
+        // Refresh the form when the class file is edited elsewhere — but only when WE have no unsaved
+        // form edits, so an external save can't clobber pending changes (they'd reload over them).
+        this._unsub_watch = file_watch_subscribe(this._rel, () => { if (!this._doc?.is_dirty()) void this._load() })
     }
 
     bring_to_front(): void { this._win.bring_to_front() }
@@ -188,23 +201,37 @@ class object_editor_window {
             console.error('[IDE] object load failed:', err)
         }
         this._refresh()
+        this._hist.init(this._src)   // seed (or reseed, on external reload) the undo history
     }
 
-    /** Applies a surgical patch op to the class source, persists it, and re-parses. */
+    /** Applies a surgical patch op to the in-memory class source and re-parses (written on save). */
     private async _patch(action: string, ...args: any[]): Promise<void> {
         try {
-            // Re-read from disk first: an event may have been edited in the focused code editor,
-            // and patching our in-memory copy would clobber those changes.
-            try { this._src = await project_read_file(this._rel) } catch { /* keep in-memory copy */ }
             this._src = await _op(action, this._src, ...args)
-            await project_write_file(this._rel, this._src)
             this._model = await _op('parse_object', this._src)
-            // The tree's object icon shows the object's sprite — refresh it when the sprite changes.
-            if (args[0] === 'sprite') document.dispatchEvent(new CustomEvent('sw:resource_changed', { detail: { category: 'objects' } }))
+            this._doc?.mark_dirty()
+            if (!this._restoring) this._hist.commit(this._src)
         } catch (err) {
             console.error('[IDE] object patch failed:', err)
         }
         this._refresh()
+    }
+
+    /** Installs an undo/redo snapshot: swap in the source, re-parse the model, rebuild the form. */
+    private async _restore(src: string): Promise<void> {
+        this._restoring = true
+        this._src = src
+        try { this._model = await _op('parse_object', src) } catch (err) { console.error('[IDE] object undo parse failed:', err) }
+        this._doc?.mark_dirty()
+        this._refresh()
+        this._restoring = false
+    }
+
+    /** Persists the in-memory class source. */
+    private async _flush_to_disk(): Promise<void> {
+        await project_write_file(this._rel, this._src)
+        // The tree's object icon shows the object's sprite — refresh it once the source is persisted.
+        document.dispatchEvent(new CustomEvent('sw:resource_changed', { detail: { category: 'objects' } }))
     }
 
     private _refresh(): void {

@@ -17,4 +17,4 @@ await export_executable('./my-game', './dist', 'win32', 'x64')   // desktop buil
 It also exposes `object_format` — the parse/patch layer the IDE's object editor uses to edit
 class-per-object files surgically (preserving your hand-written code).
 
-Pure Node. Part of [Silkweaver](https://github.com/NicoNicoCip/Silkweaver). License: GPL-3.0.
+Pure Node. Part of [Silkweaver](https://github.com/FinnWillow/Silkweaver). License: GPL-3.0.

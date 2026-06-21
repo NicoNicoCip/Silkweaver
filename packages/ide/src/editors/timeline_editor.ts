@@ -7,6 +7,8 @@
 import { FloatingWindow }                                from '../window_manager.js'
 import { ICON } from "../icons.js"
 import { project_read_file, project_write_file, project_has_folder, project_get_dir } from '../services/project.js'
+import { doc_register, doc_confirm_close, type doc_handle } from '../services/documents.js'
+import { snapshot_history }                                 from '../services/undo.js'
 import { script_editor_open_smart }                      from './script_editor.js'
 
 // =========================================================================
@@ -56,6 +58,9 @@ class timeline_editor_window {
     private _workspace: HTMLElement
     private _list_el!:  HTMLElement
     private _sel_idx:   number = -1
+    private _doc:       doc_handle | null = null
+    private _hist!:     snapshot_history<timeline_data>   // per-window undo of _data
+    private _restoring  = false                            // true while applying an undo/redo
 
     constructor(workspace: HTMLElement, name: string) {
         this._workspace = workspace
@@ -68,11 +73,18 @@ class timeline_editor_window {
         )
         this._build_ui()
         this._win.mount(workspace)
+        this._doc = doc_register({
+            id: `timelines/${name}`, label: `Timeline: ${name}`, window: this._win,
+            flush: () => this._flush_to_disk(),
+        })
+        this._win.on_before_close(() => this._doc ? doc_confirm_close(this._doc, `Timeline: ${this._name}`) : true)
+        this._hist = new snapshot_history<timeline_data>((s) => structuredClone(s), (s) => this._restore(s))
+        this._win.set_undo_handler({ undo: () => this._hist.undo(), redo: () => this._hist.redo() })
         this._load_data()
     }
 
     public bring_to_front(): void { this._win.bring_to_front() }
-    public on_closed(cb: () => void): void { this._win.on_close(cb) }
+    public on_closed(cb: () => void): void { this._win.on_close(() => { this._doc?.dispose(); cb() }) }
 
     // -----------------------------------------------------------------------
     // Build UI
@@ -246,14 +258,31 @@ class timeline_editor_window {
     private async _load_data(): Promise<void> {
         try {
             const raw = await project_read_file(`timelines/${this._name}/timeline.json`)
-            if (!raw) return
-            const parsed = JSON.parse(raw) as Partial<timeline_data>
-            if (Array.isArray(parsed.moments)) this._data.moments = parsed.moments
-            this._render_list()
+            if (raw) {
+                const parsed = JSON.parse(raw) as Partial<timeline_data>
+                if (Array.isArray(parsed.moments)) this._data.moments = parsed.moments
+            }
         } catch { /* no saved data yet */ }
+        this._render_list()
+        this._hist.init(this._data)
     }
 
     private async _save(): Promise<void> {
+        this._doc?.mark_dirty()
+        if (!this._restoring) this._hist?.commit(this._data)
+    }
+
+    /** Installs an undo/redo snapshot: swap in the state and rebuild the list. */
+    private _restore(s: timeline_data): void {
+        this._restoring = true
+        this._data    = s
+        this._sel_idx = Math.min(this._sel_idx, this._data.moments.length - 1)
+        this._render_list()
+        this._doc?.mark_dirty()
+        this._restoring = false
+    }
+
+    private async _flush_to_disk(): Promise<void> {
         if (!project_has_folder()) return
         await project_write_file(
             `timelines/${this._name}/timeline.json`,

@@ -82,7 +82,7 @@ export function show_about(version: string): Promise<void> {
                 <div style="color:var(--sw-text-dim);font-size:12px;margin-top:-3px;">Game Engine &amp; IDE</div>
                 <div style="font-size:13px;margin-top:8px;">Version ${version}</div>
                 <div style="color:var(--sw-text-dim);font-size:11.5px;">GPL-3.0 · © FinnWillow</div>
-                <div style="color:var(--sw-text-dim);font-size:11.5px;user-select:text;">github.com/NicoNicoCip/Silkweaver</div>
+                <div style="color:var(--sw-text-dim);font-size:11.5px;user-select:text;">github.com/FinnWillow/Silkweaver</div>
             </div>
             <div style="display:flex;justify-content:flex-end;">
                 <button id="_sw_ok" class="sw-btn" style="padding:4px 20px;">OK</button>
@@ -93,6 +93,30 @@ export function show_about(version: string): Promise<void> {
         document.addEventListener('keydown', onkey)
         overlay.addEventListener('click', e => { if (e.target === overlay) done() })  // backdrop click
         document.getElementById('_sw_ok')!.addEventListener('click', done)
+    })
+}
+
+/**
+ * Shows a "save before closing?" modal with Save / Don't save / Cancel.
+ * @param label - The thing being closed (window/resource title)
+ * @returns 'save', 'discard', or 'cancel'
+ */
+export function show_save_prompt(label: string): Promise<'save' | 'discard' | 'cancel'> {
+    return new Promise(resolve => {
+        const { close } = _modal(`
+            <p style="margin:0;white-space:pre-wrap;">Save changes to <b>${label.replace(/</g,'&lt;')}</b> before closing?</p>
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+                <button id="_sw_save"    class="sw-btn" style="padding:4px 16px;">Save</button>
+                <button id="_sw_discard" class="sw-btn" style="padding:4px 16px;">Don't save</button>
+                <button id="_sw_cancel"  class="sw-btn" style="padding:4px 16px;">Cancel</button>
+            </div>
+        `)
+        const done = (r: 'save' | 'discard' | 'cancel') => { document.removeEventListener('keydown', onkey); close(); resolve(r) }
+        const onkey = (e: KeyboardEvent) => { if (e.key === 'Escape') done('cancel') }
+        document.addEventListener('keydown', onkey)
+        document.getElementById('_sw_save')!   .addEventListener('click', () => done('save'))
+        document.getElementById('_sw_discard')!.addEventListener('click', () => done('discard'))
+        document.getElementById('_sw_cancel')! .addEventListener('click', () => done('cancel'))
     })
 }
 

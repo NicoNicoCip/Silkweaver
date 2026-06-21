@@ -28,6 +28,7 @@ export interface editor_prefs {
     autoOrganizeObjects:     boolean  // reorder object .ts (metadata→vars→events) + add `;` on full-view open
     tooltips:                boolean  // show hover help tooltips on settings/preferences items
     tooltipDelay:            number   // ms to hover before a tooltip appears
+    autoSave:                boolean  // save automatically (on close / periodically) vs. manual Ctrl+S only
 }
 
 const DEFAULTS: editor_prefs = {
@@ -47,6 +48,7 @@ const DEFAULTS: editor_prefs = {
     autoOrganizeObjects:     true,
     tooltips:                true,
     tooltipDelay:            500,
+    autoSave:                false,   // manual save is the default — Ctrl+S to commit, ● shows unsaved
 }
 
 const LS = 'sw.editor.prefs'

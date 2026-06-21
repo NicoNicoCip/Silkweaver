@@ -1,6 +1,6 @@
 # @silkweaver/project
 
-The canonical project-format types for [Silkweaver](https://github.com/NicoNicoCip/Silkweaver) — the
+The canonical project-format types for [Silkweaver](https://github.com/FinnWillow/Silkweaver) — the
 shared definition of what a `project.json` and a `room.json` look like.
 
 It's **types only**: zero runtime, zero dependencies. The engine, the build toolchain, the CLI, and

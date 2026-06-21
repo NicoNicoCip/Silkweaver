@@ -4,6 +4,7 @@
  */
 
 import type { project_state } from './services/project.js'
+import type { undo_command } from './services/undo.js'
 import { ICON } from './icons.js'
 import { show_context_menu } from './services/context_menu.js'
 import { project_read_binary_url, project_read_file, project_file_exists } from './services/project.js'
@@ -25,6 +26,12 @@ interface category_def {
     id:    resource_category
     label: string
     glyph: string   // inline SVG icon markup (see icons.ts)
+}
+
+/** A snapshot of one category's folder organisation (for undo of folder/move operations). */
+interface struct_snap {
+    folders: string[]                              // the category's explicit folder paths
+    assign:  Record<string, string | null>         // resource name → its folder (null = category root)
 }
 
 // =========================================================================
@@ -68,6 +75,7 @@ export class ResourceTree {
     on_duplicate_resource: (cat: resource_category, name: string) => void = () => {}
     on_set_icon:           (cat: resource_category, name: string, sprite: string | null) => void = () => {}
     on_folders_changed:    () => void = () => {}   // a folder was created/renamed/deleted or a resource moved
+    on_undo_push:          (cmd: undo_command) => void = () => {}   // record a reversible tree-structure change
 
     constructor() {
         this._container = document.createElement('div')
@@ -454,10 +462,13 @@ export class ResourceTree {
     private _move_resource(cat_id: resource_category, name: string, folder_path: string): void {
         const ref = this._state?.resources[cat_id]?.[name]
         if (!ref) return
+        if ((ref.folder ?? '') === folder_path) return   // no-op move
+        const before = this._struct_snapshot(cat_id)
         if (folder_path) ref.folder = folder_path
         else             delete ref.folder
         this.on_folders_changed()
         this._refresh_category(cat_id)
+        this._record_struct(cat_id, `Move "${name}"`, before)
     }
 
     /** Context-menu folder picker (a fallback to dragging) for moving a resource. */
@@ -483,12 +494,15 @@ export class ResourceTree {
             const leaf = raw.replace(/\//g, '-').trim()
             if (!leaf) return
             const full = parent ? `${parent}/${leaf}` : leaf
+            const before = this._struct_snapshot(cat_id)
             const arr = this._folder_array(cat_id)
-            if (!arr.includes(full)) arr.push(full)
+            const added = !arr.includes(full)
+            if (added) arr.push(full)
             if (parent) this._folder_open.add(`${cat_id}:${parent}`)
             this._folder_open.add(`${cat_id}:${full}`)
             this.on_folders_changed()
             this._refresh_category(cat_id)
+            if (added) this._record_struct(cat_id, `New folder "${leaf}"`, before)
         })
     }
 
@@ -499,16 +513,20 @@ export class ResourceTree {
             const leaf = raw.replace(/\//g, '-').trim()
             if (!leaf) return
             const new_full = parent ? `${parent}/${leaf}` : leaf
+            if (new_full === old_full) return
+            const before = this._struct_snapshot(cat_id)
             const remap = (p: string): string =>
                 p === old_full ? new_full : (p.startsWith(old_full + '/') ? `${new_full}/${p.slice(old_full.length + 1)}` : p)
             this._remap_folders(cat_id, remap)
             this._folder_open.add(`${cat_id}:${new_full}`)
             this.on_folders_changed()
             this._refresh_category(cat_id)
+            this._record_struct(cat_id, `Rename folder "${old_full}" → "${new_full}"`, before)
         })
     }
 
     private _delete_folder(cat_id: resource_category, full: string): void {
+        const before = this._struct_snapshot(cat_id)
         const parent = full.includes('/') ? full.slice(0, full.lastIndexOf('/')) : ''
         const remap = (p: string): string => {
             if (p === full) return parent
@@ -519,6 +537,43 @@ export class ResourceTree {
         this._remap_folders(cat_id, remap)
         this.on_folders_changed()
         this._refresh_category(cat_id)
+        this._record_struct(cat_id, `Delete folder "${full}"`, before)
+    }
+
+    // ── Folder-structure undo (manifest-only; folders/move don't touch disk) ───
+
+    /** Snapshots a category's folder organisation: its folder list + each resource's folder. */
+    private _struct_snapshot(cat_id: resource_category): struct_snap {
+        const folders = [...(this._state?.folders?.[cat_id] ?? [])]
+        const assign: Record<string, string | null> = {}
+        const res = this._state?.resources[cat_id] ?? {}
+        for (const k of Object.keys(res)) assign[k] = res[k]?.folder ?? null
+        return { folders, assign }
+    }
+
+    /** Restores a folder-structure snapshot, marks the project dirty, and re-renders the category. */
+    private _struct_restore(cat_id: resource_category, snap: struct_snap): void {
+        if (!this._state) return
+        if (!this._state.folders) this._state.folders = {}
+        this._state.folders[cat_id] = [...snap.folders]
+        const res = this._state.resources[cat_id] ?? {}
+        for (const k of Object.keys(res)) {
+            const f = snap.assign[k]
+            if (f) res[k]!.folder = f
+            else   delete res[k]!.folder
+        }
+        this.on_folders_changed()
+        this._refresh_category(cat_id)
+    }
+
+    /** Records an undoable folder-structure change, given the pre-mutation snapshot. */
+    private _record_struct(cat_id: resource_category, label: string, before: struct_snap): void {
+        const after = this._struct_snapshot(cat_id)
+        this.on_undo_push({
+            label,
+            execute:   () => this._struct_restore(cat_id, after),
+            unexecute: () => this._struct_restore(cat_id, before),
+        })
     }
 
     /** Applies a path remap to the folder list and every resource's `folder` in a category. */

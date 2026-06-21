@@ -16,6 +16,7 @@ import * as build   from '@silkweaver/build'
 // =========================================================================
 
 let _win: BrowserWindow | null = null
+let _allow_close = false                                   // set true once the renderer OKs the quit
 let _watcher: fs.FSWatcher | null = null
 const _last_written = new Map<string, string>()           // abs path → content the IDE last wrote
 const _watch_debounce = new Map<string, NodeJS.Timeout>()  // per-path debounce (fs.watch double-fires)
@@ -60,6 +61,9 @@ async function _emit_change(folder: string, abs: string): Promise<void> {
 /** Renderer asks to watch a project folder (or null to stop). */
 ipcMain.handle('sw:watch-folder', (_e, folder: string | null) => { folder ? _start_watch(folder) : _stop_watch() })
 
+/** Renderer has finished its unsaved-changes prompt and is OK to quit. */
+ipcMain.on('sw:confirm-quit', () => { _allow_close = true; _win?.close() })
+
 // =========================================================================
 // Window
 // =========================================================================
@@ -81,6 +85,12 @@ function create_window(): void {
     })
 
     _win = win
+    // Intercept the window close so the renderer can warn about unsaved changes first.
+    win.on('close', (e) => {
+        if (_allow_close) return
+        e.preventDefault()
+        win.webContents.send('sw:before-quit')
+    })
     win.on('closed', () => { if (_win === win) _win = null })
     win.setMenuBarVisibility(false)
     win.loadFile(path.join(__dirname, '../../exports/ide/index.html'))

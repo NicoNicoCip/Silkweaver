@@ -14,7 +14,9 @@ import { FloatingWindow }                                          from '../wind
 import { ICON }                                                    from '../icons.js'
 import { get_project_object_names, get_project_resource_names }     from '../index.js'
 import { script_editor_open_text }                                 from './script_editor.js'
-import { project_read_file, project_write_file, project_read_binary_url, project_file_exists } from '../services/project.js'
+import { project_read_file, project_write_file, project_read_binary_url, project_file_exists, project_has_folder } from '../services/project.js'
+import { doc_register, doc_confirm_close, type doc_handle } from '../services/documents.js'
+import { snapshot_history }                                 from '../services/undo.js'
 import { sprite_slice_cells, type scale_mode } from '../services/sprite_slice.js'
 import { tooltip_attach } from '../services/tooltip.js'
 import type {
@@ -133,6 +135,9 @@ class room_editor_window {
     private _next_tile_id = 1       // next unique tile id within this room
 
     private _on_closed_cb: (() => void) | null = null
+    private _doc:          doc_handle | null = null
+    private _hist!:        snapshot_history<room_data>   // per-window undo of _data
+    private _restoring     = false                        // true while applying an undo/redo
     private _picker_popup: HTMLElement | null = null
     private _zoom_lbl!: HTMLElement
     private _picker_btn!: HTMLButtonElement
@@ -151,6 +156,7 @@ class room_editor_window {
         this._win.on_close(() => {
             this._close_picker()
             document.removeEventListener('sw:resource_changed', this._on_resource_changed)
+            this._doc?.dispose()
             this._on_closed_cb?.()
         })
         // A sprite edited elsewhere (origin / scale-mode / 9-slice…) must invalidate our render cache
@@ -164,8 +170,15 @@ class room_editor_window {
         this._ctx    = this._canvas.getContext('2d')!
 
         this._build_ui()
+        this._hist = new snapshot_history<room_data>((s) => structuredClone(s), (s) => this._restore(s))
         this._load_data()
         this._win.mount(workspace)
+        this._doc = doc_register({
+            id: `rooms/${room_name}`, label: `Room: ${room_name}`, window: this._win,
+            flush: () => this._flush_to_disk(),
+        })
+        this._win.on_before_close(() => this._doc ? doc_confirm_close(this._doc, `Room: ${this._room_name}`) : true)
+        this._win.set_undo_handler({ undo: () => this._hist.undo(), redo: () => this._hist.redo() })
     }
 
     bring_to_front(): void { this._win.bring_to_front() }
@@ -1337,13 +1350,38 @@ class room_editor_window {
         }
         this._redraw()
         this._rebuild_panel()
+        this._hist.init(this._data)
     }
 
     private _save(): void {
-        project_write_file(
+        this._doc?.mark_dirty()
+        if (!this._restoring) this._hist?.commit(this._data)
+    }
+
+    /** Installs an undo/redo snapshot: swap in the state, drop stale selections, preload assets, redraw. */
+    private _restore(s: room_data): void {
+        this._restoring = true
+        this._data = s
+        if (!Array.isArray(this._data.tiles)) this._data.tiles = []
+        this._selected_inst = null
+        this._drag_inst     = null
+        this._adding = this._deleting = false
+        // Preload referenced tilesets/sprites so the canvas renders with real graphics (caches dedupe).
+        for (const b of new Set(this._data.tiles.map(t => t.bg_name).filter(Boolean)))       this._ensure_tileset_loaded(b)
+        for (const b of new Set(this._data.backgrounds.map(l => l.bg_name).filter(Boolean))) this._ensure_tileset_loaded(b)
+        for (const o of new Set(this._data.instances.map(i => i.object_name).filter(Boolean))) this._ensure_object_sprite(o)
+        this._redraw()
+        this._rebuild_panel()
+        this._doc?.mark_dirty()
+        this._restoring = false
+    }
+
+    private async _flush_to_disk(): Promise<void> {
+        if (!project_has_folder()) return
+        await project_write_file(
             `rooms/${this._room_name}/room.json`,
             JSON.stringify(this._data, null, 2),
-        ).catch(() => { /* no project dir */ })
+        )
     }
 }
 

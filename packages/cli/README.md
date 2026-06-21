@@ -1,6 +1,6 @@
 # @silkweaver/cli
 
-The command-line way to make a game with [Silkweaver](https://github.com/NicoNicoCip/Silkweaver) —
+The command-line way to make a game with [Silkweaver](https://github.com/FinnWillow/Silkweaver) —
 the same GameMaker-1.4-inspired engine and toolchain as the IDE, without the GUI. If you'd rather
 live in your own editor and write code, this is for you.
 
@@ -24,6 +24,6 @@ npx silkweaver run             # build, serve over http, and open it in the brow
 A game is one file per object — `objects/<name>.ts`, a class extending `gm_object`, with `static`
 settings, instance-variable fields, and `on_*` event methods. Engine functions are available without
 imports; the build wires them in. See the
-[main repository](https://github.com/NicoNicoCip/Silkweaver) for the full guide and API reference.
+[main repository](https://github.com/FinnWillow/Silkweaver) for the full guide and API reference.
 
 License: GPL-3.0

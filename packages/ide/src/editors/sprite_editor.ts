@@ -10,7 +10,9 @@
 
 import { FloatingWindow }                                                    from '../window_manager.js'
 import { ICON }                                                              from '../icons.js'
-import { project_write_binary, project_read_file, project_write_file, project_read_binary_url, project_open_external } from '../services/project.js'
+import { project_write_binary, project_read_file, project_write_file, project_read_binary_url, project_open_external, project_has_folder } from '../services/project.js'
+import { doc_register, doc_confirm_close, type doc_handle } from '../services/documents.js'
+import { snapshot_history }                                 from '../services/undo.js'
 import { pixel_editor_open }                                                 from './pixel_editor.js'
 import { ext_image_editor_get }                                             from '../external_tools.js'
 import { file_watch_subscribe }                                            from '../services/file_watch.js'
@@ -81,6 +83,9 @@ class sprite_editor_window {
     private _unwatch_sprite: (() => void) | null = null   // live-reload subscription (external/parallel edits)
     private _drag_off      = { x: 0, y: 0 }
     private _on_closed_cb:  (() => void) | null = null
+    private _doc:          doc_handle | null = null
+    private _hist!:        snapshot_history<sprite_data>   // per-window undo of _data (frames + props)
+    private _restoring     = false                          // true while applying an undo/redo
 
     constructor(workspace: HTMLElement, sprite_name: string, project_name: string) {
         this._sprite_name = sprite_name
@@ -96,11 +101,12 @@ class sprite_editor_window {
             window.removeEventListener('mousemove', this._on_move)
             window.removeEventListener('mouseup', this._on_up)
             this._unwatch_sprite?.()
+            this._doc?.dispose()
             this._on_closed_cb?.()
         })
-        // Live-reload the preview whenever this sprite's files change on disk (external editor,
-        // another window, etc.) — no reopen needed.
-        this._unwatch_sprite = file_watch_subscribe(`sprites/${sprite_name}`, () => void this._reload_current_frame())
+        // Live-reload the current frame when this sprite's files change on disk (external editor,
+        // another window, etc.) — but only when we have no unsaved edits, so a reload can't clobber them.
+        this._unwatch_sprite = file_watch_subscribe(`sprites/${sprite_name}`, () => { if (!this._doc?.is_dirty()) void this._reload_current_frame() })
 
         this._data = {
             frames: [], origin_x: 0, origin_y: 0, width: 0, height: 0,
@@ -109,8 +115,15 @@ class sprite_editor_window {
         }
 
         this._build_ui()
+        this._hist = new snapshot_history<sprite_data>((s) => structuredClone(s), (s) => this._restore(s))
         this._load_data()
         this._win.mount(workspace)
+        this._doc = doc_register({
+            id: `sprites/${sprite_name}`, label: `Sprite: ${sprite_name}`, window: this._win,
+            flush: () => this._flush_to_disk(),
+        })
+        this._win.on_before_close(() => this._doc ? doc_confirm_close(this._doc, `Sprite: ${this._sprite_name}`) : true)
+        this._win.set_undo_handler({ undo: () => this._hist.undo(), redo: () => this._hist.redo() })
     }
 
     bring_to_front(): void { this._win.bring_to_front() }
@@ -646,7 +659,7 @@ class sprite_editor_window {
         pixel_editor_open(this._win.el.parentElement!, this._data.width, this._data.height, frame.data_url, async (url) => {
             frame.data_url = url
             this._imgs[i] = await _decode(url)
-            this._rebuild_strip(); this._redraw(); this._save_frame_file(frame.name, url); this._save_meta()
+            this._rebuild_strip(); this._redraw(); this._save_meta()
         })
     }
 
@@ -676,7 +689,6 @@ class sprite_editor_window {
         this._data.frames.push({ name, data_url: url })
         this._imgs.push(await _decode(url))
         this._cur = this._data.frames.length - 1
-        await this._save_frame_file(name, url)
         this._rebuild_strip(); this._refresh_anim(); this._save_meta()
     }
 
@@ -694,7 +706,6 @@ class sprite_editor_window {
                 const name = this._unique_frame_name()
                 this._data.frames.push({ name, data_url: url })
                 this._imgs.push(await _decode(url))
-                try { await project_write_binary(`sprites/${this._sprite_name}/${name}`, file) } catch { /* no project dir */ }
             }
             this._cur = this._data.frames.length - 1
             this._rebuild_props(); this._rebuild_strip(); this._refresh_anim(); this._save_meta()
@@ -757,9 +768,25 @@ class sprite_editor_window {
         this._rebuild_props()
         this._fit_zoom()
         this._refresh_anim()
+        this._hist.init(this._data)
     }
 
-    private async _save_meta(): Promise<void> {
+    private _save_meta(): void {
+        this._doc?.mark_dirty()
+        if (!this._restoring) this._hist?.commit(this._data)
+    }
+
+    /** Installs an undo/redo snapshot: swap in the state, re-decode frames, rebuild props + canvas. */
+    private _restore(s: sprite_data): void {
+        this._restoring = true
+        this._data = s
+        if (this._cur >= s.frames.length) this._cur = Math.max(0, s.frames.length - 1)
+        void this._refresh_images().then(() => { this._rebuild_props(); this._redraw() })
+        this._doc?.mark_dirty()
+        this._restoring = false
+    }
+
+    private async _write_meta(): Promise<void> {
         const meta = {
             origin_x: this._data.origin_x, origin_y: this._data.origin_y,
             width: this._data.width, height: this._data.height, anim_speed: this._data.anim_speed,
@@ -768,9 +795,14 @@ class sprite_editor_window {
             slice_left: this._data.slice_left, slice_top: this._data.slice_top, slice_right: this._data.slice_right, slice_bottom: this._data.slice_bottom,
             frames: this._data.frames.map(f => ({ name: f.name })),
         }
-        // Write the meta first, THEN tell the tree to refresh — otherwise the tree reads
-        // the sprite before meta.json exists and is stuck on the placeholder thumbnail.
-        try { await project_write_file(`sprites/${this._sprite_name}/meta.json`, JSON.stringify(meta, null, 2)) } catch { /* no project dir */ }
+        await project_write_file(`sprites/${this._sprite_name}/meta.json`, JSON.stringify(meta, null, 2))
+    }
+
+    /** On save: write every frame's pixels, then the meta (which lists them), then refresh the tree. */
+    private async _flush_to_disk(): Promise<void> {
+        if (!project_has_folder()) return
+        for (const f of this._data.frames) await this._save_frame_file(f.name, f.data_url)
+        await this._write_meta()
         document.dispatchEvent(new CustomEvent('sw:resource_changed', { detail: { category: 'sprites', name: this._sprite_name } }))
     }
 }

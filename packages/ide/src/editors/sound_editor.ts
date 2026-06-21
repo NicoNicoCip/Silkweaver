@@ -6,6 +6,7 @@
 import { FloatingWindow }                                              from '../window_manager.js'
 import { ICON } from "../icons.js"
 import { project_write_binary, project_read_file, project_write_file, project_has_folder } from '../services/project.js'
+import { doc_register, doc_confirm_close, type doc_handle } from '../services/documents.js'
 
 // =========================================================================
 // Types
@@ -58,6 +59,8 @@ class sound_editor_window {
     private _audio_buf: AudioBuffer | null = null
     private _blob_url:  string = ''
 
+    private _doc: doc_handle | null = null   // save-manager handle (dirty state + flush)
+
     // UI refs
     private _status_el!: HTMLElement
     private _play_btn!:  HTMLButtonElement
@@ -79,6 +82,11 @@ class sound_editor_window {
         )
         this._build_ui()
         this._win.mount(workspace)
+        this._doc = doc_register({
+            id: `sounds/${name}`, label: `Sound: ${name}`, window: this._win,
+            flush: () => this._flush_to_disk(),
+        })
+        this._win.on_before_close(() => this._doc ? doc_confirm_close(this._doc, `Sound: ${this._name}`) : true)
         this._load_data()
     }
 
@@ -86,7 +94,7 @@ class sound_editor_window {
     public bring_to_front(): void { this._win.bring_to_front() }
 
     /** Register a callback for when this editor is closed. */
-    public on_closed(cb: () => void): void { this._win.on_close(cb) }
+    public on_closed(cb: () => void): void { this._win.on_close(() => { this._doc?.dispose(); cb() }) }
 
     // -----------------------------------------------------------------------
     // Build UI
@@ -297,7 +305,10 @@ class sound_editor_window {
         } catch { /* no saved data yet */ }
     }
 
-    private async _save(): Promise<void> {
+    /** Marks unsaved — change handlers call this; the actual write happens on save (_flush_to_disk). */
+    private async _save(): Promise<void> { this._doc?.mark_dirty() }
+
+    private async _flush_to_disk(): Promise<void> {
         if (!project_has_folder()) return
         await project_write_file(
             `sounds/${this._name}/meta.json`,

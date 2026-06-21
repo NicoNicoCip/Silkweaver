@@ -24,6 +24,11 @@ contextBridge.exposeInMainWorld('swfs', {
     pick_file: (opts?: { title?: string; defaultPath?: string; filters?: { name: string; extensions: string[] }[] }): Promise<string | null> =>
         ipcRenderer.invoke('sw:pick-file', opts),
 
+    /** App quit was requested — run unsaved-changes checks, then call confirm_quit() to proceed. */
+    on_before_quit: (cb: () => void): void => { ipcRenderer.on('sw:before-quit', () => cb()) },
+    /** Tell the host it's OK to quit now. */
+    confirm_quit: (): void => ipcRenderer.send('sw:confirm-quit'),
+
     /**
      * Read a text file.
      * @param abs_path - Absolute path

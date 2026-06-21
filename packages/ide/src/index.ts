@@ -12,10 +12,10 @@ import { updater_init } from './updater.js'
 import { taskbar_create }                                            from './taskbar.js'
 import { ResourceTree }                                              from './resource_tree.js'
 import type { open_resource_event, resource_category }               from './resource_tree.js'
-import { project_new, project_open, project_save, project_set_dir, project_set_folder, project_get_dir, project_has_folder, project_get_folder_path, project_get_last_folder, project_read_file, project_write_file, project_file_exists, project_rename, project_copy, project_delete }  from './services/project.js'
+import { project_new, project_open, project_save, project_set_dir, project_set_folder, project_get_dir, project_has_folder, project_get_folder_path, project_get_last_folder, project_read_file, project_write_file, project_file_exists, project_rename, project_copy, project_delete, project_read_binary_url, project_write_binary, project_list_dir }  from './services/project.js'
 import type { project_state }                                         from './services/project.js'
 import { start_page_show, recent_add }                               from './start_page.js'
-import { undo_push, undo_undo, undo_redo, undo_clear }               from './services/undo.js'
+import { UndoStack }                                                 from './services/undo.js'
 import { script_editor_open, script_editor_open_smart, inject_project_types } from './editors/script_editor.js'
 import { sprite_editor_open }      from './editors/sprite_editor.js'
 import { object_editor_open }      from './editors/object_editor.js'
@@ -32,10 +32,12 @@ import { console_open, console_write, console_toggle }               from './pan
 import { debugger_open }                                             from './panels/debugger_panel.js'
 import { profiler_open }                                             from './panels/profiler_panel.js'
 import { docs_open }                                                 from './panels/docs_window.js'
-import { show_alert, show_prompt, show_confirm, show_about }         from './services/dialogs.js'
+import { show_alert, show_prompt, show_confirm, show_about, show_save_prompt } from './services/dialogs.js'
 import { SW_VERSION }                                               from './generated/version.js'
 import { ICON }                                                     from './icons.js'
 import { show_context_menu }                                       from './services/context_menu.js'
+import { documents_flush_content, documents_set_save_all, documents_any_dirty } from './services/documents.js'
+import { editor_prefs_get }                                        from './editor_prefs.js'
 
 /** Last known cursor position — lets click-to-create menus open where the pointer is. */
 const _last_mouse = { x: 200, y: 200 }
@@ -54,6 +56,9 @@ const _confirm = show_confirm
 let _project:   project_state | null = null
 let _tree:      ResourceTree
 let _workspace: HTMLElement
+let _project_dirty = false                                  // project.json (manifest) has unsaved changes
+let _autosave_timer: ReturnType<typeof setInterval> | null = null
+const _shell_undo = new UndoStack()                         // IDE-shell undo (resource-tree structural ops)
 
 // =========================================================================
 // Boot
@@ -66,6 +71,10 @@ function boot(): void {
     ui_scale_init()
     file_watch_init()   // listen for external file changes (parallel editing)
     updater_init()      // desktop auto-update notice (no-op in the browser / dev)
+    documents_set_save_all(on_file_save)                  // editors' in-window Ctrl+S → full save
+    _sync_autosave()                                      // start the periodic auto-save timer if enabled
+    window.addEventListener('sw:editor-prefs', _sync_autosave)
+    ;(window as any).swfs?.on_before_quit?.(() => void _on_app_quit())   // warn on app exit if unsaved
 
     // 2. Menubar (fixed, top)
     const menubar = menubar_default({
@@ -136,6 +145,7 @@ function boot(): void {
     _tree.on_duplicate_resource = on_duplicate_resource
     _tree.on_set_icon           = () => _mark_unsaved()   // icon override lives in project.json
     _tree.on_folders_changed    = () => _mark_unsaved()   // folder org lives in project.json
+    _tree.on_undo_push          = (cmd) => _shell_undo.record(cmd)   // folder/move ops → IDE-shell undo
     _tree.mount(dock)
 
     // 6. Listen for resource open events
@@ -149,8 +159,14 @@ function boot(): void {
         if (e.ctrlKey && e.key === 's') { e.preventDefault(); on_file_save() }
         if (e.ctrlKey && e.key === 'n') { e.preventDefault(); on_file_new() }
         if (e.ctrlKey && e.key === 'o') { e.preventDefault(); on_file_open() }
-        if (e.ctrlKey && e.key === 'z') { e.preventDefault(); _on_undo() }
-        if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); _on_redo() }
+        if (e.ctrlKey && !e.altKey && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) {
+            if (_native_undo_target(e.target)) return   // Monaco / inputs keep their own undo
+            e.preventDefault(); _on_undo()
+        }
+        if (e.ctrlKey && !e.altKey && (e.key === 'y' || ((e.key === 'Z' || e.key === 'z') && e.shiftKey))) {
+            if (_native_undo_target(e.target)) return
+            e.preventDefault(); _on_redo()
+        }
         if (e.key === 'F5' && !e.ctrlKey) { e.preventDefault(); on_run_play() }
         if (e.key === 'F5' &&  e.ctrlKey) { e.preventDefault(); on_run_build() }
         if (e.key === 'F9')               { e.preventDefault(); debugger_open(_workspace) }
@@ -288,10 +304,11 @@ async function on_file_open(): Promise<void> {
 async function on_file_save(): Promise<void> {
     if (!_project) return
     try {
+        await documents_flush_content()   // flush open editor content first, then the manifest
         await project_save(_project)
         _mark_saved()
         preview_reload()
-        console_write('system', '[IDE] Project saved.')
+        console_write('system', '[IDE] Saved.')
     } catch (err) {
         // FSAPI browser: no dir handle yet — fall through to Save As picker
         if (!project_has_folder()) await on_file_save_as()
@@ -351,15 +368,26 @@ async function _create_resource(cat: resource_category, kind: 'normal' | 'physic
     do { n++; name = `${singular}${n}` }
     while (_project.resources[cat][name] || await _resource_on_disk(cat, name))
 
-    undo_push({
-        label: `Add ${singular} "${name}"`,
-        execute:   () => { _tree.add_resource(cat, name);    _mark_unsaved() },
-        unexecute: () => { _tree.remove_resource(cat, name); _mark_unsaved() },
-    })
+    // Perform the add, then record an undo that also reverses the on-disk scaffold (no orphan file).
+    _tree.add_resource(cat, name)
+    _mark_unsaved()
     if (cat === 'objects') {
         inject_project_types(_project)            // so editors can reference it by name
         await _scaffold_object_file(name, kind)   // write objects/<name>.ts now, so it always exists
     }
+    _shell_undo.record({
+        label: `Add ${singular} "${name}"`,
+        execute: async () => {
+            _tree.add_resource(cat, name); _mark_unsaved()
+            if (cat === 'objects') { inject_project_types(_project!); await _scaffold_object_file(name, kind) }
+        },
+        unexecute: async () => {
+            _tree.remove_resource(cat, name)
+            await _delete_resource_files(cat, name)   // drop the scaffolded objects/<name>.ts
+            if (cat === 'objects') inject_project_types(_project!)
+            _mark_unsaved()
+        },
+    })
     _tree.expand_category(cat)
     _tree.begin_rename(cat, name)
 }
@@ -387,14 +415,29 @@ async function _scaffold_object_file(name: string, kind: 'normal' | 'physics' = 
 
 async function on_delete_resource(cat: resource_category, name: string): Promise<void> {
     if (!await _confirm(`Delete "${name}"?`)) return
-    undo_push({
-        label: `Delete ${cat.slice(0, -1)} "${name}"`,
-        execute:   () => { _tree.remove_resource(cat, name); _mark_unsaved() },
-        unexecute: () => { _tree.add_resource(cat, name);    _mark_unsaved() },
-    })
+    // Snapshot the resource's files first so an undo can fully restore it (delete is otherwise final).
+    const files = await _snapshot_resource_files(cat, name)
+    _tree.remove_resource(cat, name)
+    if (cat === 'objects') inject_project_types(_project!)
+    _mark_unsaved()
     // Remove the on-disk artifacts too, so the name can be reused cleanly later
     // (otherwise a new resource reusing the name would load stale files).
     try { await _delete_resource_files(cat, name) } catch (err: any) { console.warn('[IDE] Delete files failed:', err) }
+    _shell_undo.record({
+        label: `Delete ${cat.slice(0, -1)} "${name}"`,
+        execute: async () => {
+            _tree.remove_resource(cat, name)
+            await _delete_resource_files(cat, name)
+            if (cat === 'objects') inject_project_types(_project!)
+            _mark_unsaved()
+        },
+        unexecute: async () => {
+            await _restore_resource_files(files)
+            _tree.add_resource(cat, name)
+            if (cat === 'objects') inject_project_types(_project!)
+            _mark_unsaved()
+        },
+    })
 }
 
 /** Deletes a resource's on-disk artifacts (the `cat/name` folder and/or `cat/name.ts` file). */
@@ -405,6 +448,38 @@ async function _delete_resource_files(cat: resource_category, name: string): Pro
     }
 }
 
+/** A captured file (path + base64 data URL) used to restore a deleted resource on undo. */
+interface file_snap { rel: string; data_url: string }
+
+/** Reads every file of a resource into memory (as data URLs) so a delete can be undone. */
+async function _snapshot_resource_files(cat: resource_category, name: string): Promise<file_snap[]> {
+    if (!project_has_folder()) return []
+    const out: file_snap[] = []
+    const file_rel = `${cat}/${name}.ts`
+    if (await project_file_exists(file_rel)) {
+        try { out.push({ rel: file_rel, data_url: await project_read_binary_url(file_rel) }) } catch { /* unreadable */ }
+        return out
+    }
+    // Otherwise it's a folder resource (sprite/sound/room/…) — snapshot each file in it (flat).
+    const folder_rel = `${cat}/${name}`
+    for (const entry of await project_list_dir(folder_rel)) {
+        const rel = `${folder_rel}/${entry}`
+        try { out.push({ rel, data_url: await project_read_binary_url(rel) }) } catch { /* skip unreadable */ }
+    }
+    return out
+}
+
+/** Writes captured resource files back to disk (used by delete-undo). */
+async function _restore_resource_files(files: file_snap[]): Promise<void> {
+    if (!project_has_folder()) return
+    for (const f of files) {
+        try {
+            const blob = await (await fetch(f.data_url)).blob()
+            await project_write_binary(f.rel, blob)
+        } catch (err) { console.warn('[IDE] Restore file failed:', f.rel, err) }
+    }
+}
+
 async function on_rename_resource(cat: resource_category, name: string, new_name_raw: string): Promise<void> {
     if (!_project) return
     const new_name = (new_name_raw ?? '').trim()
@@ -412,15 +487,25 @@ async function on_rename_resource(cat: resource_category, name: string, new_name
     if (!/^[A-Za-z_]\w*$/.test(new_name)) { await _alert('Names may only contain letters, digits, and _ (not starting with a digit).'); return }
     if (_project.resources[cat][new_name]) { await _alert(`A resource named "${new_name}" already exists.`); return }
     try {
-        await _move_resource_files(cat, name, new_name, 'move')
+        await _apply_rename(cat, name, new_name)
     } catch (err: any) {
         await _alert('Rename failed: ' + (err?.message ?? err)); return
     }
-    _tree.remove_resource(cat, name)
-    _tree.add_resource(cat, new_name)
-    if (cat === 'objects') inject_project_types(_project)   // refresh editor object declarations
-    _mark_unsaved()
     console_write('system', `[IDE] Renamed ${cat.slice(0, -1)} "${name}" → "${new_name}".`)
+    _shell_undo.record({
+        label: `Rename "${name}" → "${new_name}"`,
+        execute:   () => _apply_rename(cat, name, new_name),
+        unexecute: () => _apply_rename(cat, new_name, name),
+    })
+}
+
+/** Moves a resource's files from `from`→`to` and swaps the tree registry entry. */
+async function _apply_rename(cat: resource_category, from: string, to: string): Promise<void> {
+    await _move_resource_files(cat, from, to, 'move')
+    _tree.remove_resource(cat, from)
+    _tree.add_resource(cat, to)
+    if (cat === 'objects') inject_project_types(_project!)   // refresh editor object declarations
+    _mark_unsaved()
 }
 
 async function on_duplicate_resource(cat: resource_category, name: string): Promise<void> {
@@ -433,8 +518,24 @@ async function on_duplicate_resource(cat: resource_category, name: string): Prom
         await _alert('Duplicate failed: ' + (err?.message ?? err)); return
     }
     _tree.add_resource(cat, new_name)
+    if (cat === 'objects') inject_project_types(_project)
     _mark_unsaved()
     console_write('system', `[IDE] Duplicated ${cat.slice(0, -1)} "${name}" → "${new_name}".`)
+    _shell_undo.record({
+        label: `Duplicate "${name}" → "${new_name}"`,
+        execute: async () => {
+            await _move_resource_files(cat, name, new_name, 'copy')
+            _tree.add_resource(cat, new_name)
+            if (cat === 'objects') inject_project_types(_project!)
+            _mark_unsaved()
+        },
+        unexecute: async () => {
+            _tree.remove_resource(cat, new_name)
+            await _delete_resource_files(cat, new_name)
+            if (cat === 'objects') inject_project_types(_project!)
+            _mark_unsaved()
+        },
+    })
 }
 
 /**
@@ -468,12 +569,46 @@ async function _move_resource_files(cat: resource_category, old_name: string, ne
 // Undo / Redo
 // =========================================================================
 
+/**
+ * True when keyboard focus is in a control that owns its own undo (Monaco, text inputs,
+ * contenteditable). Those must be left alone so Ctrl+Z/Y reaches their native handler.
+ */
+function _native_undo_target(target: EventTarget | null): boolean {
+    const el = target as HTMLElement | null
+    if (!el || typeof el.closest !== 'function') return false
+    if (el.closest('.monaco-editor')) return true
+    const tag = el.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+    if (el.isContentEditable) return true
+    return false
+}
+
+/** The floating window that currently contains keyboard focus, or null (focus on the shell). */
+function _focused_window(): FloatingWindow | null {
+    const el = document.activeElement
+    if (!el || el === document.body) return null
+    for (const w of FloatingWindow.list()) if (w.el.contains(el)) return w
+    return null
+}
+
 function _on_undo(): void {
-    if (!undo_undo()) console_write('system', '[IDE] Nothing to undo.')
+    const w = _focused_window()
+    if (w) {
+        const h = w.undo_handler()
+        if (h) { if (!h.undo()) console_write('system', '[IDE] Nothing to undo.') }
+        return   // focus is inside a window — never fall through to the tree
+    }
+    if (!_shell_undo.undo()) console_write('system', '[IDE] Nothing to undo.')
 }
 
 function _on_redo(): void {
-    if (!undo_redo()) console_write('system', '[IDE] Nothing to redo.')
+    const w = _focused_window()
+    if (w) {
+        const h = w.undo_handler()
+        if (h) { if (!h.redo()) console_write('system', '[IDE] Nothing to redo.') }
+        return
+    }
+    if (!_shell_undo.redo()) console_write('system', '[IDE] Nothing to redo.')
 }
 
 // =========================================================================
@@ -756,7 +891,7 @@ function _set_project(state: project_state, _dir: FileSystemDirectoryHandle | nu
     _update_toolbar_enabled(true)
     _tree.load(state)
     document.title = `${state.name} — Silkweaver IDE`
-    undo_clear()
+    _shell_undo.clear()
 
     // Inject project-specific object type declarations into Monaco
     inject_project_types(state)
@@ -766,11 +901,40 @@ function _set_project(state: project_state, _dir: FileSystemDirectoryHandle | nu
 }
 
 function _mark_unsaved(): void {
+    _project_dirty = true
     if (_project) document.title = `● ${_project.name} — Silkweaver IDE`
 }
 
 function _mark_saved(): void {
+    _project_dirty = false
     if (_project) document.title = `${_project.name} — Silkweaver IDE`
+}
+
+/** App-exit guard: warn (or auto-save) if anything is unsaved, then tell the host to quit. */
+async function _on_app_quit(): Promise<void> {
+    const swfs = (window as any).swfs
+    if (!_project_dirty && !documents_any_dirty()) { swfs?.confirm_quit(); return }
+    if (editor_prefs_get().autoSave) {
+        try { await on_file_save() } catch { /* quit anyway */ }
+        swfs?.confirm_quit(); return
+    }
+    const choice = await show_save_prompt(_project?.name ?? 'your project')
+    if (choice === 'cancel') return                              // stay open
+    if (choice === 'save') { try { await on_file_save() } catch { return } }   // keep open if save failed
+    swfs?.confirm_quit()
+}
+
+/** Starts or stops the periodic auto-save timer to match the autoSave preference. */
+function _sync_autosave(): void {
+    const on = editor_prefs_get().autoSave
+    if (on && !_autosave_timer) {
+        _autosave_timer = setInterval(() => {
+            if (_project && (_project_dirty || documents_any_dirty())) void on_file_save()
+        }, 30_000)
+    } else if (!on && _autosave_timer) {
+        clearInterval(_autosave_timer)
+        _autosave_timer = null
+    }
 }
 
 // =========================================================================
