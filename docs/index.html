@@ -4,25 +4,25 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" type="image/png" href="favicon.png">
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/png" href="favicon.png?v=2">
+    <link rel="icon" type="image/x-icon" href="favicon.ico?v=2">
     <title>Silkweaver — a 2D game engine inspired by GameMaker 1.4</title>
     <meta name="description"
         content="Silkweaver is a 2D game engine and editor inspired by GameMaker Studio 1.4, written in modern TypeScript. Make a game with the IDE or the CLI, or use the WebGL2 engine as a library.">
     <style>
         :root {
-            --bg: #1b1b1b;
-            --panel: #222;
-            --panel2: #262626;
-            --fg: #e6e6e6;
-            --muted: #9a9a9a;
-            --border: #363636;
-            --accent: #4cc2ff;
-            --accent2: #2b88d8;
-            --code: #181818;
+            --bg: #1c1c1d;
+            --panel: #242427;
+            --panel2: #2b2b2f;
+            --fg: #f1f1f0;
+            --muted: #a6a6a4;
+            --border: #34343a;
+            --accent: #e56878;
+            --accent2: #e60012;
+            --code: #161616;
             --codefg: #9cdcfe;
-            --title: #cfe0ff;
-            --pill: #2a2a2a;
+            --title: #f1e9ea;
+            --pill: #2a2a2e;
         }
 
         * {
@@ -81,9 +81,17 @@
         }
 
         .brand {
+            display: flex;
+            align-items: center;
+            gap: 9px;
             font-weight: 700;
             font-size: 18px;
             color: var(--fg)
+        }
+
+        .brand img {
+            width: 22px;
+            height: 22px
         }
 
         .brand span {
@@ -323,7 +331,7 @@
     <header>
         <div class="wrap">
             <nav>
-                <div class="brand">Silk<span>weaver</span></div>
+                <div class="brand"><img src="favicon.png?v=2" alt="">Silk<span>weaver</span></div>
                 <div class="links">
                     <a href="#make">Make a game</a>
                     <a href="#engine">Engine</a>
